@@ -104,7 +104,7 @@ def merge_labels(interactions):
 
     for (s, t), label in zip(ppis, interactions.label):
         if (s, t) in merged_ppis:
-            labels = set(merged_ppis[(s, t)].split(',') + [label])
+            labels = sorted(set(merged_ppis[(s, t)].split(',') + [label]))
             merged_ppis[(s, t)] = ','.join(labels)
         else:
             merged_ppis[(s, t)] = label.lower().replace(" ", '-')

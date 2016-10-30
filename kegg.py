@@ -23,6 +23,15 @@ kegg.settings.TIMEOUT = 1000
 uniprot_mapper.settings.TIMEOUT = 1000
 links_to_include = ['PCrel', 'PPrel', 'ECrel', 'GGrel']
 types_to_include = ['group', 'gene', 'enzyme']
+link_db_swiss_list = 'data/swiss_hsa.list'
+link_db_uniprot_list = 'data/uniprot_hsa.list'
+
+motif_pathway_ids = [
+    'path:hsa04010',
+    'path:hsa04151',
+    'path:hsa01521'
+]
+
 subtypes_to_exclude = [
     'missing-interaction',
     'indirect-effect',
@@ -154,6 +163,7 @@ def map_to_uniprot(interactions, trembl=False):
     :param trembl: Use Trembl if SwissProt is unavailable.
     :return: DataFrame with columns source, target and label.
     """
+    print("Warning: This may take a while if the uniprot cache is empty.")
     filtered_map = {}
     unique_ids = set(a for a in interactions.source.values) | set(b for b in interactions.target.values)
     mapping = uniprot_mapper.mapping(fr='KEGG_ID', to='ACC', query=unique_ids)

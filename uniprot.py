@@ -76,9 +76,11 @@ class UniProt(object):
 
     """
 
-    def __init__(self, sprot_cache=SWISSPROT_DAT, trembl_cache=TREMBL_DAT, organism='human'):
+    def __init__(self, sprot_cache=SWISSPROT_DAT, trembl_cache=TREMBL_DAT, organism='human', verbose=False):
         self.records = {}
         self.organism = organism.strip().upper()
+        self.verbose = verbose
+        print('Warning: Loading cache files may take a few minutes.')
         if sprot_cache:
             # Load the swissprot records if file can be found
             try:
@@ -139,19 +141,29 @@ class UniProt(object):
 
     def download_entry(self, accession, retries=10, wait=5):
         record = SwissProt.Record()
+        success = False
         try:
             handle = ExPASy.get_sprot_raw('{}_{}'.format(accession, self.organism.upper()))
             record = SwissProt.read(handle)
+            success = True
         except HTTPError:
+            if self.verbose:
+                print("HTTPError downloading record for {}. Retrying...".format(accession))
             for i in range(retries):
+                if self.verbose:
+                    print('\tWaiting {}s...'.format(wait))
                 time.sleep(wait)
                 try:
+                    if self.verbose:
+                        print('Retry {}/{}...'.format(i, retries))
                     handle = ExPASy.get_sprot_raw('{}_{}'.format(accession, self.organism.upper()))
                     record = SwissProt.read(handle)
+                    success = True
                 except HTTPError:
                     continue
         finally:
-            print("Failed to download {}".format(accession))
+            if not success:
+                print("Warning: Failed to download record for {}".format(accession))
 
         self.records[accession] = record
         return record
