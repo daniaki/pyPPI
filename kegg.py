@@ -71,7 +71,8 @@ def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False, al
     :param pathway_ids: List KEGG pathway accessions. For example ['path:hsa00010'].
     :param drop_nan: Drop entries containing NaN in any column.
     :param allow_self_edges: Remove rows for which source is target.
-    :param allow_duplicates: Remove exact copies accross columns.    :param min_label_count: Remove labels with less than the specified count.
+    :param allow_duplicates: Remove exact copies accross columns.
+    :param min_label_count: Remove labels with less than the specified count.
     :param uniprot: Map KEGG_IDs to uniprot.
     :param trembl: Use trembl acc when swissprot in unavailable. Otherwise, kegg_id is considered unmappable.
     :param merge: Merge entries with identical source and target columns during filter.
@@ -180,5 +181,3 @@ def map_to_uniprot(interactions, trembl=False):
     labels = interactions.label.values
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions
-
-

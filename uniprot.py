@@ -29,7 +29,8 @@ def features_to_dataframe(uniprot_db, accessions, data_types, columns=None):
     :param columns: Dictionary mapping datatypes to column names for the dataframe.
     :return: DataFrame of accessions and acquired data.
     """
-    features = uniprot_db.get_batch_accession_data(accessions, data_types)
+    unique = set(accessions)
+    features = uniprot_db.get_batch_accession_data(unique, data_types)
     column_keys = data_types if not columns else list(columns.values())
     dataframe_data = {k: [] for k in column_keys}
 
@@ -43,6 +44,7 @@ def features_to_dataframe(uniprot_db, accessions, data_types, columns=None):
                 v = ','.join(str(x) for x in sorted(v))
             dataframe_data[column_key].append(v)
 
+    dataframe_data['id'] = list(features.keys())
     df = pd.DataFrame(data=dataframe_data)
     return df
 
@@ -149,8 +151,7 @@ class UniProt(object):
                 except HTTPError:
                     continue
         finally:
-            # TODO: Return some form of null datatype?
-            Exception("Failed to download {}".format(accession))
+            print("Failed to download {}".format(accession))
 
         self.records[accession] = record
         return record
