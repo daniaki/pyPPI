@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 from bioservices import KEGG
 from bioservices import UniProt as UniProtMapper
-from uniprot import UniProt as UniProtReader
 import pandas as pd
 import numpy as np
 
+from uniprot import UniProt as UniProtReader
 from tools import make_interaction_frame, process_interactions
+from tools import write_to_edgelist
 
 """
 Author: Daniel Esposito
@@ -93,7 +94,7 @@ def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False, al
 
     )
     if output:
-        write_to_edgelist(interactions, file)
+        write_to_edgelist(interactions, output)
     return interactions
 
 

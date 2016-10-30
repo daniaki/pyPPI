@@ -4,6 +4,7 @@ from collections import OrderedDict as Od
 
 import uniprot
 from tools import make_interaction_frame, process_interactions
+from tools import write_to_edgelist
 
 """
 Author: Daniel Esposito
@@ -190,5 +191,5 @@ def hprd_to_dataframe(drop_nan=True, allow_self_edges=False, allow_duplicates=Fa
         merge=merge
     )
     if output:
-        write_to_edgelist(interactions, file)
+        write_to_edgelist(interactions, output)
     return interactions

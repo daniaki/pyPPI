@@ -173,5 +173,5 @@ def generic_to_dataframe(file, parsing_func, drop_nan=True, allow_self_edges=Fal
         merge=merge
     )
     if output:
-        write_to_edgelist(interactions, file)
+        write_to_edgelist(interactions, output)
     return interactions
