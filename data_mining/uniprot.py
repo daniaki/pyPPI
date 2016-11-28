@@ -41,7 +41,7 @@ class UniProt(object):
     """
 
     def __init__(self, sprot_cache=uniprot_sprot, trembl_cache=uniprot_trembl,
-                 taxonid='9606', verbose=False, retries=10, wait=5):
+                 taxonid='9606', verbose=False, retries=3, wait=5):
         """
         Class constructor
 

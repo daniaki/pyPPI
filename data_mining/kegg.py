@@ -106,7 +106,6 @@ def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False,
         exclude_labels=subtypes_to_exclude,
         min_counts=min_label_count,
         merge=merge
-
     )
     if output:
         write_to_edgelist(interactions, output)
@@ -176,7 +175,7 @@ def map_to_uniprot(interactions, trembl=False):
     filtered_map = {}
     sources = (a for a in interactions.source.values)
     targets = (b for b in interactions.target.values)
-    unique_ids = set(sources) | set(targets)
+    unique_ids = list(set(sources) | set(targets))
     mapping = uniprot_mapper.mapping(fr='KEGG_ID', to='ACC', query=unique_ids)
     ur = UniProtReader()
 
@@ -198,8 +197,10 @@ def map_to_uniprot(interactions, trembl=False):
                 filtered_map[kegg_id] = None
 
     # Remaining kegg_ids that have not mapped to anything go to None
+    sources = interactions.source.values
+    targets = interactions.target.values
+    labels = interactions.label.values
     sources = [filtered_map.get(kegg_id, None) for kegg_id in sources]
     targets = [filtered_map.get(kegg_id, None) for kegg_id in targets]
-    labels = interactions.label.values
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions
