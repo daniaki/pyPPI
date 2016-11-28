@@ -1,2 +1,4 @@
 # pyPPI
-A python tool for classifying the signalling function of a protein-protein interaction.
+A python tool for mining protein-protein interactions with signalling function from various databases such as KEGG.
+
+# Examples
