@@ -7,7 +7,8 @@ import pandas as pd
 Author: Daniel Esposito
 Contact: danielce90@gmail.com
 
-This module provides functionality to perform filtering and processing on interaction dataframes.
+This module provides functionality to perform filtering and processing on
+interaction dataframes.
 """
 
 SOURCE = 'source'
@@ -34,7 +35,8 @@ def make_interaction_frame(sources, targets, labels):
 
 def remove_nan(interactions):
     """
-    Drop interactions with missing source, target or labels as indicated by np.NaN.
+    Drop interactions with missing source, target or labels as indicated
+    by np.NaN/None.
 
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
@@ -63,13 +65,15 @@ def remove_labels(interactions, subtypes):
 
 def remove_min_counts(interactions, min_count):
     """
-    Remove all PPIs with labels that have overall count less than some threshold.
+    Remove all PPIs with labels that have overall count less
+    than some threshold.
 
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :param min_count: Minimum count threshold to keep label.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    print('Warning: Removing low count labels should be done before merging labels '
+    print('Warning: Removing low count labels '
+          'should be done before merging labels '
           'as the merge can result in many new low count labels.')
     counts = Counter(interactions.label.values)
     labels_to_exclude = [k for k, v in counts.items() if v < min_count]
@@ -84,7 +88,8 @@ def remove_self_edges(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    selector = [str(s) != str(t) for (s, t) in zip(interactions.source, interactions.target)]
+    selector = [str(s) != str(t)
+                for (s, t) in zip(interactions.source, interactions.target)]
     df = interactions.loc[selector, ]
     df = df.reset_index(drop=True)
     assert sum([str(a) == str(b) for (a, b) in zip(df.source, df.target)]) == 0
@@ -93,8 +98,8 @@ def remove_self_edges(interactions):
 
 def merge_labels(interactions):
     """
-    Merge PPIs with the same source and target but different labels into the same
-    entry with labels being separated by a comma.
+    Merge PPIs with the same source and target but different labels into the
+    same entry with labels being separated by a comma.
 
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
@@ -150,8 +155,8 @@ def write_to_edgelist(interactions, file):
     interactions.to_csv(filename=file, sep='\t')
 
 
-def process_interactions(interactions, drop_nan, allow_self_edges, allow_duplicates,
-                         exclude_labels, min_counts, merge):
+def process_interactions(interactions, drop_nan, allow_self_edges,
+                         allow_duplicates, exclude_labels, min_counts, merge):
     """
     Wrapper to filter an interaction dataframe.
 
@@ -161,7 +166,8 @@ def process_interactions(interactions, drop_nan, allow_self_edges, allow_duplica
     :param allow_duplicates: Remove exact copies accross columns.
     :param exclude_labels: List of labels to remove.
     :param min_counts: Remove labels below this count.
-    :param merge: Merge PPIs with the same source and target but different labels into the same entry.
+    :param merge: Merge PPIs with the same source and target but
+                  different labels into the same entry.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     if drop_nan:
@@ -177,7 +183,3 @@ def process_interactions(interactions, drop_nan, allow_self_edges, allow_duplica
     if merge:
         interactions = merge_labels(interactions)
     return interactions
-
-
-
-

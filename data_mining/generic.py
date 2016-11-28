@@ -5,25 +5,20 @@ import numpy as np
 
 from data_mining.tools import make_interaction_frame, process_interactions
 from data_mining.tools import write_to_edgelist
+from data import generic_io
 
 """
 Author: Daniel Esposito
 Date: 27/12/2015
 
-Purpose: Generic parsing functions for various file formats and the functionality to create
-data frames from the parsing results.
+Purpose: Generic parsing functions for various file formats and the
+functionality to create data frames from the parsing results.
 """
 
 INVALID_ACCESSIONS = ['', ' ', '-', 'unknown']
-BIOPLEX_V2 = 'data/networks/BioPlex_interactionList_v2.tsv'
-BIOPLEX_V4 = 'data/networks/BioPlex_interactionList_v4.tsv'
-INNATE_CURATED = 'data/networks/innatedb_curated.mitab'
-INNATE_IMPORTED = 'data/networks/innatedb_imported.mitab'
-PINA2_SIF = 'data/networks/PINA2_Homo_sapiens-20140521.sif'
 
 
 def validate_accession(accession):
-
     if accession.strip().lower() in INVALID_ACCESSIONS:
         return np.NaN
     else:
@@ -42,6 +37,10 @@ def bioplex_func(fp):
     sources = []
     targets = []
     labels = []
+
+    # Remove header
+    next(fp)
+
     for line in fp:
         xs = line.strip().split('\t')
         source = validate_accession(xs[source_idx].strip().upper())
@@ -112,6 +111,9 @@ def mitab_func(fp):
     labels = []
     ppis = []
 
+    # Remove header
+    next(fp)
+
     for line in fp:
         accessions = []
         xs = [l for l in line.strip().split('\t') if 'uniprotkb' in l]
@@ -119,17 +121,19 @@ def mitab_func(fp):
             accessions = [[], []]
         else:
             for index in [source_idx, target_idx]:
-                ps = [e for e in xs[index].split('|') if ('uniprotkb' in e) and ('_' not in e)]
+                ps = [e for e in xs[index].split('|')
+                      if ('uniprotkb' in e) and ('_' not in e)]
                 if len(ps) == 0:
                     accessions.append([])
                 else:
-                    p = [e for e in xs[index].split('|') if ('uniprotkb' in e) and ('_' not in e)]
+                    p = [e for e in xs[index].split('|')
+                         if ('uniprotkb' in e) and ('_' not in e)]
                     p = [x.split(':')[1] for x in p]
                     accessions.append(p)
         ppis.append(accessions)
 
-    # Iterate through the list of tuples, each tuple being a list of accessions found
-    # within a line for each of the two proteins.
+    # Iterate through the list of tuples, each tuple being a
+    # list of accessions found within a line for each of the two proteins.
     for source_xs, target_xs in ppis:
         for source, target in itertools.product(source_xs, target_xs):
             source = validate_accession(source)
@@ -142,32 +146,31 @@ def mitab_func(fp):
     return sources, targets, labels
 
 
-def generic_to_dataframe(file, parsing_func, drop_nan=True, allow_self_edges=False, allow_duplicates=False,
-                         min_label_count=None, merge=False, exclude_labels=None, output=None):
+def generic_to_dataframe(f_input, parsing_func, drop_nan=True,
+                         allow_self_edges=False, allow_duplicates=False,
+                         min_label_count=None, merge=False,
+                         exclude_labels=None, output=None):
     """
-    Generic function to parse an interaction file using the supplied parsing function into
-    a dataframe object.
+    Generic function to parse an interaction file using the supplied parsing
+    function into a dataframe object.
 
-    :param file: Path to file or open file handle.
+    :param f_input: Path to file or generator of file lines
     :param parsing_func: function that accepts a file pointer object.
     :param drop_nan: Drop entries containing NaN in any column.
     :param allow_self_edges: Remove rows for which source is target.
     :param allow_duplicates: Remove exact copies accross columns.
     :param min_label_count: Remove labels with less than the specified count.
-    :param merge: Merge entries with identical source and target columns during filter.
+    :param merge: Merge entries with identical source and target columns
+                  during filter.
     :param exclude_labels: List of labels to remove from the dataframe.
     :param output: File to write dataframe to.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    fp = file
-    if isinstance(file, str):
-        try:
-            fp = open(file, 'r')
-        except IOError as e:
-            print("Coudln't open the supplied file.\n\n{}".format(e))
-            return make_interaction_frame([], [], [])
+    lines = f_input
+    if isinstance(f_input, str):
+        lines = generic_io(f_input)
 
-    sources, targets, labels = parsing_func(fp)
+    sources, targets, labels = parsing_func(lines)
     interactions = make_interaction_frame(sources, targets, labels)
     interactions = process_interactions(
         interactions=interactions,

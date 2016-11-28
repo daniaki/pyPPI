@@ -1,7 +1,10 @@
-data/*
 .idea/*
 *.tsv
 *.csv
 *.tab
 *.list
 *.dat
+*.obo
+*.txt
+*.mitab
+*.sif

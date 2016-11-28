@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import numpy as np
 import pandas as pd
 from bioservices import KEGG
 from bioservices import UniProt as UniProtMapper
@@ -13,8 +12,9 @@ from data_mining.tools import write_to_edgelist
 Author: Daniel Esposito
 Contact: danielce90@gmail.com
 
-This module provides functionality to query pathways by keyword, extract pathways
-and parse pathways into a :pd.DataFrame: of interactions with reaction labels.
+This module provides functionality to query pathways by keyword, extract
+pathways and parse pathways into a :pd.DataFrame: of interactions
+with reaction labels.
 """
 
 kegg = KEGG(cache=True)
@@ -24,8 +24,7 @@ kegg.settings.TIMEOUT = 1000
 uniprot_mapper.settings.TIMEOUT = 1000
 links_to_include = ['PCrel', 'PPrel', 'ECrel', 'GGrel']
 types_to_include = ['group', 'gene', 'enzyme']
-link_db_swiss_list = 'data/swiss_hsa.list'
-link_db_uniprot_list = 'data/uniprot_hsa.list'
+
 
 motif_pathway_ids = [
     'path:hsa04010',
@@ -73,24 +72,29 @@ def download_pathway_ids(organism):
     return pathways
 
 
-def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False, allow_duplicates=False,
-                          min_label_count=None, uniprot=False, trembl=False, merge=True, verbose=False, output=None):
+def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False,
+                          allow_duplicates=False, min_label_count=None,
+                          uniprot=False, trembl=False, merge=True,
+                          verbose=False, output=None):
     """
     Download and parse a list of pathway ids into a dataframe of interactions.
 
-    :param pathway_ids: List KEGG pathway accessions. For example ['path:hsa00010'].
+    :param pathway_ids: List KEGG pathway accessions. Example ['path:hsa00010']
     :param drop_nan: Drop entries containing NaN in any column.
     :param allow_self_edges: Remove rows for which source is target.
     :param allow_duplicates: Remove exact copies accross columns.
     :param min_label_count: Remove labels with less than the specified count.
     :param uniprot: Map KEGG_IDs to uniprot.
-    :param trembl: Use trembl acc when swissprot in unavailable. Otherwise, kegg_id is considered unmappable.
-    :param merge: Merge entries with identical source and target columns during filter.
+    :param trembl: Use trembl acc when swissprot in unavailable.
+                   Otherwise, kegg_id is considered unmappable.
+    :param merge: Merge entries with identical source and target
+                  columns during filter.
     :param verbose: True to print progress.
     :param output: File to write dataframe to.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    interaction_frames = [pathway_to_dataframe(p_id, verbose) for p_id in pathway_ids]
+    interaction_frames = [pathway_to_dataframe(p_id, verbose)
+                          for p_id in pathway_ids]
     interactions = pd.concat(interaction_frames, ignore_index=True)
     if uniprot:
         interactions = map_to_uniprot(interactions, trembl=trembl)
@@ -111,8 +115,8 @@ def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False, al
 
 def pathway_to_dataframe(pathway_id, verbose=False):
     """
-    Extract protein-protein interaction from KEGG pathway to a pandas DataFrame.
-    NOTE: Interactions will be directionless.
+    Extract protein-protein interaction from KEGG pathway to
+    a pandas DataFrame. NOTE: Interactions will be directionless.
 
     :param: str pathwayId: a valid pathway Id
     :return: DataFrame with columns source, target and label
@@ -128,10 +132,14 @@ def pathway_to_dataframe(pathway_id, verbose=False):
     for rel in res['relations']:
         id1 = rel['entry1']
         id2 = rel['entry2']
-        name1 = res['entries'][[x['id'] for x in res['entries']].index(id1)]['name']
-        name2 = res['entries'][[x['id'] for x in res['entries']].index(id2)]['name']
-        type1 = res['entries'][[x['id'] for x in res['entries']].index(id1)]['type']
-        type2 = res['entries'][[x['id'] for x in res['entries']].index(id2)]['type']
+        name1 = res['entries'][[x['id']
+                                for x in res['entries']].index(id1)]['name']
+        name2 = res['entries'][[x['id']
+                                for x in res['entries']].index(id2)]['name']
+        type1 = res['entries'][[x['id']
+                                for x in res['entries']].index(id1)]['type']
+        type2 = res['entries'][[x['id']
+                                for x in res['entries']].index(id2)]['type']
         reaction_type = rel['name'].replace(' ', '-')
         link_type = rel['link']
 
@@ -157,8 +165,8 @@ def pathway_to_dataframe(pathway_id, verbose=False):
 
 def map_to_uniprot(interactions, trembl=False):
     """
-    Map KEGG_ID accessions into uniprot. Takes the first if multiple accesssion are found, favoring
-    SwissProt over TrEmbl
+    Map KEGG_ID accessions into uniprot. Takes the first if multiple accesssion
+    are found, favoring SwissProt over TrEmbl
 
     :param interactions: DataFrame with columns source, target and label.
     :param trembl: Use Trembl if SwissProt is unavailable.
@@ -166,17 +174,20 @@ def map_to_uniprot(interactions, trembl=False):
     """
     print("Warning: This may take a while if the uniprot cache is empty.")
     filtered_map = {}
-    unique_ids = set(a for a in interactions.source.values) | set(b for b in interactions.target.values)
+    sources = (a for a in interactions.source.values)
+    targets = (b for b in interactions.target.values)
+    unique_ids = set(sources) | set(targets)
     mapping = uniprot_mapper.mapping(fr='KEGG_ID', to='ACC', query=unique_ids)
-    uniprot_reader = UniProtReader()
+    ur = UniProtReader()
 
     for kegg_id, uniprot_ls in mapping.items():
-        status_ls = zip(uniprot_ls, [uniprot_reader.get_review_status(acc) for acc in uniprot_ls])
-        reviewed = [acc for (acc, status) in status_ls if status.lower() == 'reviewed']
-        unreviewed = [acc for (acc, status) in status_ls if status.lower() == 'unreviewed']
+        status_ls = zip(uniprot_ls, [ur.review_status(a) for a in uniprot_ls])
+        reviewed = [a for (a, s) in status_ls if s.lower() == 'reviewed']
+        unreviewed = [a for (a, s) in status_ls if s.lower() == 'unreviewed']
         if len(reviewed) > 0:
             if len(reviewed) > 1:
-                print('Warning: More that one reviewed acc found for {}: {}'.format(kegg_id, reviewed))
+                print('Warning: More that one reviewed '
+                      'acc found for {}: {}'.format(kegg_id, reviewed))
             filtered_map[kegg_id] = reviewed[0]
         else:
             print('Warning: No reviewed acc found for {}.'.format(kegg_id))
@@ -184,11 +195,11 @@ def map_to_uniprot(interactions, trembl=False):
                 filtered_map[kegg_id] = unreviewed[0]
             else:
                 print('Warning: Could not map {}.'.format(kegg_id))
-                filtered_map[kegg_id] = np.NaN
+                filtered_map[kegg_id] = None
 
-    # Remaining kegg_ids that have not mapped to anything go to np.NaN
-    sources = [filtered_map.get(kegg_id, np.NaN) for kegg_id in interactions.source.values]
-    targets = [filtered_map.get(kegg_id, np.NaN) for kegg_id in interactions.target.values]
+    # Remaining kegg_ids that have not mapped to anything go to None
+    sources = [filtered_map.get(kegg_id, None) for kegg_id in sources]
+    targets = [filtered_map.get(kegg_id, None) for kegg_id in targets]
     labels = interactions.label.values
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions

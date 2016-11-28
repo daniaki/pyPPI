@@ -2,21 +2,20 @@
 
 from collections import OrderedDict as Od
 
-import numpy as np
 import data_mining.uniprot as uniprot
 
 from data_mining.tools import make_interaction_frame, process_interactions
 from data_mining.tools import write_to_edgelist
+from data import hprd_id_map, hprd_ptms
 
 """
 Author: Daniel Esposito
 Contact: danielce90@gmail.com
 
-This module provides functionality to mine interactions with labels from HPRD flat files
+This module provides functionality to mine interactions with labels from
+HPRD flat files
 """
 
-HPRD_FLAT = 'data/FLAT_FILES_072010/POST_TRANSLATIONAL_MODIFICATIONS.txt'
-HPRD_MAP = 'data/FLAT_FILES_072010/HPRD_ID_MAPPINGS.txt'
 SUBTYPES_TO_EXCLUDE = []
 
 __PTM_FIELDS = Od()
@@ -35,7 +34,7 @@ __PTM_INDEX = {k: i for (i, k) in enumerate(__PTM_FIELDS.keys())}
 
 __HPRD_XREF_FIELDS = Od()
 __HPRD_XREF_FIELDS['hprd_id'] = 'na'
-__HPRD_XREF_FIELDS['geneSymbol'] = 'na'
+__HPRD_XREF_FIELDS['gene_symbol'] = 'na'
 __HPRD_XREF_FIELDS['nucleotide_accession'] = 'na'
 __HPRD_XREF_FIELDS['protein_accession'] = 'na'
 __HPRD_XREF_FIELDS['entrezgene_id'] = 'na'
@@ -83,21 +82,20 @@ class HPRDXrefEntry(object):
         return self.__repr__()
 
 
-def parse_ptm(ptm_file_path, header=False, col_sep='\t'):
+def parse_ptm(header=False, col_sep='\t'):
     """
     Parse HPRD post_translational_modifications file.
 
-    :param ptm_file_path: Path to file.
     :param header: If file has header. Default is False.
     :param col_sep: Column separator.
     :return: List of PTMEntry objects.
     """
     ptms = []
-    fp = open(ptm_file_path, 'r')
+    lines = hprd_ptms()
     if header:
-        fp.readline()
+        next(lines)
 
-    for line in fp:
+    for line in lines:
         class_fields = __PTM_FIELDS.copy()
         xs = line.strip().split(col_sep)
         for k in __PTM_FIELDS.keys():
@@ -106,25 +104,23 @@ def parse_ptm(ptm_file_path, header=False, col_sep='\t'):
                 data = data.split(',')
             class_fields[k] = data
         ptms.append(PTMEntry(class_fields))
-    fp.close()
     return ptms
 
 
-def parse_hprd_mapping(hprdmap_file_path, header=False, col_sep='\t'):
+def parse_hprd_mapping(header=False, col_sep='\t'):
     """
     Parse a hprd mapping file into HPRDXref Objects.
 
-    :param hprdmap_file_path:
     :param header: If file has header. Default is False.
     :param col_sep: Column separator.
     :return: Dict of HPRDXrefEntry objects indexed by hprd accession.
     """
     xrefs = {}
-    fp = open(hprdmap_file_path, 'r')
+    lines = hprd_id_map()
     if header:
-        fp.readline()
+        next(lines)
 
-    for line in fp:
+    for line in lines:
         class_fields = __HPRD_XREF_FIELDS.copy()
         xs = line.strip().split(col_sep)
         for k in __HPRD_XREF_FIELDS.keys():
@@ -133,12 +129,13 @@ def parse_hprd_mapping(hprdmap_file_path, header=False, col_sep='\t'):
                 data = data.split(',')
             class_fields[k] = data
         xrefs[xs[0]] = HPRDXrefEntry(class_fields)
-    fp.close()
     return xrefs
 
 
-def hprd_to_dataframe(drop_nan=True, allow_self_edges=False, allow_duplicates=False,
-                      exclude_labels=SUBTYPES_TO_EXCLUDE, min_label_count=None, merge=False, output=None):
+def hprd_to_dataframe(drop_nan=True, allow_self_edges=False,
+                      allow_duplicates=False,
+                      exclude_labels=SUBTYPES_TO_EXCLUDE,
+                      min_label_count=None, merge=False, output=None):
     """
     Parse the FLAT_FILES from HPRD into a dataframe.
 
@@ -147,13 +144,14 @@ def hprd_to_dataframe(drop_nan=True, allow_self_edges=False, allow_duplicates=Fa
     :param allow_duplicates: Remove exact copies accross columns.
     :param exclude_labels: List of labels to remove.
     :param min_label_count: Remove labels below this count.
-    :param merge: Merge PPIs with the same source and target but different labels into the same entry.
+    :param merge: Merge PPIs with the same source and target but different
+                  labels into the same entry.
     :param output: File to write dataframe to.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     try:
-        ptms = parse_ptm(HPRD_FLAT)
-        xrefs = parse_hprd_mapping(HPRD_MAP)
+        ptms = parse_ptm()
+        xrefs = parse_hprd_mapping()
     except IOError as e:
         print(e)
         return make_interaction_frame([], [], [])
@@ -164,23 +162,27 @@ def hprd_to_dataframe(drop_nan=True, allow_self_edges=False, allow_duplicates=Fa
     for ptm in ptms:
         label = ptm.modification_type.lower().replace(' ', '-')
         if ptm.enzyme_hprd_id == '-':
-            ptm.enzyme_hprd_id = np.NaN
+            ptm.enzyme_hprd_id = None
         if ptm.substrate_hprd_id == '-':
-            ptm.substrate_hprd_id = np.NaN
+            ptm.substrate_hprd_id = None
         if label == '-':
-            ptm.modification_type = np.NaN
+            ptm.modification_type = None
         sources.append(ptm.enzyme_hprd_id)
         targets.append(ptm.substrate_hprd_id)
         labels.append(label)
 
     # Since there's a many swissprot to hprd_id mapping, priortise P, Q and O.
     for i, source in enumerate(sources):
-        if str(source) != 'nan':
-            sources[i] = sorted(xrefs[source].swissprot_id, key=lambda x: uniprot.UNIPROT_ORD_KEY.get(x, 4))[0]
+        if str(source) is not None:
+            sources[i] = sorted(
+                xrefs[source].swissprot_id,
+                key=lambda x: uniprot.UNIPROT_ORD_KEY.get(x, 4))[0]
 
     for i, target in enumerate(targets):
-        if str(target) != 'nan':
-            targets[i] = sorted(xrefs[target].swissprot_id, key=lambda x: uniprot.UNIPROT_ORD_KEY.get(x, 4))[0]
+        if str(target) is not None:
+            targets[i] = sorted(
+                xrefs[target].swissprot_id,
+                key=lambda x: uniprot.UNIPROT_ORD_KEY.get(x, 4))[0]
 
     interactions = make_interaction_frame(sources, targets, labels)
     interactions = process_interactions(
