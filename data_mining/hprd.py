@@ -1,10 +1,12 @@
 #!/usr/bin/env python
-import numpy as np
+
 from collections import OrderedDict as Od
 
-import uniprot
-from tools import make_interaction_frame, process_interactions
-from tools import write_to_edgelist
+import numpy as np
+import data_mining.uniprot as uniprot
+
+from data_mining.tools import make_interaction_frame, process_interactions
+from data_mining.tools import write_to_edgelist
 
 """
 Author: Daniel Esposito

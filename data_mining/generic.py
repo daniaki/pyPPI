@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 import itertools
-import numpy as np
-from tools import make_interaction_frame, process_interactions
-from tools import write_to_edgelist
 
+import numpy as np
+
+from data_mining.tools import make_interaction_frame, process_interactions
+from data_mining.tools import write_to_edgelist
 
 """
 Author: Daniel Esposito
@@ -14,6 +15,11 @@ data frames from the parsing results.
 """
 
 INVALID_ACCESSIONS = ['', ' ', '-', 'unknown']
+BIOPLEX_V2 = 'data/networks/BioPlex_interactionList_v2.tsv'
+BIOPLEX_V4 = 'data/networks/BioPlex_interactionList_v4.tsv'
+INNATE_CURATED = 'data/networks/innatedb_curated.mitab'
+INNATE_IMPORTED = 'data/networks/innatedb_imported.mitab'
+PINA2_SIF = 'data/networks/PINA2_Homo_sapiens-20140521.sif'
 
 
 def validate_accession(accession):

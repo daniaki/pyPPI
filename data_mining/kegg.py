@@ -1,12 +1,13 @@
 #!/usr/bin/env python
+
+import numpy as np
+import pandas as pd
 from bioservices import KEGG
 from bioservices import UniProt as UniProtMapper
-import pandas as pd
-import numpy as np
+from data_mining.uniprot import UniProt as UniProtReader
 
-from uniprot import UniProt as UniProtReader
-from tools import make_interaction_frame, process_interactions
-from tools import write_to_edgelist
+from data_mining.tools import make_interaction_frame, process_interactions
+from data_mining.tools import write_to_edgelist
 
 """
 Author: Daniel Esposito

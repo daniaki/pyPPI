@@ -1,7 +1,7 @@
 data/*
-networks/*
 .idea/*
 *.tsv
 *.csv
 *.tab
 *.list
+*.dat

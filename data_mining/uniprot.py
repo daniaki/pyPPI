@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import time
 import pandas as pd
 from Bio import SwissProt
