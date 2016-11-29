@@ -17,8 +17,6 @@ http://biopython.org/DIST/docs/api/Bio.SwissProt.Record-class.html for more
 information about how biopython stores records.
 """
 
-SWISSPROT_DAT = 'data/uniprot_sprot_human.dat'
-TREMBL_DAT = 'data/uniprot_trembl_human.dat'
 UNIPROT_ORD_KEY = dict(P=0, Q=1, O=2)
 
 
