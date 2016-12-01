@@ -17,7 +17,7 @@ class MekaClassifier(Meka):
     def __init__(self, *args, **kwargs):
         super(Meka, self).__init__(*args, **kwargs)
 
-    def predict_proba(self, X, method='sigmoid', cv=3):
-        calibratedCV = CalibratedClassifierCV(self, method, cv)
-        calibratedCV.fit(X)
-        return calibratedCV.predict_proba(X)
+    def predict_proba(self, X, y=None, method='sigmoid', cv=3):
+        calibrated = CalibratedClassifierCV(self, method, cv)
+        calibrated.fit(X, y)
+        return calibrated.predict_proba(X)

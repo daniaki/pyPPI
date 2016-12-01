@@ -4,7 +4,7 @@
 Top level module to quick instantiting various classifiers
 """
 
-from sklearn.linear_model import LogisticRegressionCV, ElasticNetCV
+from sklearn.linear_model import LogisticRegression, ElasticNet
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.ensemble import IsolationForest
 from sklearn.ensemble import ExtraTreesClassifier, GradientBoostingClassifier
@@ -18,8 +18,8 @@ from sklearn.naive_bayes import MultinomialNB, GaussianNB, BernoulliNB
 def supported_estimators():
     return {
         'SVC': SVC,
-        'ElasticNetCV': ElasticNetCV,
-        'LogisticRegressionCV': LogisticRegressionCV,
+        'ElasticNet': ElasticNet,
+        'LogisticRegression': LogisticRegression,
         'RandomForestClassifier': RandomForestClassifier,
         'OneClassSVM': OneClassSVM,
         'AdaBoostClassifier': AdaBoostClassifier,
@@ -38,7 +38,7 @@ def supported_estimators():
 
 def make_classifier(algorithm, class_weight='balanced', random_state=None):
     supported = supported_estimators()
-    estimator = supported.get(algorithm, default=LogisticRegressionCV)
+    estimator = supported.get(algorithm, default=LogisticRegression)
     if hasattr(estimator, 'n_jobs'):
         estimator.set_params(**{'n_jobs': 1})
     if hasattr(estimator, 'class_weight'):

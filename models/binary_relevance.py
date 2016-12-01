@@ -18,6 +18,13 @@ class BinaryRelevance(OneVsRestClassifier):
     def __init__(self, *args, **kwargs):
         super(OneVsRestClassifier, self).__init__(*args, **kwargs)
 
+    def score(self, X, y, sample_weight=None):
+        if hasattr(self.estimator, 'score'):
+            return [e.score(X, y, sample_weight) for e in self.estimators_]
+        else:
+            raise AttributeError("Base estimator does not have a "
+                                 "score method.")
+
     def classes(self):
         return self.classes_
 

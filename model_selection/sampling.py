@@ -13,6 +13,46 @@ from sklearn.model_selection._split import _BaseKFold, check_array
 
 
 class IterativeStratifiedKFold(_BaseKFold):
+    """
+    Implementation of the Iterative Stratification algorithm from
+    Sechidis et al. 2011 for mult-label outputs.
+
+    Parameters
+    ----------
+    n_splits : int, default=3
+        Number of folds. Must be at least 2.
+
+    shuffle : boolean, optional
+        Whether to shuffle each stratification of the data before splitting
+        into batches.
+
+    random_state : None, int or RandomState
+        When shuffle=True, pseudo-random number generator state used for
+        shuffling. If None, use default numpy RNG for shuffling.
+
+    Examples
+    --------
+    >> from sklearn.model_selection import StratifiedKFold
+    >> X = np.array([[1, 2], [3, 4], [1, 2], [3, 4]])
+    >> y = np.array([[0,0,1], [1,0,0], [1,0,1], [1,1,0]])
+    >> iskf = IterativeStratifiedKFold(n_splits=2)
+    >> iskf.get_n_splits(X, y)
+    2
+    >> print(iskf)  # doctest: +NORMALIZE_WHITESPACE
+    IterativeStratifiedKFold(n_splits=2, random_state=None, shuffle=False)
+    >> for train_index, test_index in iskf.split(X, y):
+    ...    print("TRAIN:", train_index, "TEST:", test_index)
+    ...    X_train, X_test = X[train_index], X[test_index]
+    ...    y_train, y_test = y[train_index], y[test_index]
+    TRAIN: [0 2] TEST: [1 3]
+    TRAIN: [1 3] TEST: [0 2]
+
+    Notes
+    -----
+    All the folds have size ``trunc(n_samples / n_splits)``, the last one has
+    the complementary.
+
+    """
 
     def __init__(self, n_splits=3, shuffle=False, random_state=None):
         super(IterativeStratifiedKFold, self).__init__(
@@ -67,7 +107,7 @@ class IterativeStratifiedKFold(_BaseKFold):
                 n_samples_for_label.values(), arg_func=min, break_ties=True
             )
             label = list(n_samples_for_label.keys())[index]
-            y_l = [idx for (idx, ys) in enumerate(y) if label in ys]
+            y_l = [idx for (idx, ys) in enumerate(y) if ys[label] == 1]
 
             for idx in y_l:
                 # Ignore indices we have already sampled.
@@ -94,8 +134,9 @@ class IterativeStratifiedKFold(_BaseKFold):
                 sampled_indices.add(idx)
 
                 # Update the sampled labeled statistics of this fold
-                for row_l in row:
-                    subset_c_ij[fold_index][row_l] -= 1
+                for row_l in unique_y:
+                    if row[row_l] == 1:
+                        subset_c_ij[fold_index][row_l] -= 1
 
             # Update the sampled proportion statistics of this fold
             subset_c_j[fold_index] -= 1
@@ -104,7 +145,8 @@ class IterativeStratifiedKFold(_BaseKFold):
         # Test for disjoint-ness:
         for x in folds_idx:
             for y in folds_idx:
-                if id(x) == id(y): continue
+                if id(x) == id(y):
+                    continue
                 assert (len(set(x) & set(y)) == 0)
 
         for i in range(self.n_splits):
@@ -167,7 +209,7 @@ class IterativeStratifiedKFold(_BaseKFold):
         """
         return self.n_splits
 
-    def split(self, X=None, y=None, groups=None):
+    def split(self, X, y=None, groups=None):
         """Generate indices to split data into training and test set.
 
         Parameters
@@ -180,7 +222,7 @@ class IterativeStratifiedKFold(_BaseKFold):
             hence ``np.zeros(n_samples)`` may be used as a placeholder for
             ``X`` instead of actual training data.
 
-        y : array-like, shape (n_samples,)
+        y : array-like, shape (n_samples, n_outputs)
             The target variable for supervised learning problems.
             Stratification is done based on the y labels.
 
