@@ -52,21 +52,12 @@ class KFoldExperiment(object):
         Vectorisers used for predictions on each fold.
     """
 
-    def __init__(self, estimator, vectorizer=None, cv=None,
-                 shuffle=False, random_state=None):
+    def __init__(self, estimator, cv=3, shuffle=True, random_state=None):
         self.base_estimator_ = clone(estimator)
-        if vectorizer:
-            self.base_vectorizer_ = clone(vectorizer)
-        else:
-            self.base_vectorizer_ = None
-
         self.estimators_ = []
-        self.vectorizers_ = []
         self.fitted_ = False
 
-        if not cv:
-            self.cv_ = StratifiedKFold(3, shuffle, random_state)
-        elif isinstance(cv, int):
+        if isinstance(cv, int):
             self.cv_ = StratifiedKFold(cv, shuffle, random_state)
         elif isinstance(cv, KFold):
             self.cv_ = cv
@@ -79,37 +70,6 @@ class KFoldExperiment(object):
                              "instance of StratifiedKFold, KFold or "
                              "IterativeStratifiedKFold.")
 
-    def fit(self, X, y):
-        """
-        Fit the estimators for each fold using the supplied data.
-
-        :param X: numpy array X, shape (n_samples, n_features)
-        :param y: numpy array y, shape (n_samples, n_outputs)
-        :return: self.
-        """
-        if hasattr(self.cv_, 'split'):
-            self.cv_ = list(self.cv_.split(X, y))
-
-        for train_idx, _ in self.cv_:
-            print(train_idx)
-            print(X.shape)
-            X_f = X[train_idx, ]
-            y_f = y[train_idx, ]
-            if self.base_vectorizer_ is not None:
-                vectorizer = clone(self.base_vectorizer_)
-                vectorizer.fit(X_f)
-                X_f = vectorizer.transform(X_f)
-                self.vectorizers_.append(vectorizer)
-            else:
-                self.vectorizers_.append(self.base_vectorizer_)
-
-            estimator = clone(self.base_estimator_)
-            estimator.fit(X_f, y_f)
-            self.estimators_.append(estimator)
-
-        self.fitted_ = True
-        return self
-
     def validation_score(self, X, y, score_func, threshold=None):
         """
         Prodivde the cross-validation scores on a the validation dataset.
@@ -121,30 +81,35 @@ class KFoldExperiment(object):
                represents the positive prediction cut-off.
         :return: List of scores as returned by score_func for each fold.
         """
-        if not self.fitted_:
-            raise ValueError("Estimators have not been fit yet.")
+        if hasattr(self.cv_, 'split'):
+            self.cv_ = list(self.cv_.split(X, y))
 
         scores = []
-        for (_, test_idx), estimator, vectorizer in \
-                zip(self.cv_, self.estimators_, self.vectorizers_):
-            X_f = X[test_idx, ]
-            y_f = y[test_idx, ]
-            if vectorizer:
-                X_f = vectorizer.transform(X_f)
+        for (train_idx, test_idx), estimator in \
+                zip(self.cv_, self.estimators_):
+            X_train = X[train_idx, ]
+            y_train = y[train_idx, ]
+            X_test = X[test_idx, ]
+            y_test = y[test_idx, ]
+
+            estimator = clone(self.base_estimator_)
+            estimator.fit(X_train, y_train)
+            self.estimators_.append(estimator)
 
             if hasattr(estimator, 'predict_proba'):
-                y_pred = estimator.predict_proba(X_f)
+                y_pred = estimator.predict_proba(X_test)
                 if threshold:
                     y_pred = (y_pred >= threshold).astype(int)
             else:
                 print("Warning: {} does not have a `predict_proba` "
                       "implementation. Using `predict` "
                       "instead.".format(type(self.base_estimator_)))
-                y_pred = estimator.predict(X_f)
+                y_pred = estimator.predict(X_test)
 
-            score = score_func(y_f, y_pred)
+            score = score_func(y_test, y_pred)
             scores.append(score)
 
+        self.fitted_ = True
         return scores
 
     def held_out_score(self, X, y, score_func, threshold=None):
@@ -162,10 +127,7 @@ class KFoldExperiment(object):
             raise ValueError("Estimators have not been fit yet.")
 
         scores = []
-        for estimator, vectorizer in zip(self.estimators_, self.vectorizers_):
-            if vectorizer:
-                X = vectorizer.transform(X)
-
+        for estimator in self.estimators_:
             if hasattr(estimator, 'predict_proba'):
                 y_pred = estimator.predict_proba(X)
                 if threshold:
@@ -180,8 +142,3 @@ class KFoldExperiment(object):
             scores.append(score)
 
         return scores
-
-
-
-
-

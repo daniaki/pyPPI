@@ -9,6 +9,69 @@ program do not become coupled to the data parsing process.
 from goatools import obo_parser
 
 
+class PPI(object):
+    """
+    Simple class to contain some basic functionality to represent a PPI
+    instance.
+    """
+
+    def __init__(self, p1, p2):
+        self.__proteins = tuple(sorted((p1, p2)))
+        self.__p1 = self.__proteins[0]
+        self.__p2 = self.__proteins[1]
+
+    @property
+    def p1(self):
+        return self.__p1
+
+    @property
+    def p2(self):
+        return self.__p2
+
+    @property
+    def proteins(self):
+        return self.__proteins
+
+    def __repr__(self):
+        return 'PPI(p1={}, p2={})'.format(self.__p1, self.__p2)
+
+    def __str__(self):
+        return 'PPI(p1={}, p2={})'.format(self.__p1, self.__p2)
+
+    def __hash__(self):
+        return hash(self.__proteins)
+
+    def __reversed__(self):
+        return PPI(self.__p2, self.__p1)
+
+    def __contains__(self, item):
+        return item in self.__proteins
+
+    def __len__(self):
+        return len(self.__proteins)
+
+    def __eq__(self, other):
+        return self.__proteins == other.proteins
+
+    def __ne__(self, other):
+        return not self.__proteins == other.proteins
+
+    def __le__(self, other):
+        return self.__p1 <= other.p1
+
+    def __ge__(self, other):
+        return self.__p1 >= other.p1
+
+    def __lt__(self, other):
+        return self.__p1 < other.p1
+
+    def __gt__(self, other):
+        return self.__p1 > other.p1
+
+    def __iter__(self):
+        return iter(self.__proteins)
+
+
 def line_generator(io_func):
     """
     Decorator to turn a io dealing function into an iterator of file lines.
