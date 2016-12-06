@@ -6,6 +6,7 @@ directory (data) and generally act as datatypes. This is so other parts of the
 program do not become coupled to the data parsing process.
 """
 
+import pandas as pd
 from goatools import obo_parser
 
 
@@ -33,10 +34,10 @@ class PPI(object):
         return self.__proteins
 
     def __repr__(self):
-        return 'PPI(p1={}, p2={})'.format(self.__p1, self.__p2)
+        return 'PPI({}, {})'.format(self.__p1, self.__p2)
 
     def __str__(self):
-        return 'PPI(p1={}, p2={})'.format(self.__p1, self.__p2)
+        return 'PPI({}, {})'.format(self.__p1, self.__p2)
 
     def __hash__(self):
         return hash(self.__proteins)
@@ -201,10 +202,11 @@ def hsa_uniprot_map():
     return hsa_sp
 
 
-def load_go_dag(optional_attrs=['defn', 'is_a', 'relationship', 'part_of']):
+def load_go_dag(optional_attrs=None):
     """Load an obo file into a goatools GODag object"""
+    default = optional_attrs or ['defn', 'is_a', 'relationship', 'part_of']
     return obo_parser.GODag("data/gene_ontology.1_2.obo",
-                            optional_attrs=optional_attrs)
+                            optional_attrs=default)
 
 
 def ipr_shortname_map(lowercase_keys=False):
@@ -271,3 +273,20 @@ def ptm_labels():
             l = line.strip().replace(' ', '-').lower()
             labels.add(l)
     return list(labels)
+
+
+def accession_features():
+    return pd.read_pickle(accession_features_path())
+
+
+def ppi_features():
+    return pd.read_pickle(ppi_features_path())
+
+
+def accession_features_path():
+    return 'data/accession_features.pkl'
+
+
+def ppi_features_path():
+    return 'data/ppi_features.pkl'
+

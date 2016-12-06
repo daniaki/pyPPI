@@ -5,6 +5,8 @@ import pandas as pd
 from Bio import SwissProt
 from Bio import ExPASy
 from urllib.error import HTTPError
+from collections import Iterable
+from enum import Enum
 
 from data import uniprot_sprot, uniprot_trembl
 
@@ -53,7 +55,7 @@ class UniProt(object):
         :return: UniProt object.
         """
         self.records = {}
-        self.taxonid = taxonid.strip().capitalize()
+        self.tax = taxonid.strip().capitalize()
         self.verbose = verbose
         self.retries = retries
         self.wait = wait
@@ -80,30 +82,63 @@ class UniProt(object):
                 result.append(xref[1:])
         return result
 
-    def data_types(self):
-        data_types = {
-            'GO': 		    self.go_term_ids,
-            'GO_NAME': 	    self.go_term_names,
-            'GOE':		    self.go_term_evidence,
-            'PFAM': 	    self.pfam_terms,
-            'INTERPRO':	    self.interpro_terms,
-            'EMBL':		    self.embl_terms,
-            'SEQUENCE':	    self.sequence,
-            'CLASS':	    self.review_status,
-            'ALT':		    self.alt_accesions,
-            'ORG':		    self.organism,
-            'GENE_NAME':    self.gene_name,
-            'KEYWORD':      self.keywords,
-            'TAXONID':      self.taxonid,
-            'ENTRY_NAME':   self.entry_name,
-            'ORG_CODE':     self.organism_code,
-            'REF_RECORDS':  self.references,
-            'RECORD':       self.entry,
-            'GENE_NAME_SYN': self.synonyms,
-            'XREFS':         self.crossrefs,
-            'FEATURES':      self.features
+    @staticmethod
+    def accession_column():
+        return 'accession'
+
+    @staticmethod
+    def sep():
+        return ','
+
+    @staticmethod
+    def data_types():
+        class Allowed(Enum):
+            GO = 'go'
+            GO_NAME = 'go_name'
+            GO_EVD = 'goe'
+            PFAM = 'pfam'
+            INTERPRO = 'interpro'
+            EMBL = 'embl'
+            SEQ = 'sequence'
+            CLASS = 'class'
+            ALT = 'alt'
+            ORG = 'org'
+            GENE = 'gene_name'
+            KW = 'keyword'
+            TAX = 'taxonid'
+            NAME = 'entry_name'
+            ORG_CODE = 'org_code'
+            REF_REC = 'ref_records'
+            REC = 'record'
+            GENE_SYN = 'gene_name_syn'
+            XREF = 'xrefs'
+            FEATURE = 'features'
+        return Allowed
+
+    def _data_func(self):
+        functions = {
+            'go': 		    self.go_term_ids,
+            'go_name': 	    self.go_term_names,
+            'goe':		    self.go_term_evidence,
+            'pfam': 	    self.pfam_terms,
+            'interpro':	    self.interpro_terms,
+            'embl':		    self.embl_terms,
+            'sequence':	    self.sequence,
+            'class':	    self.review_status,
+            'alt':		    self.alt_accesions,
+            'org':		    self.organism,
+            'gene_name':    self.gene_name,
+            'keyword':      self.keywords,
+            'taxonid':          self.taxonid,
+            'entry_name':   self.entry_name,
+            'org_code':     self.organism_code,
+            'ref_records':  self.references,
+            'record':       self.entry,
+            'gene_name_syn': self.synonyms,
+            'xrefs':         self.crossrefs,
+            'features':      self.features
         }
-        return data_types
+        return functions
 
     def entry(self, accession, verbose=False):
         try:
@@ -142,10 +177,10 @@ class UniProt(object):
                     print("Warning: Failed to download "
                           "record for {}".format(accession))
 
-        if record and record.taxonomy_id != [self.taxonid]:
+        if record and record.taxonomy_id != [self.tax]:
             if self.verbose:
                 print("Warning: Taxonomy IDs do not match: {}, {}".format(
-                    record.taxonomy_id, [self.taxonid]))
+                    record.taxonomy_id, [self.tax]))
             record = None
 
         self.records[accession] = record
@@ -278,8 +313,6 @@ class UniProt(object):
         record = self.entry(accession)
         if not record:
             return None
-        print(record.cross_references)
-        print(len(record.cross_references))
         return record.cross_references
 
     def features(self, accession):
@@ -299,7 +332,10 @@ class UniProt(object):
         data = {}
         for d in data_types:
             try:
-                data[d] = self.data_types()[d](accession)
+                annots = self._data_func()[d](accession)
+                if not isinstance(annots, list):
+                    annots = [annots]
+                data[d] = annots
             except KeyError as e:
                 print('Invalid data type: {}'.format(e))
                 continue
@@ -320,7 +356,7 @@ class UniProt(object):
             acc_data_map[p] = self.single_accession_data(p, data_types)
         return acc_data_map
 
-    def features_to_dataframe(self, accessions, data_types, columns=None):
+    def features_to_dataframe(self, accessions, data_types=None, columns=None):
         """
         Wrapper function that will download specified
         datatypes into a dataframe.
@@ -331,7 +367,9 @@ class UniProt(object):
                         names for the dataframe.
         :return: DataFrame of accessions and acquired data.
         """
-        unique = set(accessions)
+        unique = set(list(accessions))
+        if data_types is None:
+            data_types = list(self._data_func().keys())
         features = self.batch_accession_data(unique, data_types)
         column_keys = data_types if not columns else list(columns.values())
         dataframe_data = {k: [] for k in column_keys}
@@ -344,6 +382,6 @@ class UniProt(object):
                 column_key = k if not columns else columns[k]
                 dataframe_data[column_key].append(v)
 
-        dataframe_data['ID'] = list(features.keys())
+        dataframe_data[self.accession_column()] = list(features.keys())
         df = pd.DataFrame(data=dataframe_data)
         return df

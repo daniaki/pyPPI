@@ -15,6 +15,24 @@ from functools import reduce
 #                  UTILITY OPERATIONS
 #
 # ------------------------------------------------------ #
+def group_go_by_ontology(data, dag, sep=','):
+    if isinstance(data, str):
+        p_go = [t.upper() for t in data.split(sep) if 'GO' in t.upper()]
+    else:
+        p_go = [t.upper() for t in data if 'GO' in t.upper()]
+
+    # Separate the namespaces in the go terms.
+    p_go_cc = list(filter(
+        lambda x: id_to_node(x, dag).namespace == 'cellular_component', p_go))
+    p_go_bp = list(filter(
+        lambda x: id_to_node(x, dag).namespace == 'biological_process', p_go))
+    p_go_mf = list(filter(
+        lambda x: id_to_node(x, dag).namespace == 'molecular_function', p_go))
+
+    assert len(set(p_go_cc) & set(p_go_bp) & set(p_go_mf)) == 0
+    return {'cc': p_go_cc, 'bp': p_go_bp, 'mf': p_go_mf}
+
+
 def get_relationship_terms(dag, term, rs_type='part_of'):
     part_of_terms = set()
     try:
