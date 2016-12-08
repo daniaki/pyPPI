@@ -155,6 +155,11 @@ class KFoldExperiment(object):
                              "IterativeStratifiedKFold.")
         self.n_splits = self.cv_.n_splits
 
+    def _fit(self, X, y):
+        estimator = clone(self.base_estimator_)
+        estimator.fit(X, y)
+        return estimator
+
     def fit(self, X, y):
         """
          Top-level function to train the estimators over each fold, without
@@ -252,3 +257,33 @@ class KFoldExperiment(object):
         if mean:
             return np.mean(scores)
         return np.asarray(scores)
+
+
+# -------------------------------- TESTS ------------------------------------ #
+def test_kfold():
+    from sklearn.datasets import make_multilabel_classification
+    from model_selection.sampling import IterativeStratifiedKFold
+    from models.binary_relevance import BinaryRelevance
+    from sklearn.linear_model import LogisticRegression
+
+    X, y = make_multilabel_classification()
+    est = [LogisticRegression() for _ in range(5)]
+    est = BinaryRelevance(est)
+    kf = KFoldExperiment(est, cv=IterativeStratifiedKFold())
+    kf.fit(X, y)
+    return kf
+
+
+def test_bs():
+    from sklearn.datasets import make_multilabel_classification
+    from model_selection.sampling import IterativeStratifiedKFold
+    from models.binary_relevance import BinaryRelevance
+    from sklearn.linear_model import LogisticRegression
+
+    X, y = make_multilabel_classification()
+    est = [LogisticRegression() for _ in range(5)]
+    est = BinaryRelevance(est)
+    kf = KFoldExperiment(est, cv=IterativeStratifiedKFold())
+    bs = Bootstrap(kf, n_iter=3, verbose=True)
+    bs.fit(X, y)
+    return bs

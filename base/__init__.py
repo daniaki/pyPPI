@@ -73,8 +73,18 @@ def create_seeds(size):
 
 def chunks(ls, n):
     """Yield successive n-sized chunks from l."""
-    for i in range(0, len(ls), n):
-        yield ls[i:i + n]
+    if n == 0:
+        return []
+    if n == 1:
+        return ls
+
+    ranges = list(range(0, len(ls), int(np.ceil(len(ls)/n))))
+    tup_ranges = []
+    for i in range(len(ranges)-1):
+        tup_ranges.append((ranges[i], ranges[i+1]))
+    tup_ranges.append((ranges[i+1], len(ls) + 1))
+    for (i, j) in tup_ranges:
+        yield ls[i: j]
 
 
 def igraph_from_tuples(v_names):

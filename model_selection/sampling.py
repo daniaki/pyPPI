@@ -7,6 +7,8 @@ This is where data sampling functions and classes can be found
 import warnings
 import numpy as np
 
+from base import chunks
+
 from sklearn.utils import check_random_state
 from sklearn.utils.fixes import bincount
 from sklearn.model_selection._split import _BaseKFold, check_array
@@ -82,10 +84,22 @@ class IterativeStratifiedKFold(_BaseKFold):
         r = 1 / self.n_splits
         range_folds = range(self.n_splits)
         folds_idx = [[] for _ in range_folds]
-        n_samples = y.shape[0]
-        test_idx = np.zeros(n_samples, dtype=int)
-        unique_y, y_inversed = np.unique(y, return_inverse=True)
-        y_counts = bincount(y_inversed)
+        rng = check_random_state(self.random_state)
+        test_idx = np.zeros(y.shape[0], dtype=int)
+
+        # Unlabelled samples removed and split up last.
+        no_label_y = [idx for idx, s in enumerate(y) if sum(s) == 0]
+        labelled_y = [idx for idx, s in enumerate(y) if sum(s) != 0]
+        assert len(set(no_label_y) & set(labelled_y)) == 0
+
+        labelled_y = y[labelled_y, :]
+        n_samples = labelled_y.shape[0]
+        unique_y = np.asarray(range(labelled_y.shape[1]))
+        y_counts = np.zeros((len(unique_y),), dtype=int)
+        for c in unique_y:
+            y_counts[c] = np.sum(labelled_y[:, c])
+        unique_y = np.asarray([s for s, c in zip(unique_y, y_counts) if c > 0])
+        y_counts = y_counts[y_counts != 0]
 
         # Calculate the desired number of samples for each subset
         subset_c_j = np.asarray([n_samples*r for _ in range_folds])
@@ -107,10 +121,13 @@ class IterativeStratifiedKFold(_BaseKFold):
                 n_samples_for_label.values(), arg_func=min, break_ties=True
             )
             label = list(n_samples_for_label.keys())[index]
-            y_l = [idx for (idx, ys) in enumerate(y) if ys[label] == 1]
+            y_l = [idx for (idx, ys) in enumerate(labelled_y)
+                   if ys[label] == 1]
 
             for idx in y_l:
                 # Ignore indices we have already sampled.
+                if idx in no_label_y:
+                    raise ValueError("wtf")
                 if idx in sampled_indices:
                     continue
 
@@ -129,7 +146,7 @@ class IterativeStratifiedKFold(_BaseKFold):
                 fold_index = fold_indices[index]
 
                 # Enter the instance to the proper fold
-                row = y[idx]
+                row = labelled_y[idx]
                 folds_idx[fold_index].append(idx)
                 sampled_indices.add(idx)
 
@@ -142,22 +159,28 @@ class IterativeStratifiedKFold(_BaseKFold):
             subset_c_j[fold_index] -= 1
             completed_labels.append(label)
 
+        # # Split up the unlablled samples
+        rng.shuffle(no_label_y)
+        print(no_label_y)
+        for i, c in enumerate(chunks(no_label_y, self.n_splits)):
+            print(folds_idx[i])
+            print(c)
+            folds_idx[i] += c
+
         # Test for disjoint-ness:
-        for x in folds_idx:
-            for y in folds_idx:
-                if id(x) == id(y):
+        for a in folds_idx:
+            for b in folds_idx:
+                if id(a) == id(b):
                     continue
-                assert (len(set(x) & set(y)) == 0)
+                assert len(set(a) & set(b)) == 0
 
         for i in range(self.n_splits):
             idx = np.asarray(folds_idx[i], dtype=int)
             test_idx[idx] = i
-
         return test_idx
 
     def _make_test_folds(self, X, y=None, groups=None):
         rng = check_random_state(self.random_state)
-
         # shuffle X and y here.
         if self.shuffle:
             Xy = list(zip(X,y))
