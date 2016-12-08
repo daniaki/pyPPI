@@ -8,18 +8,25 @@ and a class for housing statistics which wraps around a pandas dataframe.
 import numpy as np
 import pandas as pd
 
+import sklearn.metrics as m
 
-def multilabel_score_func(score_func, y, y_pred, *args, **kwargs):
+
+def multilabel_score_func(y, y_pred, score_func, func_args=None):
     """
     wrapper to turn any scoring function within sklearn into a multi-label
     function that can deal with multi-label indicator arrays.
     """
     scores = []
+    func_args = {} or func_args
     n_classes = y.shape[1]
     for i in range(n_classes):
-        score = score_func(y[:, i], y_pred[:, i], *args, **kwargs)
+        score = score_func(y[:, i], y_pred[:, i], **func_args)
         scores.append(score)
     return scores
+
+
+def ml_fbeta(y, y_pred, func_args=None):
+    return multilabel_score_func(y, y_pred, m.fbeta_score, func_args)
 
 
 class Statistics(object):

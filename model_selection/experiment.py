@@ -3,7 +3,7 @@
 import numpy as np
 from sklearn.base import clone
 from sklearn.model_selection import StratifiedKFold, KFold
-from sklearn.externals.joblib import Parallel
+from sklearn.externals.joblib import Parallel, delayed
 from sklearn.utils.validation import check_is_fitted
 
 from base import create_seeds
@@ -37,6 +37,12 @@ class Bootstrap(object):
         The fitted KFoldExperiment objects.
     """
 
+    def _check_fitted(self):
+        if not hasattr(self, 'fitted_'):
+            raise AttributeError("Please use the `fit` function before"
+                                 "attempting to score performance.")
+        return
+
     def __init__(self, kfold_experiemnt, n_iter, n_jobs=1, verbose=False):
         seeds = create_seeds(n_iter)
         self.n_iter = n_iter
@@ -44,12 +50,14 @@ class Bootstrap(object):
         self.verbose = verbose
         self.experiments = [kfold_experiemnt.clone(s) for s in seeds]
 
-    def _fit_kfold(self, X, y, i):
+    def _fit(self, X, y, i):
         return self.experiments[i].fit(X, y)
 
     def _scores(self, X, y, i, dispatch_func, score_funcs, thresholds, mean):
         results = []
-        for (f, t), idx in enumerate(zip(score_funcs, thresholds)):
+        print(score_funcs)
+        print(thresholds)
+        for idx, (f, t) in enumerate(zip(score_funcs, thresholds)):
             scores = getattr(self.experiments[i], dispatch_func)(
                 X, y, f, t, mean
             )
@@ -57,29 +65,30 @@ class Bootstrap(object):
         return np.asarray(results)
 
     def fit(self, X, y):
+        fit_func = delayed(self._fit)
         self.experiments = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
                                     backend='multiprocessing')(
-            self._fit_kfold(X, y, i) for i in range(self.n_iter)
+            fit_func(X, y, i) for i in range(self.n_iter)
         )
         self.fitted_ = True
         return self
 
     def validation_scores(self, X, y, score_funcs, thresholds, mean=False):
-        check_is_fitted(self, '_fitted')
+        self._check_fitted()
+        score = delayed(self._scores)
         results = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
                            backend='multiprocessing')(
-            self._scores(X, y, i, 'validation_score', score_funcs,
-                         thresholds, mean)
+            score(X, y, i, 'validation_score', score_funcs, thresholds, mean)
             for i in range(self.n_iter)
         )
         return np.asarray(results)
 
     def held_out_scores(self, X, y,  score_funcs, thresholds, mean=False):
-        check_is_fitted(self, '_fitted')
+        self._check_fitted()
+        score = delayed(self._scores)
         results = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
                            backend='multiprocessing')(
-            self._scores(X, y, i, 'held_out_score', score_funcs,
-                         thresholds, mean)
+            score(X, y, i, 'held_out_score', score_funcs, thresholds, mean)
             for i in range(self.n_iter)
         )
         return np.asarray(results)
@@ -126,8 +135,8 @@ class KFoldExperiment(object):
     """
 
     def clone(self, random_state):
-        cv = clone(self.cv_)
-        cv.random_state = random_state
+        klass = self.cv_.__class__
+        cv = klass(**self.cv_.__dict__)
         return KFoldExperiment(
             estimator=clone(self.base_estimator_),
             cv=cv,
@@ -183,7 +192,7 @@ class KFoldExperiment(object):
         self.fitted_ = True
         return self
 
-    def validation_score(self, X, y, score_func, threshold=None, mean=False):
+    def validation_score(self, X, y, score_func, threshold=0.5, mean=False):
         """
         Prodivde the cross-validation scores on a the validation dataset.
 
@@ -200,29 +209,28 @@ class KFoldExperiment(object):
         :return: List of scores as returned by score_func for each fold.
         """
         scores = []
-        check_is_fitted(self, '_fitted')
+        check_is_fitted(self, 'fitted_')
         for (_, test_idx), estimator in zip(self.cv_, self.estimators_):
             X_test = X[test_idx, ]
             y_test = y[test_idx, ]
 
             if hasattr(estimator, 'predict_proba'):
                 y_pred = estimator.predict_proba(X_test)
-                if threshold:
-                    y_pred = (y_pred >= threshold).astype(int)
+                y_pred = (y_pred >= threshold).astype(int)
             else:
                 print("Warning: {} does not have a `predict_proba` "
                       "implementation. Using `predict` "
                       "instead.".format(type(estimator)))
                 y_pred = estimator.predict(X_test)
 
-            score = score_func(y_test, y_pred)
+            score = score_func(y=y_test, y_pred=y_pred)
             scores.append(score)
 
         if mean:
-            return np.mean(scores)
+            return np.mean(scores, axis=0)
         return np.asarray(scores)
 
-    def held_out_score(self, X, y, score_func, threshold=None, mean=False):
+    def held_out_score(self, X, y, score_func, threshold=0.5, mean=False):
         """
         Prodivde the cross-validation scores on a held out dataset.
 
@@ -239,23 +247,22 @@ class KFoldExperiment(object):
         :return: List of scores as returned by score_func for each fold.
         """
         scores = []
-        check_is_fitted(self, '_fitted')
+        check_is_fitted(self, 'fitted_')
         for estimator in self.estimators_:
             if hasattr(estimator, 'predict_proba'):
                 y_pred = estimator.predict_proba(X)
-                if threshold:
-                    y_pred = (y_pred >= threshold).astype(int)
+                y_pred = (y_pred >= threshold).astype(int)
             else:
                 print("Warning: {} does not have a `predict_proba` "
                       "implementation. Using `predict` "
                       "instead.".format(type(self.base_estimator_)))
                 y_pred = estimator.predict(X)
 
-            score = score_func(y, y_pred)
+            score = score_func(y=y, y_pred=y_pred)
             scores.append(score)
 
         if mean:
-            return np.mean(scores)
+            return np.mean(scores, axis=0)
         return np.asarray(scores)
 
 
@@ -271,7 +278,7 @@ def test_kfold():
     est = BinaryRelevance(est)
     kf = KFoldExperiment(est, cv=IterativeStratifiedKFold())
     kf.fit(X, y)
-    return kf
+    return kf, X, y
 
 
 def test_bs():
@@ -284,6 +291,6 @@ def test_bs():
     est = [LogisticRegression() for _ in range(5)]
     est = BinaryRelevance(est)
     kf = KFoldExperiment(est, cv=IterativeStratifiedKFold())
-    bs = Bootstrap(kf, n_iter=3, verbose=True)
+    bs = Bootstrap(kf, n_jobs=3, n_iter=3, verbose=True)
     bs.fit(X, y)
-    return bs
+    return bs, X, y
