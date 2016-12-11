@@ -1,13 +1,5 @@
 #!/usr/bin/env python
 
-import pandas as pd
-from bioservices import KEGG
-from bioservices import UniProt as UniProtMapper
-from data_mining.uniprot import UniProt as UniProtReader
-
-from data_mining.tools import make_interaction_frame, process_interactions
-from data_mining.tools import write_to_edgelist
-
 """
 Author: Daniel Esposito
 Contact: danielce90@gmail.com
@@ -17,6 +9,14 @@ pathways and parse pathways into a :pd.DataFrame: of interactions
 with reaction labels.
 """
 
+import pandas as pd
+from bioservices import KEGG
+from bioservices import UniProt as UniProtMapper
+from data_mining.uniprot import UniProt as UniProtReader
+
+from data_mining.tools import make_interaction_frame, process_interactions
+from data_mining.tools import write_to_edgelist
+
 kegg = KEGG(cache=True)
 uniprot_mapper = UniProtMapper(cache=True)
 kegg.organism = 'hsa'
@@ -24,7 +24,6 @@ kegg.settings.TIMEOUT = 1000
 uniprot_mapper.settings.TIMEOUT = 1000
 links_to_include = ['PCrel', 'PPrel', 'ECrel', 'GGrel']
 types_to_include = ['group', 'gene', 'enzyme']
-
 
 motif_pathway_ids = [
     'path:hsa04010',

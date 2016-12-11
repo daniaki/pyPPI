@@ -1,23 +1,21 @@
 #!/usr/bin/env python
 
+"""
+Author: Daniel Esposito
+Date: 27/12/2015
+
+Purpose: Wrapper class for accessing uniprot records using biopython. See
+http://biopython.org/DIST/docs/api/Bio.SwissProt.Record-class.html for more
+information about how biopython stores records.
+"""
+
 import time
 import pandas as pd
 from Bio import SwissProt
 from Bio import ExPASy
 from urllib.error import HTTPError
-from collections import Iterable
 from enum import Enum
-
 from data import uniprot_sprot, uniprot_trembl
-
-"""
-Author: Daniel Esposito
-Date: 27/12/2015
-
-Purpose: Wrapper class for accessing uniprot records using biopython. See 
-http://biopython.org/DIST/docs/api/Bio.SwissProt.Record-class.html for more 
-information about how biopython stores records.
-"""
 
 UNIPROT_ORD_KEY = dict(P=0, Q=1, O=2)
 

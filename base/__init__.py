@@ -87,46 +87,64 @@ def chunks(ls, n):
         yield ls[i: j]
 
 
-def igraph_from_tuples(v_names):
-    tmp = tempfile.mktemp(suffix='.ncol', prefix='graph_', dir='tmp/')
-    fp = open(tmp, "w")
-    for (name_a, name_b) in v_names:
-        fp.write("{} {}\n".format(name_a, name_b))
-    fp.close()
-    # will store node names under the 'name' vertex attribute.
-    g = igraph.read(tmp, format='ncol', directed=False, names=True)
-    os.remove(tmp)
-    return g
+class PPI(object):
+    """
+    Simple class to contain some basic functionality to represent a PPI
+    instance.
+    """
 
+    def __init__(self, p1, p2):
+        self.__proteins = tuple(sorted((p1, p2)))
+        self.__p1 = self.__proteins[0]
+        self.__p2 = self.__proteins[1]
 
-def igraph_vid_attr_table(igraph_g, attr):
-    vid_prop_lookup = {}
-    for v in igraph_g.vs:
-        data = v[attr]
-        vid_prop_lookup[v.index] = data
-    return vid_prop_lookup
+    @property
+    def p1(self):
+        return self.__p1
 
+    @property
+    def p2(self):
+        return self.__p2
 
-def write_cytoscape_attr_file(attr_name, attr_tuples, edge, fp):
-    if len(attr_tuples) == 0:
-        raise ValueError("attr_tuples must not be empty.")
-    if edge:
-        if len(attr_tuples[0]) != 3:
-            raise ValueError("Tuples must have length 3 for edge attr files.")
-        fp.write('Name\t{}\n'.format(attr_name.replace(" ", '-')))
-        fp.write('\n'.join(('{} (pp) {}\t{}'.format(a, b, attr)
-                            for (a, b, attr) in attr_tuples)))
-    else:
-        if len(attr_tuples[0]) != 2:
-            raise ValueError("Tuples must have length 2 for node attr files.")
-        fp.write('Name\t{}\n'.format(attr_name.replace(" ", '-')))
-        fp.write('\n'.join(('{}\t{}'.format(a, attr)
-                            for (a, attr) in attr_tuples)))
-    fp.close()
+    @property
+    def proteins(self):
+        return self.__proteins
 
+    def __repr__(self):
+        return 'PPI({}, {})'.format(self.__p1, self.__p2)
 
-def write_interactions(tuples, fp):
-    fp.write('source\ttarget\tinteraction\n')
-    fp.write('\n'.join(('{}\t{}\tpp'.format(a, b) for (a, b) in tuples)))
-    fp.close()
+    def __str__(self):
+        return 'PPI({}, {})'.format(self.__p1, self.__p2)
 
+    def __hash__(self):
+        return hash(self.__proteins)
+
+    def __reversed__(self):
+        return PPI(self.__p2, self.__p1)
+
+    def __contains__(self, item):
+        return item in self.__proteins
+
+    def __len__(self):
+        return len(self.__proteins)
+
+    def __eq__(self, other):
+        return self.__proteins == other.proteins
+
+    def __ne__(self, other):
+        return not self.__proteins == other.proteins
+
+    def __le__(self, other):
+        return self.__p1 <= other.p1
+
+    def __ge__(self, other):
+        return self.__p1 >= other.p1
+
+    def __lt__(self, other):
+        return self.__p1 < other.p1
+
+    def __gt__(self, other):
+        return self.__p1 > other.p1
+
+    def __iter__(self):
+        return iter(self.__proteins)

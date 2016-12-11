@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from collections import Counter
-import pandas as pd
-
 """
 Author: Daniel Esposito
 Contact: danielce90@gmail.com
@@ -10,6 +7,9 @@ Contact: danielce90@gmail.com
 This module provides functionality to perform filtering and processing on
 interaction dataframes.
 """
+
+from collections import Counter
+import pandas as pd
 
 SOURCE = 'source'
 TARGET = 'target'

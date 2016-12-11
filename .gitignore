@@ -1,4 +1,5 @@
 .idea/*
+ext/*
 *.tsv
 *.csv
 *.tab

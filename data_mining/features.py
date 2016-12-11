@@ -8,7 +8,8 @@ features from PPIs, including feature induction as per Maestechze et al., 2011
 import pandas as pd
 from itertools import chain
 
-from data import PPI, accession_features, ppi_features
+from data import load_accession_features, load_ppi_features
+from base import PPI
 from data import accession_features_path, ppi_features_path
 from data_mining.uniprot import UniProt
 from data_mining.ontology import get_up_to_lca, group_go_by_ontology
@@ -43,8 +44,8 @@ class AnnotationExtractor(object):
         self._cache = cache
         if cache:
             try:
-                self._accession_df = accession_features()
-                self._ppi_df = ppi_features()
+                self._accession_df = load_accession_features()
+                self._ppi_df = load_ppi_features()
             except IOError:
                 print('Warning: No cache files found.')
 

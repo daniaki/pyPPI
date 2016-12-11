@@ -1,5 +1,13 @@
 #!/usr/bin/env python
 
+"""
+Author: Daniel Esposito
+Contact: danielce90@gmail.com
+
+This module provides functionality to mine interactions with labels from
+HPRD flat files
+"""
+
 from collections import OrderedDict as Od
 
 import data_mining.uniprot as uniprot
@@ -8,13 +16,6 @@ from data_mining.tools import make_interaction_frame, process_interactions
 from data_mining.tools import write_to_edgelist
 from data import hprd_id_map, hprd_ptms
 
-"""
-Author: Daniel Esposito
-Contact: danielce90@gmail.com
-
-This module provides functionality to mine interactions with labels from
-HPRD flat files
-"""
 
 SUBTYPES_TO_EXCLUDE = []
 

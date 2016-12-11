@@ -4,6 +4,7 @@
 This module contains functions to construct a binary relevance classifier
 using the OVR estimaor in sklearn
 """
+
 import array
 import numpy as np
 import scipy.sparse as sp

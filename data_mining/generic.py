@@ -1,11 +1,4 @@
 #!/usr/bin/env python
-import itertools
-
-import numpy as np
-
-from data_mining.tools import make_interaction_frame, process_interactions
-from data_mining.tools import write_to_edgelist
-from data import generic_io
 
 """
 Author: Daniel Esposito
@@ -14,6 +7,13 @@ Date: 27/12/2015
 Purpose: Generic parsing functions for various file formats and the
 functionality to create data frames from the parsing results.
 """
+
+import itertools
+import numpy as np
+
+from data_mining.tools import make_interaction_frame, process_interactions
+from data_mining.tools import write_to_edgelist
+from data import generic_io
 
 INVALID_ACCESSIONS = ['', ' ', '-', 'unknown']
 
