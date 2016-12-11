@@ -71,31 +71,73 @@ class Bootstrap(object):
 
     def validation_scores(self, X, y, score_funcs, thresholds,
                           mean_kf=False, mean_bs=False):
+        """
+        Prodivde the cross-validation scores on a the validation dataset.
+
+        :param X: numpy array X, shape (n_samples, n_features)
+        :param y: numpy array y, shape (n_samples, n_outputs)
+        :param y: numpy array y, shape (n_samples, n_outputs)
+        :param score_funcs: function
+            Method with signature score_func(y, y_pred)
+        :param thresholds: float, optional
+            If using probability predictons, the threshod represents the
+            positive prediction cut-off.
+        :param mean_kf: Average over the iterations.
+        :param mean_bs: Average over the folds.
+
+        :return: array-like, shape (a, b, c, d)
+            a: `self.n_iter` or 1 if mean_bs is True
+            b: `n_splits` in `kfold_experiemnt` or 1 if mean_kf is True
+            c: number of score functions passed in `score_funcs`
+            d: number of classes for multi-label, multiclass `y`
+        """
         self._check_fitted()
         score = delayed(self._scores)
-        results = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                           backend='multiprocessing')(
+        scores = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
+                          backend='multiprocessing')(
             score(X, y, i, 'validation_score', score_funcs,
                   thresholds, mean_kf)
             for i in range(self.n_iter)
         )
+        scores = np.asarray(scores)[:, 0, :, :, :]
         if mean_bs:
-            return np.mean(np.asarray(results), axis=0)
-        return np.asarray(results)
+            scores = [np.mean(scores, axis=0)]
+        return np.asarray(scores)
 
     def held_out_scores(self, X, y,  score_funcs, thresholds,
                         mean_kf=False, mean_bs=False):
+        """
+        Prodivde the cross-validation scores on a the held-out dataset.
+
+        :param X: numpy array X, shape (n_samples, n_features)
+        :param y: numpy array y, shape (n_samples, n_outputs)
+        :param y: numpy array y, shape (n_samples, n_outputs)
+        :param score_funcs: function
+            Method with signature score_func(y, y_pred)
+        :param thresholds: float, optional
+            If using probability predictons, the threshod represents the
+            positive prediction cut-off.
+        :param mean_kf: Average over the iterations.
+        :param mean_bs: Average over the folds.
+
+        :return: array-like, shape (a, b, c, d)
+            a: `self.n_iter` or 1 if mean_bs is True
+            b: `n_splits` in `kfold_experiemnt` or 1 if mean_kf is True
+            c: number of score functions passed in `score_funcs`
+            d: number of classes for multi-label, multiclass `y`
+        """
         self._check_fitted()
         score = delayed(self._scores)
-        results = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                           backend='multiprocessing')(
+        scores = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
+                          backend='multiprocessing')(
             score(X, y, i, 'held_out_score', score_funcs,
                   thresholds, mean_kf)
             for i in range(self.n_iter)
         )
+        scores = np.asarray(scores)[:, 0, :, :, :]
         if mean_bs:
-            return np.mean(np.asarray(results), axis=0)
-        return np.asarray(results)
+            scores = [np.mean(scores, axis=0)]
+        return np.asarray(scores)
 
 
 class KFoldExperiment(object):
@@ -229,8 +271,8 @@ class KFoldExperiment(object):
         self.fitted_ = True
         return self
 
-    def validation_score(self, X, y, score_funcs=accuracy_score,
-                         thresholds=0.5, mean=False):
+    def validation_score(self, X, y, score_funcs=None, thresholds=None,
+                         mean=False):
         """
         Prodivde the cross-validation scores on a the validation dataset.
 
@@ -244,9 +286,17 @@ class KFoldExperiment(object):
         :param mean: booleam, optional
             Return the averaged result accross the folds.
 
-        :return: List of scores as returned by score_func for each fold.
+        :return: array-like, shape (a, b, c, d)
+            a: n_iterations=1
+            b: `self.n_splits` or 1 if mean is True
+            c: number of score functions passed in `score_funcs`
+            d: number of classes for multi-label, multiclass `y`
         """
         check_is_fitted(self, 'fitted_')
+        if not score_funcs:
+            score_funcs = [accuracy_score]
+        if not thresholds:
+            thresholds = [0.5]
         score = delayed(self._score_single)
         scores = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
                           backend='multiprocessing')(
@@ -254,11 +304,11 @@ class KFoldExperiment(object):
             for (_, test_idx), estimator in zip(self.cv_, self.estimators_)
         )
         if mean:
-            return np.mean(scores, axis=0)
-        return np.asarray(scores)
+            scores = [np.mean(scores, axis=0)]
+        return np.asarray([scores])
 
-    def held_out_score(self, X, y, score_funcs=accuracy_score,
-                         thresholds=0.5, mean=False):
+    def held_out_score(self, X, y, score_funcs=None, thresholds=None,
+                       mean=False):
         """
         Prodivde the cross-validation scores on a held out dataset.
 
@@ -272,9 +322,17 @@ class KFoldExperiment(object):
         :param mean: booleam, optional
             Return the averaged result accross the folds.
 
-        :return: List of scores as returned by score_func for each fold.
+        :return: array-like, shape (a, b, c, d)
+            a: n_iterations=1
+            b: `self.n_splits` or 1 if mean is True
+            c: number of score functions passed in `score_funcs`
+            d: number of classes for multi-label, multiclass `y`
         """
         check_is_fitted(self, 'fitted_')
+        if not score_funcs:
+            score_funcs = [accuracy_score]
+        if not thresholds:
+            thresholds = [0.5]
         score = delayed(self._score_single)
         scores = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
                           backend='multiprocessing')(
@@ -282,8 +340,8 @@ class KFoldExperiment(object):
             for estimator in self.estimators_
         )
         if mean:
-            return np.mean(scores, axis=0)
-        return np.asarray(scores)
+            scores = [np.mean(scores, axis=0)]
+        return np.asarray([scores])
 
 
 # -------------------------------- TESTS ------------------------------------ #
@@ -296,15 +354,14 @@ def test_kfold():
     from sklearn.metrics import f1_score
 
     scorer = MultilabelScorer(f1_score)
-    X, y = make_multilabel_classification(sparse=True,
-                                          return_indicator='sparse')
+    X, y = make_multilabel_classification()
     est = [LogisticRegression() for _ in range(5)]
     est = BinaryRelevance(est)
     kf = KFoldExperiment(est, cv=IterativeStratifiedKFold(), n_jobs=3,
                          verbose=True)
     kf.fit(X, y)
-    val = kf.validation_score(X, y, scorer, 0.5)
-    hol = kf.held_out_score(X, y, scorer, 0.5)
+    val = kf.validation_score(X, y, [scorer, scorer], [0.5, 0.5], True)
+    hol = kf.held_out_score(X, y, [scorer, scorer], [0.5, 0.5], False)
     return kf, X, y, scorer, val, hol
 
 
@@ -323,6 +380,6 @@ def test_boots():
     kf = KFoldExperiment(est, cv=IterativeStratifiedKFold())
     bs = Bootstrap(kf, n_jobs=3, n_iter=3, verbose=True)
     bs.fit(X, y)
-    val = bs.validation_scores(X, y, [scorer, scorer, scorer], [0.5, 0.7, 0.8])
-    hol = bs.held_out_scores(X, y, [scorer, scorer, scorer], [0.5, 0.7, 0.8])
+    val = bs.validation_scores(X, y, [scorer, scorer], [0.5, 0.8])
+    hol = bs.held_out_scores(X, y, [scorer, scorer], [0.5, 0.8], True, False)
     return bs, X, y, scorer, val, hol

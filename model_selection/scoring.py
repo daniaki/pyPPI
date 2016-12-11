@@ -62,10 +62,16 @@ class Statistics(object):
 
     def update_statistics(self, label, s_type, data):
         _df = pd.DataFrame(columns=self._columns)
-        _df[self._label_col] = [label]
-        _df[self._data_col] = [data]
-        _df[self._statistic_col] = [s_type]
-        print(_df)
+        if isinstance(data, list) or isinstance(data, np.ndarray):
+            n = len(data)
+            _df[self._label_col] = [label for label in np.repeat(label, n)]
+            _df[self._data_col] = [d for d in data]
+            _df[self._statistic_col] = [s_type for s_type
+                                        in np.repeat(s_type, n)]
+        else:
+            _df[self._label_col] = [label]
+            _df[self._data_col] = [data]
+            _df[self._statistic_col] = [s_type]
         self._statistics = pd.concat(
             [self._statistics, _df], ignore_index=True
         )
@@ -110,3 +116,53 @@ class Statistics(object):
                          '\t{:.6f}\t{:.6f}\n'.format(mu, std))
             fp.write('\n')
         return
+
+    @staticmethod
+    def statistics_from_data(data, df_statistics, classes, return_df=False):
+        """
+        Utility function to put the statistics generated from either
+        KFolExperiment or Bootstrap into a dataframe with the columns
+        'Label' for the class labels, 'Statistic' for the scoring function
+        types and `Data` for the numerical results.
+
+        :param data: array-like, shape (a, b, c, d)
+            a: `self.n_iter` or 1 if mean_bs is True
+            b: `n_splits` in `kfold_experiemnt` or 1 if mean_kf is True
+            c: number of score functions passed in `score_funcs` during eval
+            d: number of classes for multi-label, multiclass `y`
+        :param df_statistics: array-like, shape (n_score_funcs, )
+            The names you would like each scoring function used during
+            evaluation to have.
+        :param classes: array-like, shape (n_classes, )
+            The classes in the order determined by a label binaraizer or as
+            order used by the estimator, typically found in the `classes_`
+            attribute for a sklearn estimator object.
+        :param return_df: boolean, optional
+            Return the pd.DataFrame wrapped by Statistics
+
+        :return: Statistics Object or pd.DataFrame
+        """
+        if not isinstance(data, np.ndarray):
+            data = np.asarray(data)
+        stats = Statistics()
+        axis_0 = data.shape[0]
+        axis_1 = data.shape[1]
+        axis_2 = data.shape[2]
+        axis_3 = data.shape[3]
+
+        if axis_2 != len(df_statistics):
+            raise ValueError("The length of `df_statistics` doesn't match the "
+                             "length of axis 2 in `data`.")
+        if axis_3 != len(classes):
+            raise ValueError("The length of `classes` doesn't match the "
+                             "length of axis 3 in `data`.")
+
+        for i, s in enumerate(df_statistics):
+            for j, c in enumerate(classes):
+                data_sc = data[:, :, i, j].ravel()
+                stats.update_statistics(c, s, data_sc)
+
+        assert len(stats.frame()) == axis_0*axis_1*axis_2*axis_3
+        if return_df:
+            return stats.frame()
+        return stats
