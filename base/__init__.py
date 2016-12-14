@@ -71,7 +71,7 @@ def create_seeds(size):
     return seeds
 
 
-def chunks(ls, n):
+def chunk_list(ls, n):
     """Yield successive n-sized chunks from l."""
     if n == 0:
         return []
@@ -94,7 +94,7 @@ class PPI(object):
     """
 
     def __init__(self, p1, p2):
-        self.__proteins = tuple(sorted((p1, p2)))
+        self.__proteins = tuple(sorted((str(p1), str(p2))))
         self.__p1 = self.__proteins[0]
         self.__p2 = self.__proteins[1]
 

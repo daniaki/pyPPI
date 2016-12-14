@@ -115,6 +115,9 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         Y = self.label_binarizer_.fit_transform(y)
         Y = Y.tocsc()
         self.classes_ = self.label_binarizer_.classes_
+        if len(self.estimators) != len(self.classes_):
+            raise ValueError("Number of estimators does not match the number"
+                             "of classes present in `y`.")
         columns = (col.toarray().ravel() for col in Y.T)
 
         # In cases where individual estimators are very fast to train setting
@@ -125,7 +128,6 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
                 "not %s" % self.label_binarizer_.classes_[i],
                 self.label_binarizer_.classes_[i]])
                 for (i, column), e in zip(enumerate(columns), self.estimators))
-
         self.fitted_ = True
         return self
 

@@ -220,6 +220,10 @@ def load_testing_network():
     return pd.read_csv(testing_network_path(), sep='\t')
 
 
+def load_interactome_network():
+    return pd.read_csv(testing_network_path(), sep='\t')
+
+
 def load_accession_features():
     return pd.read_pickle(accession_features_path())
 
@@ -242,3 +246,8 @@ def training_network_path():
 
 def testing_network_path():
     return 'data/networks/testing_network.tsv'
+
+
+def interactome_network_path():
+    return 'data/networks/interactome_network.tsv'
+

@@ -9,18 +9,16 @@ functionality to create data frames from the parsing results.
 """
 
 import itertools
-import numpy as np
-
+from data import generic_io
 from data_mining.tools import make_interaction_frame, process_interactions
 from data_mining.tools import write_to_edgelist
-from data import generic_io
 
 INVALID_ACCESSIONS = ['', ' ', '-', 'unknown']
 
 
 def validate_accession(accession):
     if accession.strip().lower() in INVALID_ACCESSIONS:
-        return np.NaN
+        return None
     else:
         return accession.strip().upper()
 

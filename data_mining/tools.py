@@ -8,8 +8,9 @@ This module provides functionality to perform filtering and processing on
 interaction dataframes.
 """
 
-from collections import Counter
 import pandas as pd
+from collections import Counter
+from base import PPI
 
 SOURCE = 'source'
 TARGET = 'target'
@@ -25,12 +26,50 @@ def make_interaction_frame(sources, targets, labels):
     :param labels: Edge label for the interaction.
     :return: DataFrame with SOURCE, TARGET and LABEL columns.
     """
+    ppis = [tuple(PPI(a, b)) for a, b in zip(sources, targets)]
+    sources = [a for a, _ in ppis]
+    targets = [b for _, b in ppis]
     interactions = dict(
         source=sources,
         target=targets,
         label=labels
     )
     return pd.DataFrame(data=interactions, columns=[SOURCE, TARGET, LABEL])
+
+
+def map_network_accessions(interactions, accession_map, drop_nan=True,
+                           allow_self_edges=True, allow_duplicates=False,
+                           min_counts=None, merge=True):
+    """
+    Map the accession in the `source` and `target` columns to some other
+    accessions mapped to y the `accession_map`.
+
+    :param interactions: DataFrame with 'source', 'target' and 'label' columns.
+    :param accession_map: Dictionary from old accession to new.
+    :param drop_nan: Drop entries containing NaN in any column.
+    :param allow_self_edges: Remove rows for which source is target.
+    :param allow_duplicates: Remove exact copies accross columns.
+    :param min_counts: Remove labels below this count.
+    :param merge: Merge PPIs with the same source and target but
+                  different labels into the same entry.
+    :return: DataFrame with 'source', 'target' and 'label' columns.
+    """
+    ppis = [tuple(PPI(accession_map.get(a, None), accession_map.get(b, None)))
+            for (a, b) in zip(interactions.sources, interactions.targets)]
+    sources = [a for a, _ in ppis]
+    targets = [b for _, b in ppis]
+    new_interactions = make_interaction_frame(sources, targets,
+                                              interactions.label)
+    new_interactions = process_interactions(
+        interactions=new_interactions,
+        drop_nan=drop_nan,
+        allow_self_edges=allow_self_edges,
+        allow_duplicates=allow_duplicates,
+        exclude_labels=None,
+        min_counts=min_counts,
+        merge=merge
+    )
+    return new_interactions
 
 
 def remove_nan(interactions):
@@ -88,8 +127,8 @@ def remove_self_edges(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    selector = [str(s) != str(t)
-                for (s, t) in zip(interactions.source, interactions.target)]
+    df = interactions
+    selector = [str(s) != str(t) for (s, t) in zip(df.source, df.target)]
     df = interactions.loc[selector, ]
     df = df.reset_index(drop=True)
     assert sum([str(a) == str(b) for (a, b) in zip(df.source, df.target)]) == 0
@@ -104,9 +143,9 @@ def merge_labels(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
+    df = interactions
     merged_ppis = {}
-    ppis = [tuple(sorted([s, t], key=lambda x: str(x)))
-            for (s, t) in zip(interactions.source, interactions.target)]
+    ppis = [tuple(PPI(s, t)) for (s, t) in zip(df.source, df.target)]
 
     for (s, t), label in zip(ppis, interactions.label):
         if (s, t) in merged_ppis:
@@ -114,10 +153,11 @@ def merge_labels(interactions):
             merged_ppis[(s, t)] = ','.join(labels)
         else:
             merged_ppis[(s, t)] = label.lower().replace(" ", '-')
-    labels = [label for label in merged_ppis.values()]
 
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
+    labels = [label for label in merged_ppis.values()]
+
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions
 
@@ -129,16 +169,17 @@ def remove_duplicates(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
+    df = interactions
     merged_ppis = {}
-    ppis = [tuple(sorted([s, t], key=lambda x: str(x)))
-            for (s, t) in zip(interactions.source, interactions.target)]
+    ppis = [tuple(PPI(s, t)) for (s, t) in zip(df.source, df.target)]
 
     for (s, t), label in zip(ppis, interactions.label):
         merged_ppis[(s, t, label)] = 1.0
-    labels = [ppi[2] for ppi in merged_ppis.keys()]
 
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
+    labels = [ppi[2] for ppi in merged_ppis.keys()]
+
     interactions = make_interaction_frame(sources, targets, labels)
     assert sum(interactions.duplicated()) == 0
     return interactions
@@ -152,7 +193,7 @@ def write_to_edgelist(interactions, file):
     :param file: File to write to.
     :return: None
     """
-    interactions.to_csv(filename=file, sep='\t')
+    interactions.to_csv(file, sep='\t', index=False)
 
 
 def process_interactions(interactions, drop_nan, allow_self_edges,

@@ -7,7 +7,7 @@ This is where data sampling functions and classes can be found
 import warnings
 import numpy as np
 
-from base import chunks
+from base import chunk_list
 
 from sklearn.utils import check_random_state
 from sklearn.utils.fixes import bincount
@@ -159,7 +159,7 @@ class IterativeStratifiedKFold(_BaseKFold):
 
         # # Split up the unlablled samples
         rng.shuffle(no_label_y)
-        for i, c in enumerate(chunks(no_label_y, self.n_splits)):
+        for i, c in enumerate(chunk_list(no_label_y, self.n_splits)):
             folds_idx[i] += c
 
         # Test for disjoint-ness:

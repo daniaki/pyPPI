@@ -9,6 +9,8 @@ pathways and parse pathways into a :pd.DataFrame: of interactions
 with reaction labels.
 """
 
+from itertools import product
+
 import pandas as pd
 from bioservices import KEGG
 from bioservices import UniProt as UniProtMapper
@@ -47,7 +49,7 @@ def reset_kegg():
 
     :return: None
     """
-    kegg.clear_cache()
+    kegg.delete_cache()
 
 
 def reset_uniprot():
@@ -56,7 +58,7 @@ def reset_uniprot():
 
     :return: None
     """
-    uniprot_mapper.clear_cache()
+    uniprot_mapper.delete_cache()
 
 
 def download_pathway_ids(organism):
@@ -172,8 +174,8 @@ def map_to_uniprot(interactions, trembl=False):
     """
     print("Warning: This may take a while if the uniprot cache is empty.")
     filtered_map = {}
-    sources = (a for a in interactions.source.values)
-    targets = (b for b in interactions.target.values)
+    sources = [a for a in interactions.source.values]
+    targets = [b for b in interactions.target.values]
     unique_ids = list(set(sources) | set(targets))
     mapping = uniprot_mapper.mapping(fr='KEGG_ID', to='ACC', query=unique_ids)
     ur = UniProtReader()
@@ -186,20 +188,37 @@ def map_to_uniprot(interactions, trembl=False):
             if len(reviewed) > 1:
                 print('Warning: More that one reviewed '
                       'acc found for {}: {}'.format(kegg_id, reviewed))
-            filtered_map[kegg_id] = reviewed[0]
+            filtered_map[kegg_id] = reviewed
         else:
             print('Warning: No reviewed acc found for {}.'.format(kegg_id))
             if trembl and len(unreviewed) > 0:
-                filtered_map[kegg_id] = unreviewed[0]
+                if len(reviewed) > 1:
+                    print('Warning: More that one unreviewed '
+                          'acc found for {}: {}'.format(kegg_id, unreviewed))
+                filtered_map[kegg_id] = unreviewed
             else:
                 print('Warning: Could not map {}.'.format(kegg_id))
                 filtered_map[kegg_id] = None
 
     # Remaining kegg_ids that have not mapped to anything go to None
-    sources = interactions.source.values
-    targets = interactions.target.values
-    labels = interactions.label.values
-    sources = [filtered_map.get(kegg_id, None) for kegg_id in sources]
-    targets = [filtered_map.get(kegg_id, None) for kegg_id in targets]
+    zipped = zip(interactions.source.values,
+                 interactions.target.values, interactions.label.values)
+    sources = []
+    targets = []
+    labels = []
+    for source, target, label in zipped:
+        source_acc = filtered_map.get(source, None)
+        target_acc = filtered_map.get(target, None)
+        if source_acc is None or target_acc is None:
+            continue
+
+        # Some Kegg_Ids genuinely map to more than 1 distinct uniprot
+        # accession, so we use a list product to account for this.
+        ppis = product(source_acc, target_acc)
+        for (s, t) in ppis:
+            sources.append(s)
+            targets.append(t)
+            labels.append(label)
+
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions

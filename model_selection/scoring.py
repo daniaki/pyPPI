@@ -136,7 +136,8 @@ class Statistics(object):
         :param classes: array-like, shape (n_classes, )
             The classes in the order determined by a label binaraizer or as
             order used by the estimator, typically found in the `classes_`
-            attribute for a sklearn estimator object.
+            attribute or similar for a sklearn estimator object. Consult the
+            sklearn documentation for specfic details.
         :param return_df: boolean, optional
             Return the pd.DataFrame wrapped by Statistics
 

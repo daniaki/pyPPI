@@ -6,15 +6,17 @@ features from PPIs, including feature induction as per Maestechze et al., 2011
 """
 
 import pandas as pd
+import numpy as np
 from itertools import chain
 
+from base import PPI, chunk_list
 from data import load_accession_features, load_ppi_features
-from base import PPI
 from data import accession_features_path, ppi_features_path
 from data_mining.uniprot import UniProt
 from data_mining.ontology import get_up_to_lca, group_go_by_ontology
 
 from sklearn.utils.validation import check_is_fitted
+from sklearn.externals.joblib import Parallel, delayed
 
 
 class AnnotationExtractor(object):
@@ -35,13 +37,15 @@ class AnnotationExtractor(object):
     -----
     """
 
-    def __init__(self, uniprot, godag, induce, selection, n_jobs, cache=True):
+    def __init__(self, uniprot, godag, induce, selection, n_jobs,
+                 verbose=False, cache=True):
         self._uniprot = uniprot
         self._godag = godag
         self._n_jobs = n_jobs
         self._selection = selection
         self._induce = induce
         self._cache = cache
+        self._verbose = verbose
         if cache:
             try:
                 self._accession_df = load_accession_features()
@@ -84,7 +88,13 @@ class AnnotationExtractor(object):
             List of induced GO terms for each PPI sample.
         """
         ppis = [PPI(a, b) for (a, b) in X]
-        data = [self._compute_features(ppi) for ppi in ppis]
+        chunks = chunk_list(ppis, self._n_jobs)
+        compute_features = delayed(self._compute_features)
+        data = Parallel(n_jobs=self._n_jobs, backend='multiprocessing',
+                        verbose=self._verbose)(
+            compute_features(chunk) for chunk in chunks
+        )
+        data = np.asarray(data).ravel()
         self.cache()
         return data
 
@@ -115,12 +125,11 @@ class AnnotationExtractor(object):
                 terms[s] = entry[s].values
             features = [str(x) for k, v in terms.items() for x in v[0]]
             data.append(','.join(features))
-        return data
+        return np.asarray(data)
 
     def _compute_features(self, ppi):
         terms = {}
         accessions = set([p for p in ppi])
-        print(accessions)
 
         _df = self._uniprot.features_to_dataframe(accessions)
         if hasattr(self, '_accession_df'):
@@ -174,12 +183,12 @@ class AnnotationExtractor(object):
     def _compute_induced_terms(self, ppi):
         check_is_fitted(self, '_accession_df')
         go_col = UniProt.data_types().GO
-        if go_col.value not in self._selection:
+        if go_col not in self._selection:
             raise ValueError("Cannot induce without `{}` in selection.".format(
                 go_col
             ))
 
-        go_terms_sets = [self._get_for_accession(p, go_col.value) for p in ppi]
+        go_terms_sets = [self._get_for_accession(p, go_col) for p in ppi]
         ont_dicts = [group_go_by_ontology(ts, self._godag, UniProt.sep())
                      for ts in go_terms_sets]
         term_sets_cc = [d['cc'] for d in ont_dicts]

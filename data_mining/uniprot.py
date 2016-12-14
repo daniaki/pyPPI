@@ -14,7 +14,7 @@ import pandas as pd
 from Bio import SwissProt
 from Bio import ExPASy
 from urllib.error import HTTPError
-from enum import Enum
+from enum import Enum, EnumMeta
 from data import uniprot_sprot, uniprot_trembl
 
 UNIPROT_ORD_KEY = dict(P=0, Q=1, O=2)
@@ -169,11 +169,18 @@ class UniProt(object):
                     success = True
                 except HTTPError:
                     continue
-        finally:
-            if not success:
-                if self.verbose:
-                    print("Warning: Failed to download "
-                          "record for {}".format(accession))
+        except ValueError:
+            if self.verbose:
+                print("Warning: No SwissProt record found for {}".format(
+                    accession))
+            record = None
+            success = False
+
+        if not success:
+            if self.verbose:
+                print("Warning: Failed to download "
+                      "record for {}".format(accession))
+            record = None
 
         if record and record.taxonomy_id != [self.tax]:
             if self.verbose:
@@ -189,7 +196,7 @@ class UniProt(object):
         if not record:
             return None
         try:
-            data = record.gene_name.split(';')[0].split('=')[-1]
+            data = record.gene_name.split(';')[0].split('=')[-1].split(' ')[0]
         except (KeyError, AssertionError, Exception):
             data = None
         return data
@@ -281,6 +288,12 @@ class UniProt(object):
             return None
         return record.sequence
 
+    def recent_accession(self, accession):
+        record = self.entry(accession)
+        if not record:
+            return None
+        return record.accessions[0]
+
     def alt_accesions(self, accession):
         record = self.entry(accession)
         if not record:
@@ -302,7 +315,8 @@ class UniProt(object):
     def synonyms(self, accession):
         record = self.entry(accession)
         try:
-            data = record.gene_name.split(';')[1].split('=')[1].split(', ')
+            data = record.gene_name.split(';')[1].split('=')[1].split(
+                ', ').split(' ')[0]
         except (KeyError, AssertionError, Exception):
             data = '-'
         return data
@@ -329,13 +343,21 @@ class UniProt(object):
         """
         data = {}
         for d in data_types:
+            if isinstance(d, Enum) or isinstance(d, EnumMeta):
+                d = d.value
+            if self.entry(accession) is None:
+                data['valid'] = False
+            else:
+                data['valid'] = True
             try:
                 annots = self._data_func()[d](accession)
                 if not isinstance(annots, list):
                     annots = [annots]
                 data[d] = annots
             except KeyError as e:
-                print('Invalid data type: {}'.format(e))
+                if self.verbose:
+                    print('Warning: Invalid data type: {}. '
+                          'Skipping.'.format(e))
                 continue
         return data
 
@@ -370,6 +392,7 @@ class UniProt(object):
             data_types = list(self._data_func().keys())
         features = self.batch_accession_data(unique, data_types)
         column_keys = data_types if not columns else list(columns.values())
+        column_keys += ['valid']
         dataframe_data = {k: [] for k in column_keys}
 
         if columns:
