@@ -11,11 +11,9 @@ HPRD flat files
 from collections import OrderedDict as Od
 
 import data_mining.uniprot as uniprot
-
 from data_mining.tools import make_interaction_frame, process_interactions
 from data_mining.tools import write_to_edgelist
 from data import hprd_id_map, hprd_ptms
-
 
 SUBTYPES_TO_EXCLUDE = []
 
@@ -174,13 +172,13 @@ def hprd_to_dataframe(drop_nan=True, allow_self_edges=False,
 
     # Since there's a many swissprot to hprd_id mapping, priortise P, Q and O.
     for i, source in enumerate(sources):
-        if str(source) is not None:
+        if source is not None:
             sources[i] = sorted(
                 xrefs[source].swissprot_id,
                 key=lambda x: uniprot.UNIPROT_ORD_KEY.get(x, 4))[0]
 
     for i, target in enumerate(targets):
-        if str(target) is not None:
+        if target is not None:
             targets[i] = sorted(
                 xrefs[target].swissprot_id,
                 key=lambda x: uniprot.UNIPROT_ORD_KEY.get(x, 4))[0]
@@ -195,6 +193,8 @@ def hprd_to_dataframe(drop_nan=True, allow_self_edges=False,
         min_counts=min_label_count,
         merge=merge
     )
+
     if output:
         write_to_edgelist(interactions, output)
+
     return interactions

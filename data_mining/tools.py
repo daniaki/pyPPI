@@ -11,6 +11,7 @@ interaction dataframes.
 import pandas as pd
 from collections import Counter
 from base import PPI
+from itertools import product
 
 SOURCE = 'source'
 TARGET = 'target'
@@ -37,9 +38,9 @@ def make_interaction_frame(sources, targets, labels):
     return pd.DataFrame(data=interactions, columns=[SOURCE, TARGET, LABEL])
 
 
-def map_network_accessions(interactions, accession_map, drop_nan=True,
-                           allow_self_edges=True, allow_duplicates=False,
-                           min_counts=None, merge=True):
+def map_network_accessions(interactions, accession_map, drop_nan,
+                           allow_self_edges, allow_duplicates,
+                           min_counts, merge):
     """
     Map the accession in the `source` and `target` columns to some other
     accessions mapped to y the `accession_map`.
@@ -80,9 +81,38 @@ def remove_nan(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    df = interactions.dropna(axis=0, how='any', inplace=False)
+    from numpy import NaN
+    df = interactions.replace(to_replace=str(None), value=NaN, inplace=False)
+    df.replace(to_replace=str(NaN), value=NaN, inplace=True)
+    df.dropna(axis=0, how='any', inplace=True)
     df = df.reset_index(drop=True)
     return df
+
+
+def remove_intersection(interactions, other):
+    """
+
+    :param interactions:
+    :param other:
+    :return:
+    """
+    selector = set()
+    hash_map = {}
+    other_ppis = zip(other[SOURCE], other[TARGET], other[LABEL])
+    for (source, target, label) in other_ppis:
+        a, b = sorted([source, target])
+        for s, t, l in product([a], [b], label.split(',')):
+            hash_map[(s, t, l)] = True
+
+    df = interactions
+    interactions_ppis = zip(df[SOURCE], df[TARGET], df[LABEL])
+    for i, (source, target, label) in enumerate(interactions_ppis):
+        a, b = sorted([source, target])
+        for s, t, l in product([a], [b], label.split(',')):
+            if hash_map.get((s, t, l)) is None:
+                selector.add(i)
+
+    return interactions.loc[selector, ], hash_map, selector
 
 
 def remove_labels(interactions, subtypes):
@@ -172,15 +202,24 @@ def remove_duplicates(interactions):
     df = interactions
     merged_ppis = {}
     ppis = [tuple(PPI(s, t)) for (s, t) in zip(df.source, df.target)]
+    merged = any([len(l.split(',')) > 1 for l in df[LABEL]])
 
-    for (s, t), label in zip(ppis, interactions.label):
-        merged_ppis[(s, t, label)] = 1.0
+    if merged:
+        for (s, t), label in zip(ppis, df.label):
+            for l in label.split(','):
+                merged_ppis[(s, t, l)] = 1.0
+    else:
+        for (s, t), label in zip(ppis, df.label):
+            merged_ppis[(s, t, label)] = 1
 
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
     labels = [ppi[2] for ppi in merged_ppis.keys()]
-
     interactions = make_interaction_frame(sources, targets, labels)
+
+    if merged:
+        interactions = merge_labels(interactions)
+
     assert sum(interactions.duplicated()) == 0
     return interactions
 

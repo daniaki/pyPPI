@@ -6,6 +6,7 @@ directory (data) and generally act as datatypes. This is so other parts of the
 program do not become coupled to the data parsing process.
 """
 
+from os.path import
 import pandas as pd
 from goatools import obo_parser
 
@@ -34,15 +35,15 @@ def generic_io(file):
 @line_generator
 def uniprot_hsa_list():
     try:
-        return open("data/uniprot_hsa.list", 'r')
+        return open(abspath('data/uniprot_hsa.list'), 'r')
     except IOError as e:
-        print(e)@line_generator
+        print(e)
 
 
 @line_generator
 def swissprot_hsa_list():
     try:
-        return open("data/swiss_hsa.list", 'r')
+        return open(abspath('data/swiss_hsa.list'), 'r')
     except IOError as e:
         print(e)
 
@@ -50,7 +51,7 @@ def swissprot_hsa_list():
 @line_generator
 def uniprot_sprot():
     try:
-        return open("data/uniprot_sprot_human.dat", 'r')
+        return open(abspath('data/uniprot_sprot_human.dat'), 'r')
     except IOError as e:
         print(e)
 
@@ -58,7 +59,7 @@ def uniprot_sprot():
 @line_generator
 def uniprot_trembl():
     try:
-        return open("data/uniprot_trembl_human.dat", 'r')
+        return open(abspath('data/uniprot_trembl_human.dat'), 'r')
     except IOError as e:
         print(e)
 
@@ -66,7 +67,8 @@ def uniprot_trembl():
 @line_generator
 def hprd_ptms():
     try:
-        return open("data/hprd/POST_TRANSLATIONAL_MODIFICATIONS.txt", 'r')
+        return open(
+            abspath('data/hprd/POST_TRANSLATIONAL_MODIFICATIONS.txt'), 'r')
     except IOError as e:
         print(e)
 
@@ -74,7 +76,7 @@ def hprd_ptms():
 @line_generator
 def hprd_id_map():
     try:
-        return open("data/hprd/HPRD_ID_MAPPINGS.txt", 'r')
+        return open(abspath('data/hprd/HPRD_ID_MAPPINGS.txt'), 'r')
     except IOError as e:
         print(e)
 
@@ -82,7 +84,8 @@ def hprd_id_map():
 @line_generator
 def bioplex_v2():
     try:
-        return open("data/networks/BioPlex_interactionList_v2.tsv", 'r')
+        return open(
+            abspath('data/networks/BioPlex_interactionList_v2.tsv'), 'r')
     except IOError as e:
         print(e)
 
@@ -90,7 +93,8 @@ def bioplex_v2():
 @line_generator
 def bioplex_v4():
     try:
-        return open("data/networks/BioPlex_interactionList_v4.tsv", 'r')
+        return open(
+            abspath('data/networks/BioPlex_interactionList_v4.tsv'), 'r')
     except IOError as e:
         print(e)
 
@@ -98,7 +102,7 @@ def bioplex_v4():
 @line_generator
 def innate_curated():
     try:
-        return open("data/networks/innatedb_curated.mitab", 'r')
+        return open(abspath('data/networks/innatedb_curated.mitab'), 'r')
     except IOError as e:
         print(e)
 
@@ -106,7 +110,7 @@ def innate_curated():
 @line_generator
 def innate_imported():
     try:
-        return open("data/networks/innatedb_imported.mitab", 'r')
+        return open(abspath('data/networks/innatedb_imported.mitab'), 'r')
     except IOError as e:
         print(e)
 
@@ -114,7 +118,8 @@ def innate_imported():
 @line_generator
 def pina2():
     try:
-        return open("data/networks/PINA2_Homo_sapiens-20140521.sif", 'r')
+        return open(
+            abspath('data/networks/PINA2_Homo_sapiens-20140521.sif'), 'r')
     except IOError as e:
         print(e)
 
@@ -142,7 +147,7 @@ def hsa_uniprot_map():
 def load_go_dag(optional_attrs=None):
     """Load an obo file into a goatools GODag object"""
     default = optional_attrs or ['defn', 'is_a', 'relationship', 'part_of']
-    return obo_parser.GODag("data/gene_ontology.1_2.obo",
+    return obo_parser.GODag(abspath('data/gene_ontology.1_2.obo'),
                             optional_attrs=default)
 
 
@@ -150,7 +155,7 @@ def ipr_shortname_map(lowercase_keys=False):
     """
     Parse the interpro list into a dictionary.
     """
-    fp = open("data/ipr_short_names.dat", 'r')
+    fp = open(abspath('data/ipr_short_names.dat'), 'r')
     ipr_map = {}
     for line in fp:
         if lowercase_keys:
@@ -168,7 +173,7 @@ def ipr_longname_map(lowercase_keys=False):
     """
     Parse the interpro list into a dictionary.
     """
-    fp = open("data/ipr_names.dat", 'r')
+    fp = open(abspath('data/ipr_names.dat'), 'r')
     ipr_map = {}
     for line in fp:
         if lowercase_keys:
@@ -186,7 +191,7 @@ def pfam_name_map(lowercase_keys=False):
     """
     Parse the pfam list into a dictionary.
     """
-    fp = open("data/data/pfam_names.tsv", 'r')
+    fp = open(abspath('data/pfam_names.tsv'), 'r')
     pf_map = {}
     for line in fp:
         if lowercase_keys:
@@ -205,7 +210,7 @@ def ptm_labels():
     Load the labels in the tsv file into a list.
     """
     labels = set()
-    with open("data/labels.tsv", 'r') as fp:
+    with open(abspath('data/labels.tsv'), 'r') as fp:
         for line in fp:
             l = line.strip().replace(' ', '-').lower()
             labels.add(l)
@@ -233,21 +238,44 @@ def load_ppi_features():
 
 
 def accession_features_path():
-    return 'data/accession_features.pkl'
+    return abspath('data/accession_features.pkl')
 
 
 def ppi_features_path():
-    return 'data/ppi_features.pkl'
+    return abspath('data/ppi_features.pkl')
+
+
+def kegg_network_path():
+    return abspath('data/networks/kegg_network.tsv')
+
+
+def hprd_network_path():
+    return abspath('data/networks/hprd_network.tsv')
+
+
+def pina2_network_path():
+    return abspath('data/networks/pina2_network.tsv')
+
+
+def bioplex_network_path():
+    return abspath('data/networks/bioplex_network.tsv')
+
+
+def innate_i_network_path():
+    return abspath('data/networks/innate_i_network.tsv')
+
+
+def innate_c_network_path():
+    return abspath('data/networks/innate_c_network.tsv')
 
 
 def training_network_path():
-    return 'data/networks/training_network.tsv'
+    return abspath('data/networks/training_network.tsv')
 
 
 def testing_network_path():
-    return 'data/networks/testing_network.tsv'
+    return abspath('data/networks/testing_network.tsv')
 
 
 def interactome_network_path():
-    return 'data/networks/interactome_network.tsv'
-
+    return abspath('data/networks/interactome_network.tsv')
