@@ -1,6 +1,4 @@
 .idea/*
-ext/*
-*.tsv
 *.csv
 *.tab
 *.list
@@ -10,3 +8,4 @@ ext/*
 *.mitab
 *.sif
 *.pkl
+*tsv

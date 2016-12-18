@@ -9,13 +9,12 @@ import argparse
 import numpy as np
 import pandas as pd
 
-from models.binary_relevance import BinaryRelevance
-from data_mining.features import AnnotationExtractor
-from models import make_classifier, supported_estimators
-from model_selection.scoring import MultilabelScorer, Statistics
-from model_selection.sampling import IterativeStratifiedKFold
-from model_selection.experiment import Bootstrap, KFoldExperiment
-from data import load_training_network, load_testing_network
+from ..models.binary_relevance import BinaryRelevance
+from ..data_mining.features import AnnotationExtractor
+from ..models import make_classifier, supported_estimators
+from ..model_selection.scoring import MultilabelScorer, Statistics
+from ..model_selection.sampling import IterativeStratifiedKFold
+from ..data import load_training_network, load_testing_network
 
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline

@@ -5,27 +5,24 @@ This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
 
-import argparse
-import numpy as np
 import pandas as pd
 
-from data import load_go_dag
-from data import bioplex_v4, pina2, innate_curated, innate_imported
-from data import testing_network_path, training_network_path
-from data import bioplex_network_path, pina2_network_path
-from data import innate_i_network_path, innate_c_network_path
-from data import kegg_network_path, hprd_network_path
-from data import interactome_network_path
-
-from data_mining.uniprot import UniProt
-from data_mining.features import AnnotationExtractor
-from data_mining.hprd import hprd_to_dataframe
-from data_mining.kegg import download_pathway_ids, pathways_to_dataframe
-from data_mining.generic import bioplex_func, mitab_func, pina_func
-from data_mining.generic import generic_to_dataframe
-from data_mining.tools import write_to_edgelist, map_network_accessions
-from data_mining.tools import process_interactions
-from data_mining.tools import remove_intersection, remove_labels
+from pyPPI.data import bioplex_network_path, pina2_network_path
+from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
+from pyPPI.data import innate_i_network_path, innate_c_network_path
+from pyPPI.data import interactome_network_path
+from pyPPI.data import kegg_network_path, hprd_network_path
+from pyPPI.data import load_go_dag
+from pyPPI.data import testing_network_path, training_network_path
+from pyPPI.data_mining.features import AnnotationExtractor
+from pyPPI.data_mining.generic import bioplex_func, mitab_func, pina_func
+from pyPPI.data_mining.generic import generic_to_dataframe
+from pyPPI.data_mining.hprd import hprd_to_dataframe
+from pyPPI.data_mining.tools import process_interactions
+from pyPPI.data_mining.tools import remove_intersection, remove_labels
+from pyPPI.data_mining.tools import write_to_edgelist, map_network_accessions
+from pyPPI.data_mining.uniprot import UniProt
+from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 
 if __name__ == '__main__':
     uniprot = UniProt(verbose=True)
@@ -84,7 +81,7 @@ if __name__ == '__main__':
     # Get a set of all the unique uniprot accessions
     networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
     sources = set(p for df in networks for p in df.source.values)
-    targets = set(p for df in networks for p in df.source.targets)
+    targets = set(p for df in networks for p in df.target.values)
 
     # Download the uniprot data for all these accessions
     unique = sources | targets
