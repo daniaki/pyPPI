@@ -47,7 +47,8 @@ def map_network_accessions(interactions, accession_map, drop_nan,
     accessions mapped to y the `accession_map`.
 
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
-    :param accession_map: Dictionary from old accession to new.
+    :param accession_map: Dictionary from old accession to new. Dictionary
+                          values must be a list to handle one to many mappings.
     :param drop_nan: Drop entries containing NaN in any column.
     :param allow_self_edges: Remove rows for which source is target.
     :param allow_duplicates: Remove exact copies accross columns.
@@ -56,12 +57,18 @@ def map_network_accessions(interactions, accession_map, drop_nan,
                   different labels into the same entry.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    ppis = [tuple(PPI(accession_map.get(a, None), accession_map.get(b, None)))
-            for (a, b) in zip(interactions.sources, interactions.targets)]
+    ppis = []
+    labels = []
+    for (a, b, l) in zip(interactions[SOURCE], interactions[TARGET],
+                         interactions[LABEL]):
+        sources = accession_map.get(a, [])
+        targets = accession_map.get(b, [])
+        for (s, t) in product(sources, targets):
+            ppis.append(tuple(PPI(s, t)))
+            labels.append(l)
     sources = [a for a, _ in ppis]
     targets = [b for _, b in ppis]
-    new_interactions = make_interaction_frame(sources, targets,
-                                              interactions.label)
+    new_interactions = make_interaction_frame(sources, targets, labels)
     new_interactions = process_interactions(
         interactions=new_interactions,
         drop_nan=drop_nan,

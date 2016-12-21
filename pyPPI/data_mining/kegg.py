@@ -10,12 +10,13 @@ with reaction labels.
 """
 
 import pandas as pd
+from collections import defaultdict
 
 from itertools import product
 from bioservices import KEGG
 from bioservices import UniProt as UniProtMapper
 
-from .uniprot import UniProt as UniProtReader
+from .uniprot import get_active_instance
 from .tools import make_interaction_frame, process_interactions
 from .tools import write_to_edgelist
 
@@ -73,9 +74,9 @@ def download_pathway_ids(organism):
     return pathways
 
 
-def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False,
+def pathways_to_dataframe(pathway_ids, drop_nan=False, allow_self_edges=False,
                           allow_duplicates=False, min_label_count=None,
-                          uniprot=False, trembl=False, merge=True,
+                          map_to_uniprot=False, trembl=False, merge=False,
                           verbose=False, output=None):
     """
     Download and parse a list of pathway ids into a dataframe of interactions.
@@ -85,7 +86,7 @@ def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False,
     :param allow_self_edges: Remove rows for which source is target.
     :param allow_duplicates: Remove exact copies accross columns.
     :param min_label_count: Remove labels with less than the specified count.
-    :param uniprot: Map KEGG_IDs to uniprot.
+    :param map_to_uniprot: Map KEGG_IDs to uniprot.
     :param trembl: Use trembl acc when swissprot in unavailable.
                    Otherwise, kegg_id is considered unmappable.
     :param merge: Merge entries with identical source and target
@@ -97,8 +98,8 @@ def pathways_to_dataframe(pathway_ids, drop_nan=True, allow_self_edges=False,
     interaction_frames = [pathway_to_dataframe(p_id, verbose)
                           for p_id in pathway_ids]
     interactions = pd.concat(interaction_frames, ignore_index=True)
-    if uniprot:
-        interactions = map_to_uniprot(interactions, trembl=trembl)
+    if map_to_uniprot:
+        interactions = keggid_to_uniprot(interactions, trembl=trembl)
     interactions = process_interactions(
         interactions=interactions,
         drop_nan=drop_nan,
@@ -163,7 +164,7 @@ def pathway_to_dataframe(pathway_id, verbose=False):
     return interactions
 
 
-def map_to_uniprot(interactions, trembl=False):
+def keggid_to_uniprot(interactions, trembl=False):
     """
     Map KEGG_ID accessions into uniprot. Takes the first if multiple accesssion
     are found, favoring SwissProt over TrEmbl
@@ -172,13 +173,12 @@ def map_to_uniprot(interactions, trembl=False):
     :param trembl: Use Trembl if SwissProt is unavailable.
     :return: DataFrame with columns source, target and label.
     """
-    print("Warning: This may take a while if the uniprot cache is empty.")
     filtered_map = {}
     sources = [a for a in interactions.source.values]
     targets = [b for b in interactions.target.values]
     unique_ids = list(set(sources) | set(targets))
     mapping = uniprot_mapper.mapping(fr='KEGG_ID', to='ACC', query=unique_ids)
-    ur = UniProtReader()
+    ur = get_active_instance(verbose=True)
 
     for kegg_id, uniprot_ls in mapping.items():
         status_ls = zip(uniprot_ls, [ur.review_status(a) for a in uniprot_ls])
@@ -198,7 +198,6 @@ def map_to_uniprot(interactions, trembl=False):
                 filtered_map[kegg_id] = unreviewed
             else:
                 print('Warning: Could not map {}.'.format(kegg_id))
-                filtered_map[kegg_id] = None
 
     # Remaining kegg_ids that have not mapped to anything go to None
     zipped = zip(interactions.source.values,
@@ -207,10 +206,8 @@ def map_to_uniprot(interactions, trembl=False):
     targets = []
     labels = []
     for source, target, label in zipped:
-        source_acc = filtered_map.get(source, None)
-        target_acc = filtered_map.get(target, None)
-        if source_acc is None or target_acc is None:
-            continue
+        source_acc = filtered_map.get(source, [])
+        target_acc = filtered_map.get(target, [])
 
         # Some Kegg_Ids genuinely map to more than 1 distinct uniprot
         # accession, so we use a list product to account for this.

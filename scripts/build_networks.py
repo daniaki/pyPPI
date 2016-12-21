@@ -4,7 +4,8 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
-
+import os
+import json
 import pandas as pd
 
 from pyPPI.data import bioplex_network_path, pina2_network_path
@@ -12,7 +13,7 @@ from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
 from pyPPI.data import innate_i_network_path, innate_c_network_path
 from pyPPI.data import interactome_network_path
 from pyPPI.data import kegg_network_path, hprd_network_path
-from pyPPI.data import load_go_dag
+from pyPPI.data import load_go_dag, uniprot_map_path
 from pyPPI.data import testing_network_path, training_network_path
 from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.generic import bioplex_func, mitab_func, pina_func
@@ -21,58 +22,60 @@ from pyPPI.data_mining.hprd import hprd_to_dataframe
 from pyPPI.data_mining.tools import process_interactions
 from pyPPI.data_mining.tools import remove_intersection, remove_labels
 from pyPPI.data_mining.tools import write_to_edgelist, map_network_accessions
-from pyPPI.data_mining.uniprot import UniProt
+from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 
 if __name__ == '__main__':
-    uniprot = UniProt(verbose=True)
+    uniprot = get_active_instance(verbose=True)
     data_types = UniProt.data_types()
     selection = [data_types.GO, data_types.INTERPRO, data_types.PFAM]
     pathways = download_pathway_ids('hsa')
+    from_scratch = False
+    n_jobs = 4
 
     # Construct all the networks
+    print("Building KEGG interactions...")
+    kegg = pathways_to_dataframe(
+        pathway_ids=pathways,
+        map_to_uniprot=True,
+        drop_nan=True,
+        allow_self_edges=True,
+        allow_duplicates=False
+    )
+
     print("Building HPRD interactions...")
     hprd = hprd_to_dataframe(
         drop_nan=True,
         allow_self_edges=True,
-        allow_duplicates=False,
-        min_label_count=5,
-        merge=True
-    )
-
-    print("Building KEGG interactions...")
-    kegg = pathways_to_dataframe(
-        pathway_ids=pathways,
-        drop_nan=True,
-        allow_self_edges=True,
-        allow_duplicates=False,
-        min_label_count=5,
-        merge=True,
-        uniprot=True
+        allow_duplicates=False
     )
 
     print("Building Interactome interactions...")
     bioplex = generic_to_dataframe(
         f_input=bioplex_v4(),
         parsing_func=bioplex_func,
+        drop_nan=True,
         allow_self_edges=True,
         allow_duplicates=False
     )
     pina2 = generic_to_dataframe(
         f_input=pina2(),
         parsing_func=pina_func,
+        drop_nan=True,
         allow_self_edges=True,
         allow_duplicates=False
     )
     innate_c = generic_to_dataframe(
         f_input=innate_curated(),
         parsing_func=mitab_func,
+        drop_nan=True,
         allow_self_edges=True,
         allow_duplicates=False
     )
     innate_i = generic_to_dataframe(
         f_input=innate_imported(),
         parsing_func=mitab_func,
+        drop_nan=True,
         allow_self_edges=True,
         allow_duplicates=False
     )
@@ -83,41 +86,43 @@ if __name__ == '__main__':
     sources = set(p for df in networks for p in df.source.values)
     targets = set(p for df in networks for p in df.target.values)
 
-    # Download the uniprot data for all these accessions
-    unique = sources | targets
-    accession_data = uniprot.features_to_dataframe(sources | targets)
-    new_accessions = {k: v[0] for k, v in zip(
-        unique, accession_data.alt.values) if str(v[0]) != str(None)}
+    with open(uniprot_map_path, 'w') as fp:
+        if (not from_scratch) and os.path.isfile(uniprot_map_path):
+            accession_mapping = json.load(fp)
+        else:
+            accessions = list(sources | targets)
+            accession_mapping = uniprot.batch_map(accessions)
+            json.dump(accession_mapping, fp)
 
     print("Mapping each network to the most recent uniprot accessions...")
     kegg = map_network_accessions(
-        interactions=kegg, accession_map=new_accessions,
+        interactions=kegg, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=5, merge=True
     )
     hprd = map_network_accessions(
-        interactions=hprd, accession_map=new_accessions,
+        interactions=hprd, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=5, merge=True
     )
 
     pina2 = map_network_accessions(
-        interactions=pina2, accession_map=new_accessions,
+        interactions=pina2, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=True
     )
     bioplex = map_network_accessions(
-        interactions=bioplex, accession_map=new_accessions,
+        interactions=bioplex, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=True
     )
     innate_c = map_network_accessions(
-        interactions=innate_c, accession_map=new_accessions,
+        interactions=innate_c, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=True
     )
     innate_i = map_network_accessions(
-        interactions=innate_i, accession_map=new_accessions,
+        interactions=innate_i, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=True
     )
@@ -134,9 +139,9 @@ if __name__ == '__main__':
         cache=True
     )
 
-    # for df in networks:
-    #     ppis = list(zip(df.source, df.target))
-    #     ae.fit(ppis)
+    for df in networks:
+        ppis = list(zip(df.source, df.target))
+        ae.fit(ppis)
 
     print("Saving networks and feature files...")
     write_to_edgelist(kegg, kegg_network_path())

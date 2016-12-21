@@ -10,15 +10,29 @@ information about how biopython stores records.
 """
 
 import time
+import pickle
 import pandas as pd
+
 from Bio import SwissProt
 from Bio import ExPASy
 from urllib.error import HTTPError
 from enum import Enum, EnumMeta
 
-from ..data import uniprot_sprot, uniprot_trembl
+from ..data import uniprot_sprot, uniprot_trembl, uniprot_record_cache
+from sklearn.externals.joblib import delayed, Parallel
 
+
+__UNIPROT__ = None
 UNIPROT_ORD_KEY = dict(P=0, Q=1, O=2)
+
+
+def get_active_instance(**kwargs):
+    global __UNIPROT__
+    if __UNIPROT__ is None:
+        print("First time loading on UniProt instance. "
+              "Make take a few moments")
+        __UNIPROT__ = UniProt(**kwargs)
+    return __UNIPROT__
 
 
 class UniProt(object):
@@ -40,7 +54,7 @@ class UniProt(object):
     """
 
     def __init__(self, sprot_cache=uniprot_sprot, trembl_cache=uniprot_trembl,
-                 taxonid='9606', verbose=False, retries=3, wait=5):
+                 taxonid='9606', verbose=False, retries=3, wait=5, n_jobs=1):
         """
         Class constructor
 
@@ -58,8 +72,9 @@ class UniProt(object):
         self.verbose = verbose
         self.retries = retries
         self.wait = wait
+        self.n_jobs = n_jobs
 
-        print('Warning: Loading cache files may take a few minutes.')
+        print('Warning: Loading dat files, may take a few minutes.')
         if sprot_cache:
             # Load the swissprot records if file can be found
             for record in SwissProt.parse(sprot_cache()):
@@ -128,7 +143,7 @@ class UniProt(object):
             'org':		    self.organism,
             'gene_name':    self.gene_name,
             'keyword':      self.keywords,
-            'taxonid':          self.taxonid,
+            'taxonid':      self.taxonid,
             'entry_name':   self.entry_name,
             'org_code':     self.organism_code,
             'ref_records':  self.references,
@@ -195,7 +210,7 @@ class UniProt(object):
     def gene_name(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         try:
             data = record.gene_name.split(';')[0].split('=')[-1].split(' ')[0]
         except (KeyError, AssertionError, Exception):
@@ -205,14 +220,14 @@ class UniProt(object):
     def keywords(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = record.keywords
         return data
 
     def go_term_ids(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = self.__xrefs("GO", record)
         data = list(map(lambda x: x[0], data))
         return data
@@ -220,21 +235,21 @@ class UniProt(object):
     def references(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = record.references
         return data
 
     def taxonid(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         data = record.taxonomy_id[0]
         return data
 
     def organism_code(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         data = record.entry_name
         data = data.split('_')[1]
         return data
@@ -242,7 +257,7 @@ class UniProt(object):
     def go_term_names(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = self.__xrefs("GO", record)
         data = list(map(lambda x: x[1], data))
         return data
@@ -250,7 +265,7 @@ class UniProt(object):
     def go_term_evidence(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = self.__xrefs("GO", record)
         data = list(map(lambda x: x[2][0:3], data))
         return data
@@ -258,59 +273,59 @@ class UniProt(object):
     def entry_name(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         data = record.entry_name
         return data
 
     def pfam_terms(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = self.__xrefs("Pfam", record)
         return list(map(lambda x: x[0], data))
 
     def interpro_terms(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = self.__xrefs("InterPro", record)
         return list(map(lambda x: x[0], data))
 
     def embl_terms(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         data = self.__xrefs("EMBL", record)
         return list(map(lambda x: x[0], data))
 
     def sequence(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         return record.sequence
 
     def recent_accession(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         return record.accessions[0]
 
     def alt_accesions(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         return record.accessions
 
     def review_status(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         return record.data_class
 
     def organism(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return ''
         return record.organism
 
     def synonyms(self, accession):
@@ -325,16 +340,16 @@ class UniProt(object):
     def crossrefs(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         return record.cross_references
 
     def features(self, accession):
         record = self.entry(accession)
         if not record:
-            return None
+            return []
         return record.features
 
-    def single_accession_data(self, accession, data_types):
+    def single_accession_data(self, i, n, accession, data_types):
         """
         Queries uniprot servers the data types given by data_types.
 
@@ -343,6 +358,9 @@ class UniProt(object):
         :return: A dictionary indexed by accession information type.
         """
         data = {}
+        if self.verbose:
+            print("Acquiring data for accession {}/{}..".format(i, n))
+
         for d in data_types:
             if isinstance(d, Enum) or isinstance(d, EnumMeta):
                 d = d.value
@@ -362,6 +380,31 @@ class UniProt(object):
                 continue
         return data
 
+    def batch_map(self, accessions, fr='ACC+ID', keep_unreviewed=True):
+        """
+        Map a list of accessions using the UniProt batch mapping service.
+
+        :param accessions: List of accessions.
+        :param fr: Database to map from.
+        :param keep_unreviewed: Also keep the unreviewed accession in mapping.
+        :return: Dictionary of accessions to list of accessions.
+        """
+        from bioservices import UniProt as UniProtMapper
+        uniprot_mapper = UniProtMapper()
+        filtered_mapping = {}
+        mapping = uniprot_mapper.mapping(fr=fr, to='ACC', query=accessions)
+        for fr, to in mapping.items():
+            status = zip(to, [self.review_status(a) for a in to])
+            reviewed = [a for (a, s) in status if s.lower() == 'reviewed']
+            unreviewed = [a for (a, s) in status if s.lower() == 'unreviewed']
+            targets = reviewed
+            if keep_unreviewed:
+                targets += unreviewed
+            targets = list(set(targets))
+            targets = [t for t in targets if self.taxonid(t) == self.tax]
+            filtered_mapping[fr] = targets
+        return filtered_mapping
+
     def batch_accession_data(self, accessions, data_types):
         """
         Takes an iterable object of uniprot string accessions and downloads
@@ -372,9 +415,13 @@ class UniProt(object):
         :return: Returns a dictionary of accession and data,
                  which is dictionary indexed by accession information type.
         """
-        acc_data_map = {}
-        for p in accessions:
-            acc_data_map[p] = self.single_accession_data(p, data_types)
+        single_accession_data = delayed(self.single_accession_data)
+        data = Parallel(n_jobs=self.n_jobs, backend='multiprocessing',
+                        verbose=self.verbose)(
+            single_accession_data(i, len(accessions), p, data_types)
+            for i, p in enumerate(accessions)
+        )
+        acc_data_map = {p: d for p, d in zip(accessions, data)}
         return acc_data_map
 
     def features_to_dataframe(self, accessions, data_types=None, columns=None):

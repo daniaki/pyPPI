@@ -165,7 +165,8 @@ class InteractionNetwork(object):
             self._write_cytoscape_files(edge_idx, label='pathway')
         return edge_idx
 
-    def _write_cytoscape_files(self, idx_selection, label):
+    def _write_cytoscape_files(self, noa_path, eda_path,
+                               pp_path, idx_selection):
         """
         Compute some node and edge attributes and write these to
         files that can be loaded in cytoscape.
@@ -196,8 +197,7 @@ class InteractionNetwork(object):
             'Node degree': degree,
             'Gene Name': gene_names
         })
-        cyto_n_attrs.to_csv('data/output/{}_induced_subnet.noa'.format(
-            label), sep='\t')
+        cyto_n_attrs.to_csv(noa_path, sep='\t')
 
         # Compute some selected edge-attributes a,
         # Write the eda (edge-attribute) file.
@@ -206,14 +206,12 @@ class InteractionNetwork(object):
         cyto_e_attrs['Name'] = ['{} pp {}'.format(p1, p2) for p1, p2 in edges]
         cyto_e_attrs['Edge In Training'] = edge_in_training
         cyto_e_attrs = pd.DataFrame(data=cyto_e_attrs)
-        cyto_e_attrs.to_csv('data/output/{}_induced_subnet.eda'.format(
-            label), sep='\t')
+        cyto_e_attrs.to_csv(eda_path, sep='\t')
 
         cyto_interactions = pd.DataFrame({
             'source': [p1 for p1, _ in edges],
             'target': [p2 for _, p2 in edges],
             'interaction': ['pp' for _ in edges]
         })
-        cyto_interactions.to_csv('data/output/{}_induced_subnet.int'.format(
-            label), sep='\t')
+        cyto_interactions.to_csv(pp_path, sep='\t')
         return self

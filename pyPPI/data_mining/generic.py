@@ -144,7 +144,7 @@ def mitab_func(fp):
     return sources, targets, labels
 
 
-def generic_to_dataframe(f_input, parsing_func, drop_nan=True,
+def generic_to_dataframe(f_input, parsing_func, drop_nan=False,
                          allow_self_edges=False, allow_duplicates=False,
                          min_label_count=None, merge=False,
                          exclude_labels=None, output=None):

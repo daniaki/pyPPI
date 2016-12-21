@@ -9,6 +9,7 @@ program do not become coupled to the data parsing process.
 import os
 import pandas as pd
 from goatools import obo_parser
+from itertools import product
 
 PATH, _ = os.path.split(__file__)
 
@@ -40,6 +41,8 @@ bioplex_v4_path = os.path.join(PATH, 'networks/BioPlex_interactionList_v4.tsv')
 innate_c_mitab_path = os.path.join(PATH, 'networks/innatedb_curated.mitab')
 innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab')
 pina2_sif_path = os.path.join(PATH, 'networks/PINA2_Homo_sapiens-20140521.sif')
+uniprot_record_cache = os.path.join(PATH, 'uprot_records.dict')
+uniprot_map_path = os.path.join(PATH, 'accession_map.tsv')
 
 
 def line_generator(io_func):
@@ -212,6 +215,18 @@ def pfam_name_map(lowercase_keys=False):
         pf_map[term] = descrip
     fp.close()
     return pf_map
+
+
+def uniprot_accession_map():
+    accession_map = {}
+    with open(uniprot_map_path, 'r') as fp:
+        for line in fp:
+            xs = line.strip().split("\t")
+            sources = xs[0].split(',')
+            targets = xs[1].split(',')
+            for (s, t) in product(sources, targets):
+                accession_map[s] = t
+    return accession_map
 
 
 def ptm_labels():

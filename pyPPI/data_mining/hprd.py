@@ -131,9 +131,8 @@ def parse_hprd_mapping(header=False, col_sep='\t'):
     return xrefs
 
 
-def hprd_to_dataframe(drop_nan=True, allow_self_edges=False,
-                      allow_duplicates=False,
-                      exclude_labels=SUBTYPES_TO_EXCLUDE,
+def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
+                      allow_duplicates=False, exclude_labels=None,
                       min_label_count=None, merge=False, output=None):
     """
     Parse the FLAT_FILES from HPRD into a dataframe.

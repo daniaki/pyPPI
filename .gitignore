@@ -9,3 +9,4 @@
 *.sif
 *.pkl
 *tsv
+/pyPPI/data/uprot_records.dict
