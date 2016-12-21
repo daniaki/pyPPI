@@ -18,7 +18,6 @@ from bioservices import UniProt as UniProtMapper
 
 from .uniprot import get_active_instance
 from .tools import make_interaction_frame, process_interactions
-from .tools import write_to_edgelist
 
 kegg = KEGG(cache=True)
 uniprot_mapper = UniProtMapper(cache=True)
@@ -77,7 +76,7 @@ def download_pathway_ids(organism):
 def pathways_to_dataframe(pathway_ids, drop_nan=False, allow_self_edges=False,
                           allow_duplicates=False, min_label_count=None,
                           map_to_uniprot=False, trembl=False, merge=False,
-                          verbose=False, output=None):
+                          verbose=False):
     """
     Download and parse a list of pathway ids into a dataframe of interactions.
 
@@ -92,7 +91,6 @@ def pathways_to_dataframe(pathway_ids, drop_nan=False, allow_self_edges=False,
     :param merge: Merge entries with identical source and target
                   columns during filter.
     :param verbose: True to print progress.
-    :param output: File to write dataframe to.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     interaction_frames = [pathway_to_dataframe(p_id, verbose)
@@ -109,8 +107,6 @@ def pathways_to_dataframe(pathway_ids, drop_nan=False, allow_self_edges=False,
         min_counts=min_label_count,
         merge=merge
     )
-    if output:
-        write_to_edgelist(interactions, output)
     return interactions
 
 

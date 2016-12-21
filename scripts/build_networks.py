@@ -4,8 +4,6 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
-import os
-import json
 import pandas as pd
 
 from pyPPI.data import bioplex_network_path, pina2_network_path
@@ -13,15 +11,20 @@ from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
 from pyPPI.data import innate_i_network_path, innate_c_network_path
 from pyPPI.data import interactome_network_path
 from pyPPI.data import kegg_network_path, hprd_network_path
-from pyPPI.data import load_go_dag, uniprot_map_path
+from pyPPI.data import load_go_dag
+from pyPPI.data import load_uniprot_accession_map, save_uniprot_accession_map
 from pyPPI.data import testing_network_path, training_network_path
+from pyPPI.data import save_network_to_path
+from pyPPI.data import save_ptm_labels
+from pyPPI.data import save_accession_features, save_ppi_features
+
 from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.generic import bioplex_func, mitab_func, pina_func
 from pyPPI.data_mining.generic import generic_to_dataframe
 from pyPPI.data_mining.hprd import hprd_to_dataframe
 from pyPPI.data_mining.tools import process_interactions
 from pyPPI.data_mining.tools import remove_intersection, remove_labels
-from pyPPI.data_mining.tools import write_to_edgelist, map_network_accessions
+from pyPPI.data_mining.tools import map_network_accessions
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 
@@ -30,7 +33,7 @@ if __name__ == '__main__':
     data_types = UniProt.data_types()
     selection = [data_types.GO, data_types.INTERPRO, data_types.PFAM]
     pathways = download_pathway_ids('hsa')
-    from_scratch = False
+    update = False
     n_jobs = 4
 
     # Construct all the networks
@@ -85,14 +88,17 @@ if __name__ == '__main__':
     networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
     sources = set(p for df in networks for p in df.source.values)
     targets = set(p for df in networks for p in df.target.values)
+    accessions = list(sources | targets)
 
-    with open(uniprot_map_path, 'w') as fp:
-        if (not from_scratch) and os.path.isfile(uniprot_map_path):
-            accession_mapping = json.load(fp)
-        else:
-            accessions = list(sources | targets)
+    if update:
+        accession_mapping = uniprot.batch_map(accessions)
+        save_uniprot_accession_map(accession_mapping)
+    else:
+        try:
+            accession_mapping = load_uniprot_accession_map()
+        except IOError:
             accession_mapping = uniprot.batch_map(accessions)
-            json.dump(accession_mapping, fp)
+            save_uniprot_accession_map(accession_mapping)
 
     print("Mapping each network to the most recent uniprot accessions...")
     kegg = map_network_accessions(
@@ -144,12 +150,12 @@ if __name__ == '__main__':
         ae.fit(ppis)
 
     print("Saving networks and feature files...")
-    write_to_edgelist(kegg, kegg_network_path())
-    write_to_edgelist(hprd, hprd_network_path())
-    write_to_edgelist(pina2, pina2_network_path())
-    write_to_edgelist(bioplex, bioplex_network_path())
-    write_to_edgelist(innate_i, innate_i_network_path())
-    write_to_edgelist(innate_c, innate_c_network_path())
+    save_network_to_path(kegg, kegg_network_path)
+    save_network_to_path(hprd, hprd_network_path)
+    save_network_to_path(pina2, pina2_network_path)
+    save_network_to_path(bioplex, bioplex_network_path)
+    save_network_to_path(innate_i, innate_i_network_path)
+    save_network_to_path(innate_c, innate_c_network_path)
 
     test_labels = ['dephosphorylation', 'phosphorylation']
     train_labels = [l for l in hprd.label if l not in test_labels]
@@ -159,8 +165,14 @@ if __name__ == '__main__':
     training = process_interactions(
         interactions=pd.concat([kegg, train_hprd], ignore_index=True),
         drop_nan=True, allow_duplicates=False, allow_self_edges=True,
-        exclude_labels=None, min_counts=5, merge=True
+        exclude_labels=None, min_counts=None, merge=True
     )
+    ptm_labels = set(
+        l for merged in list(training.label) + list(testing.label)
+        for l in merged.split(',')
+    )
+    save_ptm_labels(ptm_labels)
+
     interactome = pd.concat(
         [bioplex, pina2, innate_i, innate_c], ignore_index=True
     )
@@ -169,6 +181,6 @@ if __name__ == '__main__':
         allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=None, merge=True
     )
-    write_to_edgelist(interactome, interactome_network_path())
-    write_to_edgelist(training, training_network_path())
-    write_to_edgelist(testing, testing_network_path())
+    save_network_to_path(interactome, interactome_network_path)
+    save_network_to_path(training, training_network_path)
+    save_network_to_path(testing, testing_network_path)

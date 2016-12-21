@@ -11,7 +11,6 @@ functionality to create data frames from the parsing results.
 import itertools
 from ..data import generic_io
 from .tools import make_interaction_frame, process_interactions
-from .tools import write_to_edgelist
 
 INVALID_ACCESSIONS = ['', ' ', '-', 'unknown']
 
@@ -147,7 +146,7 @@ def mitab_func(fp):
 def generic_to_dataframe(f_input, parsing_func, drop_nan=False,
                          allow_self_edges=False, allow_duplicates=False,
                          min_label_count=None, merge=False,
-                         exclude_labels=None, output=None):
+                         exclude_labels=None):
     """
     Generic function to parse an interaction file using the supplied parsing
     function into a dataframe object.
@@ -161,7 +160,6 @@ def generic_to_dataframe(f_input, parsing_func, drop_nan=False,
     :param merge: Merge entries with identical source and target columns
                   during filter.
     :param exclude_labels: List of labels to remove from the dataframe.
-    :param output: File to write dataframe to.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     lines = f_input
@@ -179,6 +177,4 @@ def generic_to_dataframe(f_input, parsing_func, drop_nan=False,
         min_counts=min_label_count,
         merge=merge
     )
-    if output:
-        write_to_edgelist(interactions, output)
     return interactions

@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 
 from ..data import load_training_network
-from ..data import ptm_labels
+from ..data import load_ptm_labels
 
 
 def _igraph_from_tuples(v_names):
@@ -155,7 +155,7 @@ class InteractionNetwork(object):
         # Filter for the interactions with a max probability greater
         # than `threshold`.
         df = df.loc[edge_idx, ]
-        sel = (df.loc[:, ptm_labels()].max(axis=1) >= threshold).values
+        sel = (df.loc[:, load_ptm_labels()].max(axis=1) >= threshold).values
         edge_idx = df[sel].index.values
 
         if len(edge_idx) == 0:
@@ -202,7 +202,7 @@ class InteractionNetwork(object):
         # Compute some selected edge-attributes a,
         # Write the eda (edge-attribute) file.
         edge_in_training = [_edge_in_training_set(e) for e in edges]
-        cyto_e_attrs = {'{}-pr'.format(l): df[l].values for l in ptm_labels()}
+        cyto_e_attrs = {'{}-pr'.format(l): df[l].values for l in load_ptm_labels()}
         cyto_e_attrs['Name'] = ['{} pp {}'.format(p1, p2) for p1, p2 in edges]
         cyto_e_attrs['Edge In Training'] = edge_in_training
         cyto_e_attrs = pd.DataFrame(data=cyto_e_attrs)

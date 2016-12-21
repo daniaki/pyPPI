@@ -12,7 +12,6 @@ from collections import OrderedDict as Od
 
 from .uniprot import UNIPROT_ORD_KEY
 from ..data_mining.tools import make_interaction_frame, process_interactions
-from ..data_mining.tools import write_to_edgelist
 from ..data import hprd_id_map, hprd_ptms
 
 SUBTYPES_TO_EXCLUDE = []
@@ -133,7 +132,7 @@ def parse_hprd_mapping(header=False, col_sep='\t'):
 
 def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
                       allow_duplicates=False, exclude_labels=None,
-                      min_label_count=None, merge=False, output=None):
+                      min_label_count=None, merge=False):
     """
     Parse the FLAT_FILES from HPRD into a dataframe.
 
@@ -144,7 +143,6 @@ def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
     :param min_label_count: Remove labels below this count.
     :param merge: Merge PPIs with the same source and target but different
                   labels into the same entry.
-    :param output: File to write dataframe to.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     try:
@@ -192,8 +190,4 @@ def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
         min_counts=min_label_count,
         merge=merge
     )
-
-    if output:
-        write_to_edgelist(interactions, output)
-
     return interactions

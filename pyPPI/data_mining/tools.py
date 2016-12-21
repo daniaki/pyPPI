@@ -232,17 +232,6 @@ def remove_duplicates(interactions):
     return interactions
 
 
-def write_to_edgelist(interactions, file):
-    """
-    Write interactions dataframe to a tab-sep file.
-
-    :param interactions: DataFrame with 'source', 'target' and 'label' columns.
-    :param file: File to write to.
-    :return: None
-    """
-    interactions.to_csv(file, sep='\t', index=False)
-
-
 def process_interactions(interactions, drop_nan, allow_self_edges,
                          allow_duplicates, exclude_labels, min_counts, merge):
     """

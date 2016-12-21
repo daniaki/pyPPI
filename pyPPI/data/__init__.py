@@ -6,10 +6,10 @@ directory (data) and generally act as datatypes. This is so other parts of the
 program do not become coupled to the data parsing process.
 """
 
+import json
 import os
 import pandas as pd
 from goatools import obo_parser
-from itertools import product
 
 PATH, _ = os.path.split(__file__)
 
@@ -42,7 +42,7 @@ innate_c_mitab_path = os.path.join(PATH, 'networks/innatedb_curated.mitab')
 innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab')
 pina2_sif_path = os.path.join(PATH, 'networks/PINA2_Homo_sapiens-20140521.sif')
 uniprot_record_cache = os.path.join(PATH, 'uprot_records.dict')
-uniprot_map_path = os.path.join(PATH, 'accession_map.tsv')
+uniprot_map_path = os.path.join(PATH, 'accession_map.json')
 
 
 def line_generator(io_func):
@@ -217,22 +217,24 @@ def pfam_name_map(lowercase_keys=False):
     return pf_map
 
 
-def uniprot_accession_map():
-    accession_map = {}
+def load_uniprot_accession_map():
+    if not os.path.isfile(uniprot_map_path):
+        raise IOError("No mapping file could be found.")
     with open(uniprot_map_path, 'r') as fp:
-        for line in fp:
-            xs = line.strip().split("\t")
-            sources = xs[0].split(',')
-            targets = xs[1].split(',')
-            for (s, t) in product(sources, targets):
-                accession_map[s] = t
-    return accession_map
+        return json.load(fp)
 
 
-def ptm_labels():
+def save_uniprot_accession_map(mapping):
+    with open(uniprot_map_path, 'w') as fp:
+        return json.dump(mapping, fp)
+
+
+def load_ptm_labels():
     """
     Load the labels in the tsv file into a list.
     """
+    if not os.path.isfile(ptm_labels_path):
+        raise IOError("No label file could be found.")
     labels = set()
     with open(ptm_labels_path, 'r') as fp:
         for line in fp:
@@ -241,21 +243,34 @@ def ptm_labels():
     return list(labels)
 
 
-def load_training_network():
-    return pd.read_csv(training_network_path, sep='\t')
+def save_ptm_labels(labels):
+    with open(ptm_labels_path, 'r') as fp:
+        for l in labels:
+            l = l.replace(' ', '-').lower()
+            fp.write('{}\n'.format(l))
 
 
-def load_testing_network():
-    return pd.read_csv(testing_network_path, sep='\t')
+def load_network_from_path(path):
+    return pd.read_csv(path, sep='\t')
 
 
-def load_interactome_network():
-    return pd.read_csv(testing_network_path, sep='\t')
+def save_network_to_path(interactions, path):
+    return interactions.to_csv(path, sep='\t', ignore_index=True)
 
 
 def load_accession_features():
     return pd.read_pickle(accession_features_path)
 
 
+def save_accession_features(features):
+    return features.to_csv(accession_features_path, sep='\t',
+                           ignore_index=True)
+
+
 def load_ppi_features():
     return pd.read_pickle(ppi_features_path)
+
+
+def save_ppi_features(features):
+    return features.to_csv(ppi_features_path, sep='\t',
+                           ignore_index=True)
