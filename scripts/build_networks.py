@@ -162,6 +162,11 @@ if __name__ == '__main__':
     train_hprd = remove_labels(hprd, test_labels)
 
     testing = remove_intersection(remove_labels(hprd, train_labels), kegg)
+    testing = process_interactions(
+        interactions=testing, drop_nan=True,
+        allow_duplicates=False, allow_self_edges=True,
+        exclude_labels=None, min_counts=5, merge=True
+    )
     training = process_interactions(
         interactions=pd.concat([kegg, train_hprd], ignore_index=True),
         drop_nan=True, allow_duplicates=False, allow_self_edges=True,

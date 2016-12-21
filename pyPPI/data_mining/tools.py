@@ -120,7 +120,7 @@ def remove_intersection(interactions, other):
             if hash_map.get((s, t, l)) is None:
                 selector.add(i)
 
-    return interactions.loc[selector, ], hash_map, selector
+    return interactions.loc[selector, ]
 
 
 def remove_labels(interactions, subtypes):
