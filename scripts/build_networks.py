@@ -104,33 +104,33 @@ if __name__ == '__main__':
     kegg = map_network_accessions(
         interactions=kegg, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False, min_counts=5, merge=True
+        allow_duplicates=False
     )
     hprd = map_network_accessions(
         interactions=hprd, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False, min_counts=5, merge=True
+        allow_duplicates=False
     )
 
     pina2 = map_network_accessions(
         interactions=pina2, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False, min_counts=None, merge=True
+        allow_duplicates=False
     )
     bioplex = map_network_accessions(
         interactions=bioplex, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False, min_counts=None, merge=True
+        allow_duplicates=False
     )
     innate_c = map_network_accessions(
         interactions=innate_c, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False, min_counts=None, merge=True
+        allow_duplicates=False
     )
     innate_i = map_network_accessions(
         interactions=innate_i, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False, min_counts=None, merge=True
+        allow_duplicates=False
     )
     networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
 
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     training = process_interactions(
         interactions=pd.concat([kegg, train_hprd], ignore_index=True),
         drop_nan=True, allow_duplicates=False, allow_self_edges=True,
-        exclude_labels=None, min_counts=None, merge=True
+        exclude_labels=None, min_counts=5, merge=True
     )
     ptm_labels = set(
         l for merged in list(training.label) + list(testing.label)
