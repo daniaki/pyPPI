@@ -104,33 +104,33 @@ if __name__ == '__main__':
     kegg = map_network_accessions(
         interactions=kegg, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False, min_counts=None, merge=False
     )
     hprd = map_network_accessions(
         interactions=hprd, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False, min_counts=None, merge=False
     )
 
     pina2 = map_network_accessions(
         interactions=pina2, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False, min_counts=None, merge=False
     )
     bioplex = map_network_accessions(
         interactions=bioplex, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False, min_counts=None, merge=False
     )
     innate_c = map_network_accessions(
         interactions=innate_c, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False, min_counts=None, merge=False
     )
     innate_i = map_network_accessions(
         interactions=innate_i, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False, min_counts=None, merge=False
     )
     networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
 
