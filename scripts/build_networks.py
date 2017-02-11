@@ -31,7 +31,8 @@ from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 if __name__ == '__main__':
     uniprot = get_active_instance(verbose=True)
     data_types = UniProt.data_types()
-    selection = [data_types.GO, data_types.INTERPRO, data_types.PFAM]
+    selection = [data_types.GO.value, data_types.INTERPRO.value,
+                 data_types.PFAM.value]
     pathways = download_pathway_ids('hsa')
     update = False
     n_jobs = 4
@@ -147,7 +148,10 @@ if __name__ == '__main__':
 
     for df in networks:
         ppis = list(zip(df.source, df.target))
-        ae.fit(ppis)
+        ae.fit(ppis[0:20])
+
+    save_accession_features(ae.accession_vocabulary)
+    save_ppi_features(ae.ppi_vocabulary)
 
     print("Saving networks and feature files...")
     save_network_to_path(kegg, kegg_network_path)

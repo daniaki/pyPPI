@@ -263,8 +263,7 @@ def load_accession_features():
 
 
 def save_accession_features(features):
-    return features.to_csv(accession_features_path, sep='\t',
-                           ignore_index=True)
+    return features.to_pickle(accession_features_path)
 
 
 def load_ppi_features():
@@ -272,5 +271,4 @@ def load_ppi_features():
 
 
 def save_ppi_features(features):
-    return features.to_csv(ppi_features_path, sep='\t',
-                           ignore_index=True)
+    return features.to_pickle(ppi_features_path)

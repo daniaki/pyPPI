@@ -359,7 +359,7 @@ class UniProt(object):
         """
         data = {}
         if self.verbose:
-            print("Acquiring data for accession {}/{}..".format(i, n))
+            print("Acquiring data for accession {}/{}..".format(i+1, n))
 
         for d in data_types:
             if isinstance(d, Enum) or isinstance(d, EnumMeta):

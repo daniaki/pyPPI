@@ -59,8 +59,11 @@ class AnnotationExtractor(object):
 
         Parameters
         ----------
-        :param raw_documents : iterable
+        :param X : iterable
             An iterable which yields PPI objects.
+
+        :param y:
+            None
 
         :return:
             self
@@ -78,65 +81,91 @@ class AnnotationExtractor(object):
         :param X: raw_documents: iterable
             An iterable which yields PPI objects.
 
-        :param y:
-            None
-
-        :param fit_params: parameters to pass to the fit_transform method
-
         :return: X :  array-like, shape (n_samples, )
             List of induced GO terms for each PPI sample.
         """
+        data = []
         ppis = [PPI(a, b) for (a, b) in X]
-        chunks = chunk_list(ppis, self._n_jobs)
+        accessions = set(acc for ppi in ppis for acc in ppi)
+
+        _df = self._uniprot.features_to_dataframe(accessions)
+        if hasattr(self, '_accession_df'):
+            _df = pd.concat([self._accession_df, _df], ignore_index=True)
+            _df = _df.drop_duplicates(subset=UniProt.accession_column())
+        self._accession_df = _df
+
+        # Run the intensive computation in parallel and append the local cache
         compute_features = delayed(self._compute_features)
-        data = Parallel(n_jobs=self._n_jobs, backend='multiprocessing',
+        dfs = Parallel(n_jobs=self._n_jobs, backend='multiprocessing',
                         verbose=self._verbose)(
-            compute_features(chunk) for chunk in chunks
+            compute_features(ppi) for ppi in ppis
         )
-        data = np.asarray(data).ravel()
-        return data
+        for df in dfs:
+            self._update(df)
+
+        for ppi in ppis:
+            terms = {}
+            entry = self._ppi_df[self._ppi_df.accession.values == ppi]
+            for s in self._selection:
+                if UniProt.data_types().GO.value in s and self._induce:
+                    s = 'i' + s
+                terms[s] = entry[s].values
+            features = [str(x) for k, v in terms.items() for x in v[0]]
+            features = ','.join(features)
+            data.append(features)
+        return np.asarray(data)
 
     def transform(self, X):
         """
         Transform a list of PPIs to a list of GO annotations
         Parameters
         ----------
-        raw_documents : iterable
-            An iterable which yields either str, unicode or file objects.
+        :param X: raw_documents: iterable
+            An iterable which yields PPI objects.
 
         Returns
         -------
         X : sparse matrix, [n_samples, n_features]
             Document-term matrix.
         """
+        check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
         data = []
         ppis = [PPI(a, b) for (a, b) in X]
         new = [ppi for ppi in ppis if ppi not in
-               self._ppi_df[UniProt.accession_column()].values]
-        self.fit([tuple(ppi) for ppi in new])
+               set(self._ppi_df[UniProt.accession_column()].values)]
+
+        # Get the new accessions, update the _accession_df and then compute
+        # features for these only. This will update _ppi_df
+        accessions = set(acc for ppi in new for acc in ppi)
+        for acc in accessions:
+            self._update(acc)
+
+        # Run the intensive computation in parallel and append the local cache
+        compute_features = delayed(self._compute_features)
+        dfs = Parallel(n_jobs=self._n_jobs, backend='multiprocessing',
+                        verbose=self._verbose)(
+            compute_features(ppi) for ppi in new
+        )
+        for df in dfs:
+            self._update(df)
 
         for ppi in ppis:
             terms = {}
             entry = self._ppi_df[self._ppi_df.accession.values == ppi]
             for s in self._selection:
+                if UniProt.data_types().GO.value in s and self._induce:
+                    s = 'i' + s
                 terms[s] = entry[s].values
             features = [str(x) for k, v in terms.items() for x in v[0]]
-            data.append(','.join(features))
+            features = ','.join(features)
+            data.append(features)
         return np.asarray(data)
 
     def _compute_features(self, ppi):
         terms = {}
-        accessions = set([p for p in ppi])
-
-        _df = self._uniprot.features_to_dataframe(accessions)
-        if hasattr(self, '_accession_df'):
-            self._accession_df = pd.concat([self._accession_df, _df],
-                                           ignore_index=True)
-        else:
-            self._accession_df = _df
-
         if self._induce:
+            print('Inducing GO annoations...')
             induced_cc, induced_bp, induced_mf = \
                 self._compute_induced_terms(ppi)
             terms['igo'] = [induced_cc + induced_bp + induced_mf]
@@ -156,17 +185,11 @@ class AnnotationExtractor(object):
         terms['go_bp'] = [grouped['bp']]
         terms['go_mf'] = [grouped['mf']]
 
-        features = [str(x) for k, v in terms.items() for x in v[0]]
-        features = ','.join(features)
-
         terms['accession'] = [ppi]
+        _df = pd.DataFrame(data=terms, columns=list(terms.keys()))
         if not hasattr(self, '_ppi_df'):
             self._ppi_df = pd.DataFrame(columns=list(terms.keys()))
-            for k, v in terms.items():
-                self._ppi_df[k] = v
-        else:
-            self._update(terms)
-        return features
+        return _df
 
     @property
     def ppi_vocabulary(self):
@@ -180,8 +203,8 @@ class AnnotationExtractor(object):
 
     def _compute_induced_terms(self, ppi):
         check_is_fitted(self, '_accession_df')
-        go_col = UniProt.data_types().GO
-        if go_col not in self._selection:
+        go_col = UniProt.data_types().GO.value
+        if not go_col in self._selection:
             raise ValueError("Cannot induce without `{}` in selection.".format(
                 go_col
             ))
@@ -198,12 +221,12 @@ class AnnotationExtractor(object):
         return induced_cc, induced_bp, induced_mf
 
     def _get_for_accession(self, accession, column):
-        assert hasattr(self, '_accession_df')
+        check_is_fitted(self, '_accession_df')
         try:
             df = self._accession_df
             entry = df[df[UniProt.accession_column()] == accession]
             if entry.empty:
-                raise KeyError()
+                raise KeyError(accession)
 
             # If nan or singular then return empty list/single item
             values = entry[column].values[0]
@@ -212,28 +235,29 @@ class AnnotationExtractor(object):
             return list(values)
 
         except KeyError:
-            print("Warning: Couldn't find entry for {}".format(accession))
-            self._update(accession)
-            self._get_for_accession(accession, column)
+            print("Warning: Couldn't find entry for {}. Try transforming new "
+                  "ppis first.")
+            return []
 
     def _update(self, item):
-        if isinstance(item, dict):
+        if isinstance(item, pd.DataFrame):
             assert hasattr(self, '_ppi_df')
-            _df = pd.DataFrame(item, columns=list(item.keys()))
-            self._ppi_df = pd.concat([self._ppi_df, _df], ignore_index=True)
+            _df = pd.concat([self._ppi_df, item], ignore_index=True)
+            _df = _df.drop_duplicates(subset=UniProt.accession_column())
+            self._ppi_df = _df
         else:
             assert hasattr(self, '_accession_df')
             _df = self._uniprot.features_to_dataframe([item])
-            self._accession_df = pd.concat(
-                [self._accession_df, _df], ignore_index=True
-            )
+            _df = pd.concat([self._accession_df, _df], ignore_index=True)
+            _df = _df.drop_duplicates(subset=UniProt.accession_column())
+            self._accession_df = _df
         return self
 
-    def cache(self, path):
+    def cache(self, accession_path, ppi_path):
         if hasattr(self, '_accession_df'):
-            self._accession_df.to_pickle(path)
+            self._accession_df.to_pickle(accession_path)
         if hasattr(self, '_ppi_df'):
-            self._ppi_df.to_pickle(path)
+            self._ppi_df.to_pickle(ppi_path)
         return self
 
 
