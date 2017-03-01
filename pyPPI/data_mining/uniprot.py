@@ -10,15 +10,15 @@ information about how biopython stores records.
 """
 
 import time
-import pickle
 import pandas as pd
 
 from Bio import SwissProt
 from Bio import ExPASy
+from bioservices import UniProt as UniProtMapper
 from urllib.error import HTTPError
 from enum import Enum, EnumMeta
 
-from ..data import uniprot_sprot, uniprot_trembl, uniprot_record_cache
+from ..data import uniprot_sprot, uniprot_trembl
 from sklearn.externals.joblib import delayed, Parallel
 
 
@@ -108,8 +108,17 @@ class UniProt(object):
     def data_types():
         class Allowed(Enum):
             GO = 'go'
+            GO_MF = 'go_mf'
+            GO_BP = 'go_bp'
+            GO_CC = 'go_cc'
             GO_NAME = 'go_name'
+            GO_MF_NAME = 'go_name_mf'
+            GO_BP_NAME = 'go_name_bp'
+            GO_CC_NAME = 'go_name_cc'
             GO_EVD = 'goe'
+            GO_MF_EVD = 'goe_mf'
+            GO_BP_EVD = 'goe_bp'
+            GO_CC_EVD = 'goe_cc'
             PFAM = 'pfam'
             INTERPRO = 'interpro'
             EMBL = 'embl'
@@ -134,6 +143,15 @@ class UniProt(object):
             'go': 		    self.go_term_ids,
             'go_name': 	    self.go_term_names,
             'goe':		    self.go_term_evidence,
+            'go_mf':        self.go_term_ids,
+            'go_name_mf':   self.go_term_names,
+            'goe_mf':       self.go_term_evidence,
+            'go_bp':        self.go_term_ids,
+            'go_name_bp':   self.go_term_names,
+            'goe_bp':       self.go_term_evidence,
+            'go_cc':        self.go_term_ids,
+            'go_name_cc':   self.go_term_names,
+            'goe_cc':       self.go_term_evidence,
             'pfam': 	    self.pfam_terms,
             'interpro':	    self.interpro_terms,
             'embl':		    self.embl_terms,
@@ -224,13 +242,22 @@ class UniProt(object):
         data = record.keywords
         return data
 
-    def go_term_ids(self, accession):
+    def go_term_ids(self, accession, ont):
         record = self.entry(accession)
         if not record:
             return []
         data = self.__xrefs("GO", record)
-        data = list(map(lambda x: x[0], data))
-        return data
+        ids = list(map(lambda x: x[0], data))
+        names = list(map(lambda x: x[1], data))
+        if ont == 'mf':
+            ids = [i for (i, n) in zip(ids, names) if n[0] == 'F']
+        elif ont == 'bp':
+            ids = [i for (i, n) in zip(ids, names) if n[0] == 'P']
+        elif ont == 'cc':
+            ids = [i for (i, n) in zip(ids, names) if n[0] == 'C']
+        else:
+            pass
+        return ids
 
     def references(self, accession):
         record = self.entry(accession)
@@ -254,21 +281,38 @@ class UniProt(object):
         data = data.split('_')[1]
         return data
 
-    def go_term_names(self, accession):
+    def go_term_names(self, accession, ont):
         record = self.entry(accession)
         if not record:
             return []
         data = self.__xrefs("GO", record)
-        data = list(map(lambda x: x[1], data))
-        return data
+        names = list(map(lambda x: x[1], data))
+        if ont == 'mf':
+            names = [n for n in names if n[0] == 'F']
+        elif ont == 'bp':
+            names = [n for n in names if n[0] == 'P']
+        elif ont == 'cc':
+            names = [n for n in names if n[0] == 'C']
+        else:
+            pass
+        return names
 
-    def go_term_evidence(self, accession):
+    def go_term_evidence(self, accession, ont):
         record = self.entry(accession)
         if not record:
             return []
         data = self.__xrefs("GO", record)
-        data = list(map(lambda x: x[2][0:3], data))
-        return data
+        evds = list(map(lambda x: x[2][0:3], data))
+        names = list(map(lambda x: x[1], data))
+        if ont == 'mf':
+            evds = [e for (e, n) in zip(evds, names) if n[0] == 'F']
+        elif ont == 'bp':
+            evds = [e for (e, n) in zip(evds, names) if n[0] == 'P']
+        elif ont == 'cc':
+            evds = [e for (e, n) in zip(evds, names) if n[0] == 'C']
+        else:
+            pass
+        return evds
 
     def entry_name(self, accession):
         record = self.entry(accession)
@@ -369,7 +413,11 @@ class UniProt(object):
             else:
                 data['valid'] = True
             try:
-                annots = self._data_func()[d](accession)
+                if 'go' in d:
+                    ont = d.split('_')[-1]
+                    annots = self._data_func()[d](accession, ont)
+                else:
+                    annots = self._data_func()[d](accession)
                 if not isinstance(annots, list):
                     annots = [annots]
                 data[d] = annots
@@ -389,7 +437,7 @@ class UniProt(object):
         :param keep_unreviewed: Also keep the unreviewed accession in mapping.
         :return: Dictionary of accessions to list of accessions.
         """
-        from bioservices import UniProt as UniProtMapper
+
         uniprot_mapper = UniProtMapper()
         filtered_mapping = {}
         mapping = uniprot_mapper.mapping(fr=fr, to='ACC', query=accessions)

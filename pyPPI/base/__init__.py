@@ -6,6 +6,7 @@ Collection of utility operations that don't go anywhere else.
 
 import os
 import numpy as np
+import pandas as pd
 
 __all__ = [
     'su_make_dir',
@@ -35,6 +36,24 @@ def create_seeds(size):
     max_int = ii32.max
     seeds = np.random.random_integers(low=0, high=max_int, size=size)
     return seeds
+
+
+def validate_term(term):
+    if 'go' in term.lower():
+        term = term.replace(':', '')
+        term = term[0:2] + ':' + term[2:]
+        return term.upper()
+    return term.upper()
+
+
+def concat_dataframes(dfs):
+    """
+    Concatenate a list of dataframes.
+    """
+    combined = pd.DataFrame()
+    for df in dfs:
+        combined = pd.concat([combined, df], ignore_index=True)
+    return combined
 
 
 def chunk_list(ls, n):

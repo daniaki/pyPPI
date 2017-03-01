@@ -11,12 +11,12 @@ from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
 from pyPPI.data import innate_i_network_path, innate_c_network_path
 from pyPPI.data import interactome_network_path
 from pyPPI.data import kegg_network_path, hprd_network_path
-from pyPPI.data import load_go_dag
 from pyPPI.data import load_uniprot_accession_map, save_uniprot_accession_map
 from pyPPI.data import testing_network_path, training_network_path
 from pyPPI.data import save_network_to_path
 from pyPPI.data import save_ptm_labels
 from pyPPI.data import save_accession_features, save_ppi_features
+from pyPPI.base import PPI
 
 from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.generic import bioplex_func, mitab_func, pina_func
@@ -31,11 +31,16 @@ from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 if __name__ == '__main__':
     uniprot = get_active_instance(verbose=True)
     data_types = UniProt.data_types()
-    selection = [data_types.GO.value, data_types.INTERPRO.value,
-                 data_types.PFAM.value]
+    selection = [
+        data_types.GO_MF.value,
+        data_types.GO_BP.value,
+        data_types.GO_CC.value,
+        data_types.INTERPRO.value,
+        data_types.PFAM.value
+    ]
     pathways = download_pathway_ids('hsa')
     update = False
-    n_jobs = 4
+    n_jobs = 8
 
     # Construct all the networks
     print("Building KEGG interactions...")
@@ -133,22 +138,30 @@ if __name__ == '__main__':
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=False
     )
-    networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
+    networks = [hprd, kegg, bioplex, pina2, innate_i, innate_c]
 
     print("Building features for each protein and PPI...")
     ae = AnnotationExtractor(
-        uniprot=uniprot,
-        godag=load_go_dag(),
         induce=True,
         selection=selection,
-        n_jobs=1,
+        n_jobs=n_jobs,
         verbose=True,
         cache=True
     )
 
+    tuple_gens = [zip(n.source, n.target) for n in networks]
+    ppis = [(a, b) for tuples in tuple_gens for (a, b) in tuples]
+    ae.fit(ppis)
+
+    # Sanity check
+    unique_ppis = set()
+    unique_acc = set()
     for df in networks:
         ppis = list(zip(df.source, df.target))
-        ae.fit(ppis[0:20])
+        unique_ppis |= set(PPI(a, b) for (a, b) in ppis)
+        unique_acc |= set(a for a, _ in ppis) | set(b for _, b in ppis)
+    assert ae.accession_vocabulary.shape[0] == len(unique_acc)
+    assert ae.ppi_vocabulary.shape[0] == len(unique_ppis)
 
     save_accession_features(ae.accession_vocabulary)
     save_ppi_features(ae.ppi_vocabulary)
