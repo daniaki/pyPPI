@@ -4,6 +4,7 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
+import os
 import pandas as pd
 
 from pyPPI.data import bioplex_network_path, pina2_network_path
@@ -15,6 +16,7 @@ from pyPPI.data import load_uniprot_accession_map, save_uniprot_accession_map
 from pyPPI.data import testing_network_path, training_network_path
 from pyPPI.data import save_network_to_path
 from pyPPI.data import save_ptm_labels
+from pyPPI.data import ppi_features_path, accession_features_path
 from pyPPI.data import save_accession_features, save_ppi_features
 from pyPPI.base import PPI
 
@@ -40,6 +42,7 @@ if __name__ == '__main__':
     ]
     pathways = download_pathway_ids('hsa')
     update = False
+    use_feature_cache = True
     n_jobs = 8
 
     # Construct all the networks
@@ -146,25 +149,28 @@ if __name__ == '__main__':
         selection=selection,
         n_jobs=n_jobs,
         verbose=True,
-        cache=True
+        cache=use_feature_cache
     )
 
-    tuple_gens = [zip(n.source, n.target) for n in networks]
-    ppis = [(a, b) for tuples in tuple_gens for (a, b) in tuples]
-    ae.fit(ppis)
+    cond_1 = os.path.isfile(ppi_features_path)
+    cond_2 = os.path.isfile(accession_features_path)
+    if (not use_feature_cache) or (not cond_1) or (not cond_2):
+        tuple_gens = [zip(n.source, n.target) for n in networks]
+        ppis = [(a, b) for tuples in tuple_gens for (a, b) in tuples]
+        ae.fit(ppis)
 
-    # Sanity check
-    unique_ppis = set()
-    unique_acc = set()
-    for df in networks:
-        ppis = list(zip(df.source, df.target))
-        unique_ppis |= set(PPI(a, b) for (a, b) in ppis)
-        unique_acc |= set(a for a, _ in ppis) | set(b for _, b in ppis)
-    assert ae.accession_vocabulary.shape[0] == len(unique_acc)
-    assert ae.ppi_vocabulary.shape[0] == len(unique_ppis)
+        # Sanity check
+        unique_ppis = set()
+        unique_acc = set()
+        for df in networks:
+            ppis = list(zip(df.source, df.target))
+            unique_ppis |= set(PPI(a, b) for (a, b) in ppis)
+            unique_acc |= set(a for a, _ in ppis) | set(b for _, b in ppis)
+        assert ae.accession_vocabulary.shape[0] == len(unique_acc)
+        assert ae.ppi_vocabulary.shape[0] == len(unique_ppis)
 
-    save_accession_features(ae.accession_vocabulary)
-    save_ppi_features(ae.ppi_vocabulary)
+        save_accession_features(ae.accession_vocabulary)
+        save_ppi_features(ae.ppi_vocabulary)
 
     print("Saving networks and feature files...")
     save_network_to_path(kegg, kegg_network_path)

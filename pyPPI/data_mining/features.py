@@ -95,10 +95,10 @@ class AnnotationExtractor(object):
         """
         check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
-        ppis = set(PPI(a, b) for (a, b) in X)
+        ppis = self._validate_input(X, use_set=False)
         fitted_ppis = set(self._ppi_df[_ACCESSION_COLUMN].values)
 
-        new_ppis = ppis - fitted_ppis
+        new_ppis = set(ppis) - fitted_ppis
         if len(new_ppis) > 0:
             raise ValueError("New PPIs detected, please use transform first.")
 
@@ -128,10 +128,10 @@ class AnnotationExtractor(object):
         """
         check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
-        ppis = set(PPI(a, b) for (a, b) in X)
+        ppis = self._validate_input(X, use_set=False)
         fitted_ppis = set(self._ppi_df[_ACCESSION_COLUMN].values)
 
-        new_ppis = ppis - fitted_ppis
+        new_ppis = set(ppis) - fitted_ppis
         if len(new_ppis) > 0:
             raise ValueError("New PPIs detected, please use transform first.")
 
@@ -148,12 +148,13 @@ class AnnotationExtractor(object):
     def fit(self, X, y=None):
         """
         Given a list of protein UniProt accessions, builds a dictionary of
-        induced GO annotations for each.
+        induced GO annotations for each. Fitting on new data will erase
+        any previous data.
 
         Parameters
         ----------
         :param X : iterable
-            An iterable which yields PPI objects.
+            An iterable which yields PPI objects or tuples of accessions.
 
         :param y:
             None
@@ -161,11 +162,10 @@ class AnnotationExtractor(object):
         :return:
             self
         """
+        ppis = self._validate_input(X, use_set=True)
+        accessions = set(acc for ppi in ppis for acc in ppi)
         self._accession_df = pd.DataFrame()
         self._ppi_df = pd.DataFrame()
-
-        ppis = set(PPI(a, b) for (a, b) in X)
-        accessions = set(acc for ppi in ppis for acc in ppi)
 
         # first run sets up the accession_df attribute dataframe
         if self._verbose:
@@ -205,29 +205,26 @@ class AnnotationExtractor(object):
 
         Parameters
         ----------
-        :param X: raw_documents: iterable
-            An iterable which yields PPI objects.
+        :param X : iterable
+            An iterable which yields PPI objects or tuples of accessions.
 
         :return: X :  array-like, shape (n_samples, )
             List of induced GO terms for each PPI sample.
         """
         self.fit(X)
-        ppis = [PPI(a, b) for (a, b) in X]
-
-        # Convert the features for each ppi in the dataframe into a string
         check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
+
+        # Convert the features for each ppi in the dataframe into a string
         if self._verbose:
             print('Stringing selected features for each PPI...')
-        # string_func = delayed(self._string_features)
-        # features = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-        #                     backend='threading')(
-        #     string_func(ppi) for ppi in ppis
-        # )
         features = pd.DataFrame()
+        ppis = self._validate_input(X, use_set=False)
         features['X'] = self._ppi_df.apply(self._string_features, axis=1)
-        fitted_ppis = set(self._ppi_df[_ACCESSION_COLUMN].values)
-        selector = [ppi in ppis for ppi in fitted_ppis]
+        ppi_acc = self._ppi_df[_ACCESSION_COLUMN].values
+        ppi_index = self._ppi_df.index
+        ppi_idx_map = {ppi: idx for (ppi, idx) in zip(ppi_acc, ppi_index)}
+        selector = [ppi_idx_map[ppi] for ppi in ppis]
         return features.loc[selector, ]['X'].values
 
     def transform(self, X):
@@ -236,8 +233,8 @@ class AnnotationExtractor(object):
 
         Parameters
         ----------
-        :param X: raw_documents: iterable
-            An iterable which yields PPI objects.
+        :param X : iterable
+            An iterable which yields PPI objects or tuples of accessions.
 
         Returns
         -------
@@ -246,12 +243,12 @@ class AnnotationExtractor(object):
         """
         check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
-        ppis = set(PPI(a, b) for (a, b) in X)
-        fitted_ppis = set(self._ppi_df[_ACCESSION_COLUMN].values)
+        ppis_set = self._validate_input(X, use_set=True)
 
         if self._verbose:
             print('Finding new PPIs...')
-        new_ppis = ppis - fitted_ppis
+        fitted_ppis = set(self._ppi_df[_ACCESSION_COLUMN].values)
+        new_ppis = ppis_set - fitted_ppis
 
         # Run the intensive computation in parallel and append the local cache
         if len(new_ppis) > 0:
@@ -284,13 +281,36 @@ class AnnotationExtractor(object):
                 self._update(df)
 
         # Convert the features for each ppi in the dataframe into a string
-        ppis = [PPI(a, b) for (a, b) in X]
         if self._verbose:
             print('Stringing selected features for each PPI...')
         features = pd.DataFrame()
+        ppis = self._validate_input(X, use_set=False)
         features['X'] = self._ppi_df.apply(self._string_features, axis=1)
-        selector = [ppi in ppis for ppi in fitted_ppis]
+        ppi_acc = self._ppi_df[_ACCESSION_COLUMN].values
+        ppi_index = self._ppi_df.index
+        ppi_idx_map = {ppi: idx for (ppi, idx) in zip(ppi_acc, ppi_index)}
+        selector = [ppi_idx_map[ppi] for ppi in ppis]
         return features.loc[selector, ]['X'].values
+
+    def _validate_input(self, X, use_set=False):
+        """
+        Validate the input checking for NoneTypes, zero length. Converts a
+        list of tuples into a list/set of PPIs.
+        """
+        if len(X) == 0 or X is None:
+            raise ValueError("Cannot fit/transform an empty input.")
+
+        if isinstance(X[-1], PPI):
+            ppis = X
+        elif isinstance(X[-1], tuple):
+            ppis = [PPI(a, b) for (a, b) in X]
+        else:
+            raise ValueError("Inputs must be either tuples or PPIs")
+
+        if use_set:
+            return set(ppis)
+        else:
+            return ppis
 
     def _compute_features(self, ppi):
         """
@@ -450,10 +470,12 @@ class AnnotationExtractor(object):
         """
         if isinstance(item, pd.DataFrame):
             if not hasattr(self, '_ppi_df'):
-                self._ppi_df = item
+                _df = item.reset_index(drop=True)
+                self._ppi_df = _df
             else:
                 _df = pd.concat([self._ppi_df, item], ignore_index=True)
                 _df = _df.drop_duplicates(subset=_ACCESSION_COLUMN)
+                _df = _df.reset_index(drop=True)
                 self._ppi_df = _df
             return self
         elif isinstance(item, list) or isinstance(item, set):
@@ -463,6 +485,7 @@ class AnnotationExtractor(object):
             _df = get_active_instance().features_to_dataframe(item)
             _df = pd.concat([self._accession_df, _df], ignore_index=True)
             _df = _df.drop_duplicates(subset=_ACCESSION_COLUMN)
+            _df = _df.reset_index(drop=True)
             self._accession_df = _df
         else:
             raise TypeError("Expected DataFrame or List of PPI objects")
