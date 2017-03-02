@@ -13,10 +13,11 @@ from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
 from sklearn.svm import OneClassSVM, SVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.naive_bayes import MultinomialNB, GaussianNB, BernoulliNB
+from sklearn.base import clone
 
 
 def supported_estimators():
-    return {
+    allowed = {
         'SVC': SVC,
         'ElasticNet': ElasticNet,
         'LogisticRegression': LogisticRegression,
@@ -34,16 +35,16 @@ def supported_estimators():
         'GaussianNB': GaussianNB,
         'BernoulliNB': BernoulliNB
     }
+    return allowed
 
 
 def make_classifier(algorithm, class_weight='balanced', random_state=None):
     supported = supported_estimators()
-    estimator = supported.get(algorithm, default=LogisticRegression)
+    estimator = clone(supported.get(algorithm, LogisticRegression)())
     if hasattr(estimator, 'n_jobs'):
         estimator.set_params(**{'n_jobs': 1})
     if hasattr(estimator, 'class_weight'):
         estimator.set_params(**{'class_weight': class_weight})
     if hasattr(estimator, 'random_state'):
         estimator.set_params(**{'random_state': random_state})
-
     return estimator

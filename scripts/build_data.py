@@ -17,7 +17,8 @@ from pyPPI.data import testing_network_path, training_network_path
 from pyPPI.data import save_network_to_path
 from pyPPI.data import save_ptm_labels
 from pyPPI.data import ppi_features_path, accession_features_path
-from pyPPI.data import save_accession_features, save_ppi_features
+from pyPPI.data import annotation_extractor_path
+from pyPPI.data import pickle_pd_object, read_pd_pickle
 from pyPPI.base import PPI
 
 from pyPPI.data_mining.features import AnnotationExtractor
@@ -169,8 +170,9 @@ if __name__ == '__main__':
         assert ae.accession_vocabulary.shape[0] == len(unique_acc)
         assert ae.ppi_vocabulary.shape[0] == len(unique_ppis)
 
-        save_accession_features(ae.accession_vocabulary)
-        save_ppi_features(ae.ppi_vocabulary)
+        pickle_pd_object(ae.accession_vocabulary, accession_features_path)
+        pickle_pd_object(ae.ppi_vocabulary, ppi_features_path)
+        pickle_pd_object(ae, annotation_extractor_path)
 
     print("Saving networks and feature files...")
     save_network_to_path(kegg, kegg_network_path)

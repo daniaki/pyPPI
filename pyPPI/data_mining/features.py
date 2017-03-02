@@ -9,8 +9,8 @@ import pandas as pd
 from itertools import chain
 
 from ..base import PPI, chunk_list, concat_dataframes
-from ..data import load_accession_features, load_ppi_features, load_go_dag
-from ..data import save_accession_features, save_ppi_features
+from ..data import pickle_pd_object, read_pd_pickle, load_go_dag
+from ..data import accession_features_path, ppi_features_path
 from .uniprot import UniProt, get_active_instance
 from .ontology import get_up_to_lca, group_go_by_ontology
 
@@ -53,11 +53,8 @@ class AnnotationExtractor(object):
         self._cache = cache
         self._verbose = verbose
         if cache:
-            try:
-                self._accession_df = load_accession_features()
-                self._ppi_df = load_ppi_features()
-            except IOError:
-                print('Warning: No cache files found.')
+            self._accession_df = read_pd_pickle(accession_features_path)
+            self._ppi_df = read_pd_pickle(ppi_features_path)
 
     @property
     def ppi_vocabulary(self):
@@ -345,8 +342,6 @@ class AnnotationExtractor(object):
 
         # Concatenate the other terms into strings
         for s in self._selection:
-            if s in go_cols and self._induce:
-                continue
             data = [self._get_data_for_accession(p, s) for p in ppi]
             if isinstance(data[-1], list):
                 data = list(chain.from_iterable(data))
@@ -447,7 +442,12 @@ class AnnotationExtractor(object):
         """
         terms = []
         for col in self.selection:
-            terms += row[col]
+            try:
+                terms += row[col]
+            except KeyError:
+                raise KeyError("Selection contains a non-existent "
+                               "column: {}. Make sure selection matches"
+                               "the loaded cache file.".format(col))
         terms = [
             t.replace(':', '')
             for t in ','.join(terms).split(',')
@@ -504,8 +504,8 @@ class AnnotationExtractor(object):
         """
         check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
-        save_accession_features(self.accession_vocabulary)
-        save_ppi_features(self.ppi_vocabulary)
+        pickle_pd_object(self.accession_vocabulary, accession_features_path)
+        pickle_pd_object(self.ppi_vocabulary, ppi_features_path)
         return self
 
 # -------------------------------------------------------------------------- #

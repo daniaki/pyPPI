@@ -118,7 +118,7 @@ class Statistics(object):
         return
 
     @staticmethod
-    def statistics_from_data(data, df_statistics, classes, return_df=False):
+    def statistics_from_data(data, statistics_names, classes, return_df=False):
         """
         Utility function to put the statistics generated from either
         KFolExperiment or Bootstrap into a dataframe with the columns
@@ -130,7 +130,7 @@ class Statistics(object):
             b: `n_splits` in `kfold_experiemnt` or 1 if mean_kf is True
             c: number of score functions passed in `score_funcs` during eval
             d: number of classes for multi-label, multiclass `y`
-        :param df_statistics: array-like, shape (n_score_funcs, )
+        :param statistics_names: array-like, shape (n_score_funcs, )
             The names you would like each scoring function used during
             evaluation to have.
         :param classes: array-like, shape (n_classes, )
@@ -151,14 +151,14 @@ class Statistics(object):
         axis_2 = data.shape[2]
         axis_3 = data.shape[3]
 
-        if axis_2 != len(df_statistics):
+        if axis_2 != len(statistics_names):
             raise ValueError("The length of `df_statistics` doesn't match the "
                              "length of axis 2 in `data`.")
         if axis_3 != len(classes):
             raise ValueError("The length of `classes` doesn't match the "
                              "length of axis 3 in `data`.")
 
-        for i, s in enumerate(df_statistics):
+        for i, s in enumerate(statistics_names):
             for j, c in enumerate(classes):
                 data_sc = data[:, :, i, j].ravel()
                 stats.update_statistics(c, s, data_sc)

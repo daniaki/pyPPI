@@ -149,7 +149,8 @@ class KFoldExperiment(object):
     ----------
     estimator : estimator object
         An estimator object implementing `fit` and one of `decision_function`
-        or `predict_proba`.
+        or `predict_proba`. If using a Pipeline estimator, classification step
+        must be named 'clf'.
 
     cv : int, cross-validation generator or an iterable, optional
         Determines the cross-validation splitting strategy.
@@ -202,6 +203,7 @@ class KFoldExperiment(object):
                              "instance of StratifiedKFold, KFold or "
                              "IterativeStratifiedKFold.")
         self.n_splits = self.cv_.n_splits
+        self.cv_.random_state = random_state
 
     def clone(self, random_state):
         klass = self.cv_.__class__
@@ -217,6 +219,10 @@ class KFoldExperiment(object):
 
     def _fit_single(self, X, y, train_idx):
         estimator = clone(self.base_estimator_)
+        if hasattr(estimator, 'random_state'):
+            estimator.set_params(**{'random_state': self.random_state_})
+        if hasattr(estimator, 'clf__random_state'):
+            estimator.set_params(**{'clf__random_state': self.random_state_})
         estimator.fit(X[train_idx, ], y[train_idx, ])
         return estimator
 

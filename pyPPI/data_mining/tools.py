@@ -20,6 +20,61 @@ TARGET = 'target'
 LABEL = 'label'
 
 
+def xy_from_interaction_frame(interactions):
+    """
+    Utility function to convert an interaction dataframe into seperate
+    X and y numpy arrays.
+
+    :param interactions: pd.DataFrame
+        DataFrame with 'source', 'target' and 'label' columns.
+
+    :return: array-like, shape (n_samples, )
+    """
+    X = ppis_from_interaction_frame(interactions, use_set=False)
+    y = labels_from_interaction_frame(interactions, use_set=False)
+    return X, y
+
+
+def labels_from_interaction_frame(interactions, use_set=False):
+    """
+    Utility function to create an iterable of PPI objects from an interaction
+    dataframe.
+
+    :param interactions: pd.DataFrame
+        DataFrame with 'source', 'target' and 'label' columns.
+    :param use_set: boolean
+        Use True to return a set of strings.
+
+    :return: List or Set
+        List or Set of string objects.
+    """
+    df = interactions
+    labels = [l.lower().replace(" ", '-').split(',') for l in df[LABEL]]
+    if use_set:
+        return set(labels)
+    return labels
+
+
+def ppis_from_interaction_frame(interactions, use_set=False):
+    """
+    Utility function to create an iterable of PPI objects from an interaction
+    dataframe.
+
+    :param interactions: pd.DataFrame
+        DataFrame with 'source', 'target' and 'label' columns.
+    :param use_set: boolean
+        Use True to return a set of PPIs
+
+    :return: List or Set
+        List or Set of PPI objects.
+    """
+    df = interactions
+    ppis = [tuple(PPI(a, b)) for a, b in zip(df[SOURCE], df[TARGET])]
+    if use_set:
+        return set(ppis)
+    return ppis
+
+
 def make_interaction_frame(sources, targets, labels):
     """
     Wrapper to construct a PPI dataframe.

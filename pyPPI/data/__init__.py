@@ -24,6 +24,7 @@ ipr_snames_path = os.path.join(PATH, 'ipr_short_names.dat')
 ipr_lnames_path = os.path.join(PATH, 'ipr_names.dat')
 pfam_names_path = os.path.join(PATH, 'pfam_names.tsv')
 ptm_labels_path = os.path.join(PATH, 'labels.tsv')
+annotation_extractor_path = os.path.join(PATH, 'annotation_extractor.pkl')
 accession_features_path = os.path.join(PATH, 'accession_features.pkl')
 ppi_features_path = os.path.join(PATH, 'ppi_features.pkl')
 kegg_network_path = os.path.join(PATH, 'networks/kegg_network.tsv')
@@ -258,17 +259,11 @@ def save_network_to_path(interactions, path):
     return interactions.to_csv(path, sep='\t', index=False)
 
 
-def load_accession_features():
-    return pd.read_pickle(accession_features_path)
+def read_pd_pickle(path):
+    return pd.read_pickle(path)
 
 
-def save_accession_features(features):
-    return features.to_pickle(accession_features_path)
+def pickle_pd_object(obj, path):
+    return obj.to_pickle(path)
 
 
-def load_ppi_features():
-    return pd.read_pickle(ppi_features_path)
-
-
-def save_ppi_features(features):
-    return features.to_pickle(ppi_features_path)

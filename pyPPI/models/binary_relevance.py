@@ -48,8 +48,8 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
 
     Parameters
     ----------
-    estimators : estimator object
-        An estimator object implementing `fit` and one of `decision_function`
+    estimators : array-like, shape = (n_classes, )
+        Estimator objects implementing `fit` and one of `decision_function`
         or `predict_proba`.
 
     n_jobs : int, optional, default: 1
@@ -60,10 +60,10 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
 
     Attributes
     ----------
-    estimators : list of `n_classes` estimators
-        Estimators used for predictions.
+    estimators : array-like, shape = (n_classes, )
+        Estimators used for prediction, satisfying above definition.
 
-    classes_ : array, shape = [`n_classes`]
+    classes_ : array, shape = (n_classes, )
         Class labels.
 
     label_binarizer_ : LabelBinarizer object
@@ -107,10 +107,6 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         -------
         self
         """
-        # A sparse LabelBinarizer, with sparse_output=True, has been shown to
-        # outpreform or match a dense label binarizer in all cases and has also
-        # resulted in less or equal memory consumption in the fit_ovr function
-        # overall.
         self.label_binarizer_ = LabelBinarizer(sparse_output=True)
         Y = self.label_binarizer_.fit_transform(y)
         Y = Y.tocsc()
