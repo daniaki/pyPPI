@@ -8,6 +8,7 @@ This module provides functionality to perform filtering and processing on
 interaction dataframes.
 """
 
+from numpy import NaN
 import pandas as pd
 
 from collections import Counter
@@ -31,6 +32,7 @@ def make_interaction_frame(sources, targets, labels):
     ppis = [tuple(PPI(a, b)) for a, b in zip(sources, targets)]
     sources = [a for a, _ in ppis]
     targets = [b for _, b in ppis]
+    labels = [l.lower().replace(" ", '-') for l in labels]
     interactions = dict(
         source=sources,
         target=targets,
@@ -89,54 +91,57 @@ def remove_nan(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    from numpy import NaN
     df = interactions.replace(to_replace=str(None), value=NaN, inplace=False)
     df.replace(to_replace=str(NaN), value=NaN, inplace=True)
     df.dropna(axis=0, how='any', inplace=True)
-    df = df.reset_index(drop=True)
+    df = df.reset_index(drop=True, inplace=False)
     return df
 
 
 def remove_intersection(interactions, other):
     """
+    Remove any interaction from `interactions` appearing in `other` from
+    `interactions`.
 
-    :param interactions:
-    :param other:
-    :return:
+    :param interactions: DataFrame with 'source', 'target' and 'label' columns.
+    :param other: DataFrame with 'source', 'target' and 'label' columns.
+    :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     selector = set()
-    hash_map = {}
+    ppis_in_other = {}
     other_ppis = zip(other[SOURCE], other[TARGET], other[LABEL])
     for (source, target, label) in other_ppis:
         a, b = sorted([source, target])
-        for s, t, l in product([a], [b], label.split(',')):
-            hash_map[(s, t, l)] = True
+        for (s, t, l) in product([a], [b], label.split(',')):
+            ppis_in_other[(s, t, l)] = True
 
-    df = interactions
+    df = interactions.reset_index(drop=True, inplace=False)
     interactions_ppis = zip(df[SOURCE], df[TARGET], df[LABEL])
     for i, (source, target, label) in enumerate(interactions_ppis):
         a, b = sorted([source, target])
-        for s, t, l in product([a], [b], label.split(',')):
-            if hash_map.get((s, t, l)) is None:
+        for (s, t, l) in product([a], [b], label.split(',')):
+            if ppis_in_other.get((s, t, l)) is None:
                 selector.add(i)
 
-    return interactions.loc[selector, ]
+    df = interactions.loc[selector, ]
+    df = df.reset_index(drop=True, inplace=False)
+    return df
 
 
-def remove_labels(interactions, subtypes):
+def remove_labels(interactions, labels_to_exclude):
     """
     Remove PPIs with a subtype in exclusions list.
 
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
-    :param subtypes: Character list of subtypes to exclude.
+    :param labels_to_exclude: string list of subtypes to exclude.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     print('Warning: Removing labels should be done before merging labels '
           'as the merge can result in new concatenated labels.')
     labels = interactions.label.values
-    selector = [(l not in subtypes) for l in labels]
+    selector = [(l not in labels_to_exclude) for l in labels]
     df = interactions.loc[selector, ]
-    df = df.reset_index(drop=True)
+    df = df.reset_index(drop=True, inplace=False)
     return df
 
 
@@ -153,8 +158,9 @@ def remove_min_counts(interactions, min_count):
           'should be done before merging labels '
           'as the merge can result in many new low count labels.')
     counts = Counter(interactions.label.values)
-    labels_to_exclude = [k for k, v in counts.items() if v < min_count]
+    labels_to_exclude = set([k for k, v in counts.items() if v < min_count])
     df = remove_labels(interactions, labels_to_exclude)
+    df = df.reset_index(drop=True, inplace=False)
     return df
 
 
@@ -165,10 +171,10 @@ def remove_self_edges(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    df = interactions
+    df = interactions.reset_index(drop=True, inplace=False)
     selector = [str(s) != str(t) for (s, t) in zip(df.source, df.target)]
     df = interactions.loc[selector, ]
-    df = df.reset_index(drop=True)
+    df = df.reset_index(drop=True, inplace=False)
     assert sum([str(a) == str(b) for (a, b) in zip(df.source, df.target)]) == 0
     return df
 
@@ -181,7 +187,7 @@ def merge_labels(interactions):
     :param interactions: DataFrame with 'source', 'target' and 'label' columns.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    df = interactions
+    df = interactions.reset_index(drop=True, inplace=False)
     merged_ppis = {}
     ppis = [tuple(PPI(s, t)) for (s, t) in zip(df.source, df.target)]
 
@@ -194,7 +200,7 @@ def merge_labels(interactions):
 
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
-    labels = [label for label in merged_ppis.values()]
+    labels = [l.lower().replace(" ", '-') for l in merged_ppis.values()]
 
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions
@@ -213,10 +219,12 @@ def remove_duplicates(interactions):
     merged = any([len(l.split(',')) > 1 for l in df[LABEL]])
 
     if merged:
+        assert len(ppis) == len(df.label.values)
         for (s, t), label in zip(ppis, df.label):
-            for l in label.split(','):
-                merged_ppis[(s, t, l)] = 1.0
+            for l in set(label.split(',')):
+                merged_ppis[(s, t, l)] = 1
     else:
+        assert len(ppis) == len(df.label.values)
         for (s, t), label in zip(ppis, df.label):
             merged_ppis[(s, t, label)] = 1
 
@@ -227,7 +235,6 @@ def remove_duplicates(interactions):
 
     if merged:
         interactions = merge_labels(interactions)
-
     assert sum(interactions.duplicated()) == 0
     return interactions
 
@@ -247,6 +254,8 @@ def process_interactions(interactions, drop_nan, allow_self_edges,
                   different labels into the same entry.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
+    interactions = interactions.reset_index(drop=True, inplace=False)
+
     if drop_nan:
         interactions = remove_nan(interactions)
     if not allow_self_edges:
@@ -259,4 +268,6 @@ def process_interactions(interactions, drop_nan, allow_self_edges,
         interactions = remove_min_counts(interactions, min_count=min_counts)
     if merge:
         interactions = merge_labels(interactions)
+
+    interactions = interactions.reset_index(drop=True, inplace=False)
     return interactions

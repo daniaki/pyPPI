@@ -180,18 +180,20 @@ if __name__ == '__main__':
     save_network_to_path(innate_i, innate_i_network_path)
     save_network_to_path(innate_c, innate_c_network_path)
 
-    test_labels = ['dephosphorylation', 'phosphorylation']
-    train_labels = [l for l in hprd.label if l not in test_labels]
-    train_hprd = remove_labels(hprd, test_labels)
+    hprd_test_labels = ['dephosphorylation', 'phosphorylation']
+    hprd_train_labels = set([l for l in hprd.label
+                             if l not in hprd_test_labels])
+    train_hprd = remove_labels(hprd, hprd_test_labels)
 
-    testing = remove_intersection(remove_labels(hprd, train_labels), kegg)
+    testing = remove_intersection(remove_labels(hprd, hprd_train_labels), kegg)
     testing = process_interactions(
         interactions=testing, drop_nan=True,
         allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )
+    training = pd.concat([kegg, train_hprd], ignore_index=True)
     training = process_interactions(
-        interactions=pd.concat([kegg, train_hprd], ignore_index=True),
+        interactions=training,
         drop_nan=True, allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )

@@ -244,7 +244,7 @@ def load_ptm_labels():
 
 
 def save_ptm_labels(labels):
-    with open(ptm_labels_path, 'r') as fp:
+    with open(ptm_labels_path, 'w') as fp:
         for l in labels:
             l = l.replace(' ', '-').lower()
             fp.write('{}\n'.format(l))
@@ -255,7 +255,7 @@ def load_network_from_path(path):
 
 
 def save_network_to_path(interactions, path):
-    return interactions.to_csv(path, sep='\t', ignore_index=True)
+    return interactions.to_csv(path, sep='\t', index=False)
 
 
 def load_accession_features():
