@@ -8,10 +8,11 @@ the publication.
 import os
 import pandas as pd
 
+from pyPPI.base import PPI
 from pyPPI.data import bioplex_network_path, pina2_network_path
 from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
 from pyPPI.data import innate_i_network_path, innate_c_network_path
-from pyPPI.data import interactome_network_path
+from pyPPI.data import interactome_network_path, full_training_network_path
 from pyPPI.data import kegg_network_path, hprd_network_path
 from pyPPI.data import load_uniprot_accession_map, save_uniprot_accession_map
 from pyPPI.data import testing_network_path, training_network_path
@@ -20,13 +21,12 @@ from pyPPI.data import save_ptm_labels
 from pyPPI.data import ppi_features_path, accession_features_path
 from pyPPI.data import annotation_extractor_path
 from pyPPI.data import pickle_pd_object
-from pyPPI.base import PPI
 
 from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.generic import bioplex_func, mitab_func, pina_func
 from pyPPI.data_mining.generic import generic_to_dataframe
 from pyPPI.data_mining.hprd import hprd_to_dataframe
-from pyPPI.data_mining.tools import process_interactions
+from pyPPI.data_mining.tools import process_interactions, LABEL
 from pyPPI.data_mining.tools import remove_intersection, remove_labels
 from pyPPI.data_mining.tools import map_network_accessions
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
@@ -184,33 +184,34 @@ if __name__ == '__main__':
     save_network_to_path(innate_c, innate_c_network_path)
 
     hprd_test_labels = ['dephosphorylation', 'phosphorylation']
-    hprd_train_labels = set([l for l in hprd.label
+    hprd_train_labels = set([l for l in hprd[LABEL]
                              if l not in hprd_test_labels])
     train_hprd = remove_labels(hprd, hprd_test_labels)
-
+    training = pd.concat([kegg, train_hprd], ignore_index=True)
     testing = remove_intersection(remove_labels(hprd, hprd_train_labels), kegg)
+    full_training = pd.concat([training, testing], ignore_index=True)
+
+    print("Building and saving processed networks...")
     testing = process_interactions(
         interactions=testing, drop_nan=True,
         allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )
-
-    training = pd.concat([kegg, train_hprd], ignore_index=True)
     training = process_interactions(
         interactions=training,
         drop_nan=True, allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )
-
-    ptm_labels = set(
-        l for merged in list(training.label) + list(testing.label)
-        for l in merged.split(',')
+    full_training = process_interactions(
+        interactions=full_training,
+        drop_nan=True, allow_duplicates=False, allow_self_edges=True,
+        exclude_labels=None, min_counts=5, merge=True
     )
+    labels = list(training[LABEL]) + list(testing[LABEL])
+    ptm_labels = set(l for merged in labels for l in merged.split(','))
     save_ptm_labels(ptm_labels)
-
-    interactome = pd.concat(
-        [bioplex, pina2, innate_i, innate_c], ignore_index=True
-    )
+    interactome_networks = [bioplex, pina2, innate_i, innate_c]
+    interactome = pd.concat(interactome_networks, ignore_index=True)
     interactome = process_interactions(
         interactions=interactome, drop_nan=True,
         allow_duplicates=False, allow_self_edges=True,
@@ -219,3 +220,4 @@ if __name__ == '__main__':
     save_network_to_path(interactome, interactome_network_path)
     save_network_to_path(training, training_network_path)
     save_network_to_path(testing, testing_network_path)
+    save_network_to_path(full_training, full_training_network_path)

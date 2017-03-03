@@ -33,8 +33,10 @@ pina2_network_path = os.path.join(PATH, 'networks/pina2_network.tsv')
 bioplex_network_path = os.path.join(PATH, 'networks/bioplex_network.tsv')
 innate_i_network_path = os.path.join(PATH, 'networks/innate_i_network.tsv')
 innate_c_network_path = os.path.join(PATH, 'networks/innate_c_network.tsv')
-training_network_path = os.path.join(PATH, 'networks/training_network.tsv')
 testing_network_path = os.path.join(PATH, 'networks/testing_network.tsv')
+training_network_path = os.path.join(PATH, 'networks/training_network.tsv')
+full_training_network_path = os.path.join(PATH,
+                                          'networks/full_training_network.tsv')
 interactome_network_path = os.path.join(PATH,
                                         'networks/interactome_network.tsv')
 bioplex_v2_path = os.path.join(PATH, 'networks/BioPlex_interactionList_v2.tsv')

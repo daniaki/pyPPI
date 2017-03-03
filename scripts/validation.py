@@ -24,7 +24,8 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import f1_score, precision_score
+from sklearn.metrics import recall_score, make_scorer
 
 
 if __name__ == '__main__':
@@ -35,6 +36,7 @@ if __name__ == '__main__':
     verbose = True
     use_feature_cache = True
 
+    print("Loading data...")
     uniprot = get_active_instance(verbose=verbose)
     data_types = UniProt.data_types()
     selection = [
@@ -44,7 +46,6 @@ if __name__ == '__main__':
         data_types.INTERPRO.value,
         data_types.PFAM.value
     ]
-
     labels = load_ptm_labels()
     annotation_ex = AnnotationExtractor(
         induce=induce,
@@ -57,9 +58,10 @@ if __name__ == '__main__':
     testing = load_network_from_path(testing_network_path)
 
     # Get the features into X, and multilabel y indicator format
+    print("Preparing training and testing data...")
     mlb = MultiLabelBinarizer(classes=labels)
     X_train_ppis, y_train = xy_from_interaction_frame(training)
-    X_test_ppis, y_test =xy_from_interaction_frame(testing)
+    X_test_ppis, y_test = xy_from_interaction_frame(testing)
     mlb.fit(y_train)
 
     X_train = annotation_ex.transform(X_train_ppis)
@@ -68,6 +70,7 @@ if __name__ == '__main__':
     y_test = mlb.transform(y_test)
 
     # Make the estimators and BR classifier
+    print("Making classifier...")
     param_distribution = {
         'C': np.arange(0.01, 10.01, step=0.01),
         'penalty': ['l1', 'l2']
@@ -75,9 +78,9 @@ if __name__ == '__main__':
     random_cv = RandomizedSearchCV(
         cv=3,
         n_iter=60,
-        scoring=f1_score,
         param_distributions=param_distribution,
-        estimator=make_classifier('LogisticRegression')
+        estimator=make_classifier('LogisticRegression'),
+        scoring=make_scorer(f1_score, greater_is_better=True)
     )
     estimators = [
         Pipeline(
@@ -89,6 +92,7 @@ if __name__ == '__main__':
     clf = BinaryRelevance(estimators, n_jobs=n_jobs)
 
     # Make the bootstrap and KFoldExperiments
+    print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
         estimator=clf, cv=cv, n_jobs=n_splits,
@@ -100,9 +104,11 @@ if __name__ == '__main__':
     )
 
     # Fit the data
+    print("Fitting training data...")
     bootstrap.fit(X_train, y_train)
 
     # Make the scoring functions
+    print("Evaluating performance...")
     f1_scorer = MultilabelScorer(f1_score)
     recall_scorer = MultilabelScorer(recall_score)
     precision_scorer = MultilabelScorer(precision_score)
@@ -118,6 +124,7 @@ if __name__ == '__main__':
     )
 
     # Put everything into a dataframe
+    print("Saving statistics dataframes...")
     validation_stats = Statistics.statistics_from_data(
         data=validation_data,
         statistics_names=['Recall', 'Precision', 'F1'],
@@ -130,4 +137,10 @@ if __name__ == '__main__':
         statistics_names=['Recall', 'Precision', 'F1'],
         classes=mlb.classes_,
         return_df=True
+    )
+    validation_stats.to_csv(
+        'results/validation_stats.csv', sep='\t', index=False
+    )
+    testing_stats.to_csv(
+        'results/testing_stats.csv', sep='\t', index=False
     )

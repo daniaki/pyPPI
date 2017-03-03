@@ -54,7 +54,8 @@ class UniProt(object):
     """
 
     def __init__(self, sprot_cache=uniprot_sprot, trembl_cache=uniprot_trembl,
-                 taxonid='9606', verbose=False, retries=10, wait=10, n_jobs=1):
+                 taxonid='9606', verbose=False, retries=10, wait=10, n_jobs=1,
+                 allow_download=False):
         """
         Class constructor
 
@@ -64,6 +65,8 @@ class UniProt(object):
         :param verbose: Set to True to print warnings and errors.
         :param retries: Number of record download retries upon a HTTP error.
         :param wait: Seconds to wait before a retry.
+        :param n_jobs: Number of proccesses to spawn.
+        :param allow_download: Download missing records from uniprot.
 
         :return: UniProt object.
         """
@@ -73,6 +76,7 @@ class UniProt(object):
         self.retries = retries
         self.wait = wait
         self.n_jobs = n_jobs
+        self.allow_download = allow_download
 
         print('Warning: Loading dat files, may take a few minutes.')
         if sprot_cache:
@@ -172,13 +176,13 @@ class UniProt(object):
         }
         return functions
 
-    def entry(self, accession, allow_download=False):
+    def entry(self, accession):
         try:
             return self.records[accession]
         except KeyError:
             if self.verbose:
                 print('Record for {} not found.'.format(accession))
-            if allow_download:
+            if self.allow_download:
                 if self.verbose:
                     print('Downloading record for {}...'.format(accession))
                 return self.download_entry(accession)
@@ -434,7 +438,7 @@ class UniProt(object):
                 continue
         return data
 
-    def batch_map(self, accessions, fr='ACC+ID', keep_unreviewed=True):
+    def batch_map(self, accessions, fr='ACC+ID', keep_unreviewed=True,):
         """
         Map a list of accessions using the UniProt batch mapping service.
 
