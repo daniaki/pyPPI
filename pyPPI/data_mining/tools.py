@@ -164,14 +164,14 @@ def remove_intersection(interactions, other):
     """
     selector = set()
     ppis_in_other = {}
-    other_ppis = zip(other[SOURCE], other[TARGET], other[LABEL])
+    other_ppis = list(zip(other[SOURCE], other[TARGET], other[LABEL]))
     for (source, target, label) in other_ppis:
         a, b = sorted([source, target])
         for (s, t, l) in product([a], [b], label.split(',')):
             ppis_in_other[(s, t, l)] = True
 
     df = interactions.reset_index(drop=True, inplace=False)
-    interactions_ppis = zip(df[SOURCE], df[TARGET], df[LABEL])
+    interactions_ppis = list(zip(df[SOURCE], df[TARGET], df[LABEL]))
     for i, (source, target, label) in enumerate(interactions_ppis):
         a, b = sorted([source, target])
         for (s, t, l) in product([a], [b], label.split(',')):

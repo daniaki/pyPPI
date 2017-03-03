@@ -4,6 +4,7 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
+import numpy as np
 
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import testing_network_path, training_network_path
@@ -18,15 +19,16 @@ from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.tools import xy_from_interaction_frame
 
+from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.feature_selection import *
-from sklearn.metrics import *
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 
 if __name__ == '__main__':
-    n_jobs = 4
+    n_jobs = 3
     n_iter = 3
     n_splits = 5
     induce = True
@@ -58,6 +60,7 @@ if __name__ == '__main__':
     mlb = MultiLabelBinarizer(classes=labels)
     X_train_ppis, y_train = xy_from_interaction_frame(training)
     X_test_ppis, y_test =xy_from_interaction_frame(testing)
+    mlb.fit(y_train)
 
     X_train = annotation_ex.transform(X_train_ppis)
     X_test = annotation_ex.transform(X_test_ppis)
@@ -65,10 +68,21 @@ if __name__ == '__main__':
     y_test = mlb.transform(y_test)
 
     # Make the estimators and BR classifier
+    param_distribution = {
+        'C': np.arange(0.01, 10.01, step=0.01),
+        'penalty': ['l1', 'l2']
+    }
+    random_cv = RandomizedSearchCV(
+        cv=3,
+        n_iter=60,
+        scoring=f1_score,
+        param_distributions=param_distribution,
+        estimator=make_classifier('LogisticRegression')
+    )
     estimators = [
         Pipeline(
             [('vectorizer', CountVectorizer(binary=False)),
-             ('clf', make_classifier('LogisticRegression'))]
+             ('clf', clone(random_cv))]
         )
         for l in labels
     ]
@@ -76,8 +90,14 @@ if __name__ == '__main__':
 
     # Make the bootstrap and KFoldExperiments
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
-    kf = KFoldExperiment(estimator=clf, cv=cv, n_jobs=n_jobs, verbose=verbose)
-    bootstrap = Bootstrap(kf, n_iter=n_iter, n_jobs=n_jobs, verbose=verbose)
+    kf = KFoldExperiment(
+        estimator=clf, cv=cv, n_jobs=n_splits,
+        verbose=verbose, backend='threading'
+    )
+    bootstrap = Bootstrap(
+        kfold_experiemnt=kf, n_iter=n_iter, n_jobs=n_jobs,
+        verbose=verbose, backend='multiprocessing'
+    )
 
     # Fit the data
     bootstrap.fit(X_train, y_train)
@@ -98,8 +118,15 @@ if __name__ == '__main__':
     )
 
     # Put everything into a dataframe
-    stats = Statistics.statistics_from_data(
+    validation_stats = Statistics.statistics_from_data(
         data=validation_data,
+        statistics_names=['Recall', 'Precision', 'F1'],
+        classes=mlb.classes_,
+        return_df=True
+    )
+    # Put everything into a dataframe
+    testing_stats = Statistics.statistics_from_data(
+        data=testing_data,
         statistics_names=['Recall', 'Precision', 'F1'],
         classes=mlb.classes_,
         return_df=True

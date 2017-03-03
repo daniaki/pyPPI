@@ -157,10 +157,11 @@ class IterativeStratifiedKFold(_BaseKFold):
             subset_c_j[fold_index] -= 1
             completed_labels.append(label)
 
-        # # Split up the unlablled samples
+        # Split up the unlablled samples
         rng.shuffle(no_label_y)
-        for i, c in enumerate(chunk_list(no_label_y, self.n_splits)):
-            folds_idx[i] += c
+        if len(no_label_y) > 0:
+            for i, c in enumerate(chunk_list(no_label_y, self.n_splits)):
+                folds_idx[i] += c
 
         # Test for disjoint-ness:
         for a in folds_idx:

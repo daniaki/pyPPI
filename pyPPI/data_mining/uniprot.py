@@ -54,7 +54,7 @@ class UniProt(object):
     """
 
     def __init__(self, sprot_cache=uniprot_sprot, trembl_cache=uniprot_trembl,
-                 taxonid='9606', verbose=False, retries=3, wait=5, n_jobs=1):
+                 taxonid='9606', verbose=False, retries=10, wait=10, n_jobs=1):
         """
         Class constructor
 
@@ -172,13 +172,19 @@ class UniProt(object):
         }
         return functions
 
-    def entry(self, accession, verbose=False):
+    def entry(self, accession, allow_download=False):
         try:
             return self.records[accession]
         except KeyError:
-            if verbose:
-                print('Record for {} now downloading...'.format(accession))
-            return self.download_entry(accession)
+            if self.verbose:
+                print('Record for {} not found.'.format(accession))
+            if allow_download:
+                if self.verbose:
+                    print('Downloading record for {}...'.format(accession))
+                return self.download_entry(accession)
+            else:
+                self.records[accession] = None
+                return None
 
     def download_entry(self, accession):
         record = None
@@ -197,7 +203,7 @@ class UniProt(object):
                 time.sleep(self.wait)
                 try:
                     if self.verbose:
-                        print('Retry {}/{}...'.format(i, self.retries))
+                        print('Retry {}/{}...'.format(i+1, self.retries))
                     handle = ExPASy.get_sprot_raw(accession)
                     record = SwissProt.read(handle)
                     success = True
@@ -437,12 +443,11 @@ class UniProt(object):
         :param keep_unreviewed: Also keep the unreviewed accession in mapping.
         :return: Dictionary of accessions to list of accessions.
         """
-
         uniprot_mapper = UniProtMapper()
         filtered_mapping = {}
         mapping = uniprot_mapper.mapping(fr=fr, to='ACC', query=accessions)
         for fr, to in mapping.items():
-            status = zip(to, [self.review_status(a) for a in to])
+            status = list(zip(to, [self.review_status(a) for a in to]))
             reviewed = [a for (a, s) in status if s.lower() == 'reviewed']
             unreviewed = [a for (a, s) in status if s.lower() == 'unreviewed']
             targets = reviewed

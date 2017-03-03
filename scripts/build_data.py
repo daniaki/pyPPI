@@ -4,6 +4,7 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
+
 import os
 import pandas as pd
 
@@ -18,7 +19,7 @@ from pyPPI.data import save_network_to_path
 from pyPPI.data import save_ptm_labels
 from pyPPI.data import ppi_features_path, accession_features_path
 from pyPPI.data import annotation_extractor_path
-from pyPPI.data import pickle_pd_object, read_pd_pickle
+from pyPPI.data import pickle_pd_object
 from pyPPI.base import PPI
 
 from pyPPI.data_mining.features import AnnotationExtractor
@@ -42,7 +43,7 @@ if __name__ == '__main__':
         data_types.PFAM.value
     ]
     pathways = download_pathway_ids('hsa')
-    update = False
+    update_mapping = True
     use_feature_cache = True
     n_jobs = 8
 
@@ -100,7 +101,7 @@ if __name__ == '__main__':
     targets = set(p for df in networks for p in df.target.values)
     accessions = list(sources | targets)
 
-    if update:
+    if update_mapping:
         accession_mapping = uniprot.batch_map(accessions)
         save_uniprot_accession_map(accession_mapping)
     else:
@@ -193,12 +194,14 @@ if __name__ == '__main__':
         allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )
+
     training = pd.concat([kegg, train_hprd], ignore_index=True)
     training = process_interactions(
         interactions=training,
         drop_nan=True, allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )
+
     ptm_labels = set(
         l for merged in list(training.label) + list(testing.label)
         for l in merged.split(',')

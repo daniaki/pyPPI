@@ -177,7 +177,8 @@ def keggid_to_uniprot(interactions, trembl=False):
     ur = get_active_instance(verbose=True)
 
     for kegg_id, uniprot_ls in mapping.items():
-        status_ls = zip(uniprot_ls, [ur.review_status(a) for a in uniprot_ls])
+        status_ls = [ur.review_status(a) for a in uniprot_ls]
+        status_ls = list(zip(uniprot_ls, status_ls))
         reviewed = [a for (a, s) in status_ls if s.lower() == 'reviewed']
         unreviewed = [a for (a, s) in status_ls if s.lower() == 'unreviewed']
         if len(reviewed) > 0:
@@ -196,8 +197,8 @@ def keggid_to_uniprot(interactions, trembl=False):
                 print('Warning: Could not map {}.'.format(kegg_id))
 
     # Remaining kegg_ids that have not mapped to anything go to None
-    zipped = zip(interactions.source.values,
-                 interactions.target.values, interactions.label.values)
+    zipped = list(zip(interactions.source.values,
+                 interactions.target.values, interactions.label.values))
     sources = []
     targets = []
     labels = []

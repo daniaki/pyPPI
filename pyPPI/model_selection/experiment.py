@@ -32,6 +32,10 @@ class Bootstrap(object):
         Set to true to print out intermediate messages from parallel and
         joblib.
 
+    random_state : int seed, RandomState instance, default: None
+        The seed of the pseudo random number generator to use when
+        shuffling the data. Used only in solvers 'sag' and 'liblinear'.
+
     Attributes
     ----------
     experiments : List[kfold_experiemnt]
@@ -44,12 +48,14 @@ class Bootstrap(object):
                                  "attempting to score performance.")
         return
 
-    def __init__(self, kfold_experiemnt, n_iter, n_jobs=1, verbose=False):
-        seeds = create_seeds(n_iter)
+    def __init__(self, kfold_experiemnt, n_iter, n_jobs=1, verbose=False,
+                 random_state=None, backend='multiprocessing'):
+        seeds = create_seeds(n_iter, random_state)
         self.n_iter = n_iter
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.experiments = [kfold_experiemnt.clone(s) for s in seeds]
+        self.backend = backend
 
     def _fit(self, X, y, i):
         return self.experiments[i].fit(X, y)
@@ -63,7 +69,7 @@ class Bootstrap(object):
     def fit(self, X, y):
         fit_func = delayed(self._fit)
         self.experiments = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                                    backend='multiprocessing')(
+                                    backend=self.backend)(
             fit_func(X, y, i) for i in range(self.n_iter)
         )
         self.fitted_ = True
@@ -94,7 +100,7 @@ class Bootstrap(object):
         self._check_fitted()
         score = delayed(self._scores)
         scores = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                          backend='multiprocessing')(
+                          backend=self.backend)(
             score(X, y, i, 'validation_score', score_funcs,
                   thresholds, mean_kf)
             for i in range(self.n_iter)
@@ -129,7 +135,7 @@ class Bootstrap(object):
         self._check_fitted()
         score = delayed(self._scores)
         scores = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                          backend='multiprocessing')(
+                          backend=self.backend)(
             score(X, y, i, 'held_out_score', score_funcs,
                   thresholds, mean_kf)
             for i in range(self.n_iter)
@@ -182,13 +188,14 @@ class KFoldExperiment(object):
     """
 
     def __init__(self, estimator, cv=3, shuffle=True, random_state=None,
-                 n_jobs=1, verbose=False):
+                 n_jobs=1, verbose=False, backend='multiprocessing'):
         self.base_estimator_ = clone(estimator)
         self.estimators_ = []
         self.shuffle_ = shuffle
         self.random_state_ = random_state
         self.n_jobs_ = n_jobs
         self.verbose_ = verbose
+        self.backend = backend
 
         if isinstance(cv, int):
             self.cv_ = StratifiedKFold(cv, shuffle, random_state)
@@ -214,7 +221,8 @@ class KFoldExperiment(object):
             shuffle=self.shuffle_,
             random_state=random_state,
             n_jobs=self.n_jobs_,
-            verbose=self.verbose_
+            verbose=self.verbose_,
+            backend=self.backend
         )
 
     def _fit_single(self, X, y, train_idx):
@@ -223,6 +231,10 @@ class KFoldExperiment(object):
             estimator.set_params(**{'random_state': self.random_state_})
         if hasattr(estimator, 'clf__random_state'):
             estimator.set_params(**{'clf__random_state': self.random_state_})
+        if hasattr(estimator, 'estimator__random_state'):
+            estimator.set_params(
+                **{'estimator__random_state': self.random_state_}
+            )
         estimator.fit(X[train_idx, ], y[train_idx, ])
         return estimator
 
@@ -271,7 +283,7 @@ class KFoldExperiment(object):
 
         fit = delayed(self._fit_single)
         self.estimators_ = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
-                                    backend='multiprocessing')(
+                                    backend=self.backend)(
             fit(X, y, train_idx) for (train_idx, _) in self.cv_
         )
         self.fitted_ = True
@@ -305,7 +317,7 @@ class KFoldExperiment(object):
             thresholds = [0.5]
         score = delayed(self._score_single)
         scores = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
-                          backend='multiprocessing')(
+                          backend=self.backend)(
             score(X, y, test_idx, estimator, score_funcs, thresholds)
             for (_, test_idx), estimator in zip(self.cv_, self.estimators_)
         )
@@ -341,7 +353,7 @@ class KFoldExperiment(object):
             thresholds = [0.5]
         score = delayed(self._score_single)
         scores = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
-                          backend='multiprocessing')(
+                          backend=self.backend)(
             score(X, y, None, estimator, score_funcs, thresholds)
             for estimator in self.estimators_
         )

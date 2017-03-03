@@ -310,7 +310,7 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
     def zip_classes(self):
         estimators = self.get_estimators()
         classes = self.get_classes()
-        return zip(classes, estimators)
+        return list(zip(classes, estimators))
 
     def top_n_features(self, n, absolute=False):
         """

@@ -30,8 +30,8 @@ def pretty_print_dict(dictionary, n_tabs=0):
         print('\t'*n_tabs + '{}:\t{}'.format(k, dictionary[k]))
 
 
-def create_seeds(size):
-    np.random.seed(42)
+def create_seeds(size, random_state):
+    np.random.seed(random_state)
     ii32 = np.iinfo(np.int32)
     max_int = ii32.max
     seeds = np.random.random_integers(low=0, high=max_int, size=size)
@@ -62,7 +62,6 @@ def chunk_list(ls, n):
         return []
     if n == 1:
         return ls
-
     ranges = list(range(0, len(ls), int(np.ceil(len(ls)/n))))
     tup_ranges = []
     for i in range(len(ranges)-1):
