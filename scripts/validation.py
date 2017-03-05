@@ -4,6 +4,7 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
+
 import numpy as np
 
 from pyPPI.data import load_network_from_path, load_ptm_labels

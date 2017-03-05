@@ -4,8 +4,10 @@
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 """
+
 import numpy as np
 
+from pyPPI.base import make_arg_parser, P1, P2, G1, G2
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import full_training_network_path
 from pyPPI.data import interactome_network_path
@@ -17,6 +19,8 @@ from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.tools import xy_from_interaction_frame
 
+from pyPPI.network_analysis import P1, P2, G1, G2
+
 from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
@@ -26,7 +30,9 @@ from sklearn.metrics import f1_score, make_scorer
 
 
 if __name__ == '__main__':
-    n_jobs = 4
+    n_jobs = 2
+    n_splits = 5
+    rcv_iter = 1
     induce = True
     verbose = True
     use_feature_cache = True
@@ -54,11 +60,12 @@ if __name__ == '__main__':
 
     # Get the features into X, and multilabel y indicator format
     print("Preparing training and testing data...")
-    mlb = MultiLabelBinarizer(classes=labels)
     X_train_ppis, y_train = xy_from_interaction_frame(training)
     X_test_ppis, _ = xy_from_interaction_frame(testing)
     X_train = annotation_ex.transform(X_train_ppis)
     X_test = annotation_ex.transform(X_test_ppis)
+
+    mlb = MultiLabelBinarizer(classes=labels)
     mlb.fit(y_train)
     y_train = mlb.transform(y_train)
 
@@ -69,8 +76,9 @@ if __name__ == '__main__':
         'penalty': ['l1', 'l2']
     }
     random_cv = RandomizedSearchCV(
-        cv=3,
-        n_iter=60,
+        cv=n_splits,
+        n_iter=rcv_iter,
+        n_jobs=n_jobs,
         param_distributions=param_distribution,
         estimator=make_classifier('LogisticRegression'),
         scoring=make_scorer(f1_score, greater_is_better=True)
@@ -92,22 +100,24 @@ if __name__ == '__main__':
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
-    # TODO: Check class order from predictions
     print("Writing results to file...")
-    fp = open('results/predictions.tsv', 'w')
-    header = "uniprot_a\tuniprot_b\tgene_a\tgene_b\t{classes}\tsum\n".format(
-        classes='\t'.join(mlb.classes_)
+    fp = open('./results/predictions.tsv', 'w')
+    header = "{p1}\t{p2}\t{g1}\t{g2}\t{classes}\tsum\n".format(
+        P1, P2, G1, G2, '\t'.join(sorted(mlb.classes_))
     )
     fp.write(header)
     acc = annotation_ex.accession_vocabulary[UniProt.accession_column()]
     genes = annotation_ex.accession_vocabulary[UniProt.data_types().GENE.value]
     accession_gene_map = {a: g for (a, g) in zip(acc, genes)}
-    for (s, t), predictions in zip(X_train_ppis, predictions):
-        gene_a = accession_gene_map.get(s, '-')
-        gene_b = accession_gene_map.get(t, '-')
-        sum_pr = sum(predictions)
-        line = "{s}\t{t}\t{gene_a}\t{gene_b}\t{classes}\t{sum_pr}\n".format(
-            s=s, t=t, gene_a=gene_a, gene_b=gene_b, sum_pr=sum_pr,
-            classes='\t'.join(['%.4f' % p for p in predictions])
+    for (s, t), p_vec in zip(X_test_ppis, predictions):
+        p_vec = [p for _, p in sorted(zip(mlb.classes_, p_vec))]
+        g1 = accession_gene_map.get(s, ['-'])[0] or '-'
+        g2 = accession_gene_map.get(t, ['-'])[0] or '-'
+        sum_pr = sum(p_vec)
+        line = "{s}\t{t}\t{g1}\t{g2}\t{classes}\t{sum_pr}\n".format(
+            s=s, t=t, g1=g1, g2=g2, sum_pr=sum_pr,
+            classes='\t'.join(['%.4f' % p for p in p_vec])
         )
         fp.write(line)
+    fp.close()
+    print("Done!")

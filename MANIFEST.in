@@ -1,0 +1,14 @@
+include pyPPI/data/*.pkl
+include pyPPI/data/*.json
+include pyPPI/data/*.obo
+include pyPPI/data/*.dat
+include pyPPI/data/*.list
+include pyPPI/data/*.tsv
+include pyPPI/data/*.txt
+include pyPPI/data/*.csv
+include pyPPI/data/networks/*.tsv
+include pyPPI/data/networks/*.mitab
+include pyPPI/data/networks/*.sif
+include pyPPI/data/networks/*.txt
+include pyPPI/data/networks/*.csv
+include pyPPI/data/hprd/*.txt

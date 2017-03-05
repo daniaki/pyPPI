@@ -8,7 +8,7 @@ the publication.
 import os
 import pandas as pd
 
-from pyPPI.base import PPI
+from pyPPI.base import PPI, LABEL
 from pyPPI.data import bioplex_network_path, pina2_network_path
 from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
 from pyPPI.data import innate_i_network_path, innate_c_network_path

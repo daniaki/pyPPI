@@ -7,14 +7,16 @@ Collection of utility operations that don't go anywhere else.
 import os
 import numpy as np
 import pandas as pd
+import argparse
 
-__all__ = [
-    'su_make_dir',
-    'pretty_print_dict',
-    'create_seeds',
-    'chunk_list',
-    'PPI'
-]
+
+P1 = 'protein_a'
+P2 = 'protein_b'
+G1 = 'gene_a'
+G2 = 'gene_b'
+SOURCE = 'source'
+TARGET = 'target'
+LABEL = 'label'
 
 
 def su_make_dir(path, mode=0o777):
@@ -46,13 +48,15 @@ def validate_term(term):
     return term.upper()
 
 
-def concat_dataframes(dfs):
+def concat_dataframes(dfs, reset_index=False):
     """
     Concatenate a list of dataframes.
     """
     combined = pd.DataFrame()
     for df in dfs:
         combined = pd.concat([combined, df], ignore_index=True)
+    if reset_index:
+        combined.reset_index(drop=True, inplace=True)
     return combined
 
 
@@ -132,3 +136,83 @@ class PPI(object):
 
     def __iter__(self):
         return iter(self.__proteins)
+
+
+def make_arg_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-m", "--method",
+        help="Sklearn Binary Classifier",
+        type=str, default='LogisticRegression'
+    )
+    parser.add_argument(
+        "-gsf", "--grid_folds",
+        help="Number of Cross Validation folds for Grid-Search.",
+        type=int, default=5
+    )
+    parser.add_argument(
+        "-it", "--iter",
+        help="Number of bootstrap iterations to run.",
+        type=int, default=5
+    )
+    parser.add_argument(
+        "-f", "--folds",
+        help="Number of Cross Validation folds to run in each bootstrap.",
+        type=int, default=5
+    )
+    parser.add_argument(
+        "-n", "--jobs",
+        help="Number of processes to spawn.",
+        type=int, default=1
+    )
+    parser.add_argument(
+        "-i", "--induce",
+        help="Use ULCA GO term induction.",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-v", "--vectoriser",
+        help="Sklearn text vectoriser method to use.",
+        type=str, default='CountVectorizer'
+    )
+    parser.add_argument(
+        "-b", "--binary",
+        help="Set binary in CountVectorizer to True",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-csl", "--balanced",
+        help="Use cost-sensitive learning",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-pf", "--pfam",
+        help="Use pfam terms in fetures.",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-ipr", "--interpro",
+        help="Use interpro terms in fetures.",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-bp", "--biological_process",
+        help="Use GO Biological Process in fetures.",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-mf", "--molecular_function",
+        help="Use GO Molecular Function in fetures.",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-cc", "--cellular_component",
+        help="Use GO Cellular Component in fetures.",
+        action='store_true', default=False
+    )
+    parser.add_argument(
+        "-of", "--output_file",
+        help="Use pfam terms in fetures.",
+        type=str, default='/scripts/results/predictions.tsv'
+    )
+    return parser

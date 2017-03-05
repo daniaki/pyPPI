@@ -6,13 +6,19 @@ format and perform network related operations on it.
 """
 
 import os
-import igraph
 import tempfile
-import pandas as pd
-import numpy as np
+from collections import OrderedDict as Od
 
-from ..data import load_training_network
+import igraph
+import numpy as np
+import pandas as pd
+
+from ..base import P1, P2, G1, G2
+from ..base import PPI
+from ..data import load_network_from_path, full_training_network_path
 from ..data import load_ptm_labels
+from ..data_mining.tools import TARGET
+from pyPPI.base import SOURCE, TARGET
 
 
 def _igraph_from_tuples(v_names):
@@ -38,16 +44,16 @@ def _igraph_vid_attr_table(igraph_g, attr):
 
 
 def _node_in_training_set(node):
-    train_df = load_training_network()
-    train_nodes = set(train_df['p1'].values) | set(train_df['p2'])
+    train_df = load_network_from_path(full_training_network_path)
+    train_nodes = set(train_df[SOURCE].values) | set(train_df[TARGET])
     return node in train_nodes
 
 
 def _edge_in_training_set(edge):
-    train_df = load_training_network()
+    train_df = load_network_from_path(full_training_network_path)
     p1, p2 = sorted(edge)
-    train_edges = set([sorted([p1, p2]) for p1, p2 in
-                       set(train_df['uniprot'].values)])
+    train_edges = zip(train_df[SOURCE, train_df[TARGET]])
+    train_edges = set([tuple(PPI(s, t)) for (s, t) in train_edges])
     return (p1, p2) in train_edges
 
 
@@ -78,13 +84,13 @@ class InteractionNetwork(object):
     """
 
     def __init__(self, interactions):
-        if not isinstance(interactions, pd.DataFrame):
-            interactions = pd.read_csv(interactions, sep='\t')
+        interactions = pd.read_csv(interactions, sep='\t')
         self.interactions_ = interactions
         self.columns_ = list(interactions.columns)
         self.gene_names_ = {}
-        p1_g1 = zip((interactions['p1'].values, interactions['g1'].values))
-        p2_g2 = zip((interactions['p2'].values, interactions['g2'].values))
+        self.edges_ = list(zip(interactions[P1], interactions[G1]))
+        p1_g1 = zip(interactions[P1], interactions[G1])
+        p2_g2 = zip(interactions[P2], interactions[G2])
         for (p1, g1), (p2, g2) in zip(p1_g1, p2_g2):
             self.gene_names_[p1] = g1
             self.gene_names_[p2] = g2
@@ -113,7 +119,10 @@ class InteractionNetwork(object):
             self.interactions_[label] >= threshold
         ].index.values
         if output:
-            self._write_cytoscape_files(label_idx, label)
+            pp_path = './results/{}_pp.tsv'.format(label)
+            noa_path = './results/{}_node_attrs.noa'.format(label)
+            eda_path = './results/{}_edge_attrs.eda'.format(label)
+            self._write_cytoscape_files(pp_path, noa_path, eda_path, label_idx)
         return self
 
     def induce_subnetwork_from_pathway(self, accesion_list, threshold,
@@ -139,14 +148,13 @@ class InteractionNetwork(object):
         df = self.interactions_
         accesion_list = set(accesion_list)
 
-        a, b = ('p1', 'p2')
+        a, b = (P1, P2)
         if genes:
-            a, b = ('g1', 'g2')
-        edges = [sorted([p1, p2]) for (p1, p2)
-                 in zip(df[a].values, df[b].values)]
+            a, b = (G1, G2)
+        edges = [sorted([p1, p2]) for (p1, p2) in zip(df[a], df[b])]
         edge_idx = np.asarray(
             [i for i, (p1, p2) in enumerate(edges)
-             if p1 in accesion_list and p2 in accesion_list]
+             if p1 in accesion_list and p2 in accesion_list] # or?
         )
         if len(edge_idx) == 0:
             ValueError("No subnetwork could be induced with the given"
@@ -162,7 +170,10 @@ class InteractionNetwork(object):
             ValueError("Threshold set too high and no subnetwork could be "
                        "induced with the given pathway list.")
         if output:
-            self._write_cytoscape_files(edge_idx, label='pathway')
+            pp_path = './results/pathway_pp.tsv'
+            noa_path = './results/pathway_node_attrs.noa'
+            eda_path = './results/pathway_edge_attrs.eda'
+            self._write_cytoscape_files(pp_path, noa_path, eda_path, edge_idx)
         return edge_idx
 
     def _write_cytoscape_files(self, noa_path, eda_path,
@@ -173,7 +184,7 @@ class InteractionNetwork(object):
         """
         df = self.interactions_.loc[idx_selection, ]
         edges = [sorted([p1, p2]) for (p1, p2)
-                 in zip(df['p1'].values, df['p2'].values)]
+                 in zip(df[P1].values, df[P2].values)]
 
         # vid is the vertex id from igraph
         graph = _igraph_from_tuples(edges)
@@ -190,28 +201,33 @@ class InteractionNetwork(object):
         n_nodes = len(nodes)
         betweenness = [(2 * betwn)/(n_nodes*n_nodes - 3*n_nodes + 2)
                        for betwn in graph.betweenness()]
-        cyto_n_attrs = pd.DataFrame({
-            'Name': accessions,
-            'Node in training': node_in_training,
-            'Node betweeness': betweenness,
-            'Node degree': degree,
-            'Gene Name': gene_names
-        })
-        cyto_n_attrs.to_csv(noa_path, sep='\t')
+        cyto_n_attrs = pd.DataFrame(Od([
+            ('Name', accessions),
+            ('Node in training', node_in_training),
+            ('Node betweeness', betweenness),
+            ('Node degree', degree),
+            ('Gene Name', gene_names)
+        ]))
+        cyto_n_attrs.to_csv(noa_path, sep='\t', index=False)
 
         # Compute some selected edge-attributes a,
         # Write the eda (edge-attribute) file.
-        edge_in_training = [_edge_in_training_set(e) for e in edges]
-        cyto_e_attrs = {'{}-pr'.format(l): df[l].values for l in load_ptm_labels()}
-        cyto_e_attrs['Name'] = ['{} pp {}'.format(p1, p2) for p1, p2 in edges]
-        cyto_e_attrs['Edge In Training'] = edge_in_training
-        cyto_e_attrs = pd.DataFrame(data=cyto_e_attrs)
-        cyto_e_attrs.to_csv(eda_path, sep='\t')
 
-        cyto_interactions = pd.DataFrame({
-            'source': [p1 for p1, _ in edges],
-            'target': [p2 for _, p2 in edges],
-            'interaction': ['pp' for _ in edges]
-        })
-        cyto_interactions.to_csv(pp_path, sep='\t')
+        edge_in_training = [_edge_in_training_set(e) for e in edges]
+        cyto_e_attrs = [('%s-pr' % l, df[l].values) for l in load_ptm_labels()]
+        cyto_e_attrs += [
+            ('Name', ['{} pp {}'.format(p1, p2) for p1, p2 in edges])
+        ]
+        cyto_e_attrs += [
+            ('Edge In Training', edge_in_training)
+        ]
+        cyto_e_attrs = pd.DataFrame(data=Od(cyto_e_attrs))
+        cyto_e_attrs.to_csv(eda_path, sep='\t', index=False)
+
+        cyto_interactions = pd.DataFrame(Od([
+            ('source', [p1 for p1, _ in edges]),
+            ('target', [p2 for _, p2 in edges]),
+            ('interaction', ['pp' for _ in edges])
+        ]))
+        cyto_interactions.to_csv(pp_path, sep='\t', index=False)
         return self

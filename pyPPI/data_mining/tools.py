@@ -8,16 +8,14 @@ This module provides functionality to perform filtering and processing on
 interaction dataframes.
 """
 
-from numpy import NaN
-import pandas as pd
-
 from collections import Counter
 from itertools import product
-from ..base import PPI
 
-SOURCE = 'source'
-TARGET = 'target'
-LABEL = 'label'
+import pandas as pd
+from numpy import NaN
+
+from pyPPI.base import SOURCE, TARGET, LABEL
+from ..base import PPI
 
 
 def xy_from_interaction_frame(interactions):
