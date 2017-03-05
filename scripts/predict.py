@@ -19,8 +19,6 @@ from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.tools import xy_from_interaction_frame
 
-from pyPPI.network_analysis import P1, P2, G1, G2
-
 from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
@@ -36,6 +34,8 @@ if __name__ == '__main__':
     induce = True
     verbose = True
     use_feature_cache = True
+    save_path = './scripts/results/predictions.tsv'
+    fp = open(save_path, 'w')
 
     print("Loading data...")
     uniprot = get_active_instance(verbose=verbose)
@@ -101,9 +101,8 @@ if __name__ == '__main__':
 
     # Write the predictions to a tsv file
     print("Writing results to file...")
-    fp = open('./results/predictions.tsv', 'w')
     header = "{p1}\t{p2}\t{g1}\t{g2}\t{classes}\tsum\n".format(
-        P1, P2, G1, G2, '\t'.join(sorted(mlb.classes_))
+        p1=P1, p2=P2, g1=G1, g2=G2, classes='\t'.join(sorted(mlb.classes_))
     )
     fp.write(header)
     acc = annotation_ex.accession_vocabulary[UniProt.accession_column()]

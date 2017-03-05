@@ -13,18 +13,16 @@ import igraph
 import numpy as np
 import pandas as pd
 
-from ..base import P1, P2, G1, G2
+from ..base import P1, P2, G1, G2, SOURCE, TARGET
 from ..base import PPI
 from ..data import load_network_from_path, full_training_network_path
 from ..data import load_ptm_labels
-from ..data_mining.tools import TARGET
-from pyPPI.base import SOURCE, TARGET
 
 
 def _igraph_from_tuples(v_names):
     # igraph will store the accessions under the 'name' attribute and
     # use its own integer number system to form vertex ids
-    tmp = tempfile.mktemp(suffix='.ncol', prefix='graph_', dir='tmp/')
+    tmp = tempfile.mktemp(suffix='.ncol', prefix='graph_')
     fp = open(tmp, "w")
     for (name_a, name_b) in v_names:
         fp.write("{} {}\n".format(name_a, name_b))
@@ -45,14 +43,14 @@ def _igraph_vid_attr_table(igraph_g, attr):
 
 def _node_in_training_set(node):
     train_df = load_network_from_path(full_training_network_path)
-    train_nodes = set(train_df[SOURCE].values) | set(train_df[TARGET])
+    train_nodes = set(train_df[SOURCE]) | set(train_df[TARGET])
     return node in train_nodes
 
 
 def _edge_in_training_set(edge):
     train_df = load_network_from_path(full_training_network_path)
     p1, p2 = sorted(edge)
-    train_edges = zip(train_df[SOURCE, train_df[TARGET]])
+    train_edges = zip(train_df[SOURCE], train_df[TARGET])
     train_edges = set([tuple(PPI(s, t)) for (s, t) in train_edges])
     return (p1, p2) in train_edges
 
@@ -122,7 +120,12 @@ class InteractionNetwork(object):
             pp_path = './results/{}_pp.tsv'.format(label)
             noa_path = './results/{}_node_attrs.noa'.format(label)
             eda_path = './results/{}_edge_attrs.eda'.format(label)
-            self._write_cytoscape_files(pp_path, noa_path, eda_path, label_idx)
+            self._write_cytoscape_files(
+                pp_path=pp_path,
+                noa_path=noa_path,
+                eda_path=eda_path,
+                idx_selection=label_idx
+            )
         return self
 
     def induce_subnetwork_from_pathway(self, accesion_list, threshold,
@@ -173,7 +176,12 @@ class InteractionNetwork(object):
             pp_path = './results/pathway_pp.tsv'
             noa_path = './results/pathway_node_attrs.noa'
             eda_path = './results/pathway_edge_attrs.eda'
-            self._write_cytoscape_files(pp_path, noa_path, eda_path, edge_idx)
+            self._write_cytoscape_files(
+                pp_path=pp_path,
+                noa_path=noa_path,
+                eda_path=eda_path,
+                idx_selection=edge_idx
+            )
         return edge_idx
 
     def _write_cytoscape_files(self, noa_path, eda_path,

@@ -9,5 +9,16 @@
 *.sif
 *.pkl
 *tsv
-/pyPPI/data/uprot_records.dict
+*.dict
 *.json
+*.eda
+*.noa
+.idea/
+pyPPI/__pycache__/
+pyPPI/base/__pycache__/
+pyPPI/data/__pycache__/
+pyPPI/data_mining/__pycache__/
+pyPPI/model_selection/__pycache__/
+pyPPI/models/__pycache__/
+pyPPI/network_analysis/__pycache__/
+scripts/results/
