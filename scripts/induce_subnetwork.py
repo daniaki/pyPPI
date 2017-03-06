@@ -1,15 +1,32 @@
 #!/usr/bin/env python
 
 """
-This script runs the bootstrap kfold validation experiments as used in
-the publication.
+This script induces a subnetwork from the interactome predictions which
+correspond to all edges labelled with `label` over the specified `threshold`
+probability.
+
+Usage:
+  predict.py [--input=FILE] [--label=L] [--threshold=T] [--directory=DIR]
+  predict.py -h | --help
+
+Options:
+  -h --help         Show this screen.
+  --label=L         The label to induce the subnetwork from.
+  --input=FILE      Output file [default: ./results/predictions.tsv]
+  --directory=DIR   Output directory [default: ./results/]
+  --threhsold=T     Include all edges with a label probability over this
+                    number [default: 0.5]
 """
 
+from docopt import docopt
+
+from pyPPI.base import parse_args
 from pyPPI.network_analysis import InteractionNetwork
 
 if __name__ == '__main__':
-    label = 'myristoylation'
-    threshold = 0.5
-    network = InteractionNetwork('./results/predictions.tsv')
-    network.induce_subnetwork_from_label(label, threshold, output=True)
+    args = parse_args(docopt(__doc__))
+    label = args['label']
+    threshold = args['threshold']
+    network = InteractionNetwork(args['input'], args['directory'])
+    network.induce_subnetwork_from_label(label, threshold)
 

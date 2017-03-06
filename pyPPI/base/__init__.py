@@ -5,10 +5,12 @@ Collection of utility operations that don't go anywhere else.
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
-import argparse
 
+from ..data_mining.uniprot import UniProt
+from ..models import supported_estimators
 
 P1 = 'protein_a'
 P2 = 'protein_b'
@@ -138,81 +140,82 @@ class PPI(object):
         return iter(self.__proteins)
 
 
-def make_arg_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-m", "--method",
-        help="Sklearn Binary Classifier",
-        type=str, default='LogisticRegression'
-    )
-    parser.add_argument(
-        "-gsf", "--grid_folds",
-        help="Number of Cross Validation folds for Grid-Search.",
-        type=int, default=5
-    )
-    parser.add_argument(
-        "-it", "--iter",
-        help="Number of bootstrap iterations to run.",
-        type=int, default=5
-    )
-    parser.add_argument(
-        "-f", "--folds",
-        help="Number of Cross Validation folds to run in each bootstrap.",
-        type=int, default=5
-    )
-    parser.add_argument(
-        "-n", "--jobs",
-        help="Number of processes to spawn.",
-        type=int, default=1
-    )
-    parser.add_argument(
-        "-i", "--induce",
-        help="Use ULCA GO term induction.",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-v", "--vectoriser",
-        help="Sklearn text vectoriser method to use.",
-        type=str, default='CountVectorizer'
-    )
-    parser.add_argument(
-        "-b", "--binary",
-        help="Set binary in CountVectorizer to True",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-csl", "--balanced",
-        help="Use cost-sensitive learning",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-pf", "--pfam",
-        help="Use pfam terms in fetures.",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-ipr", "--interpro",
-        help="Use interpro terms in fetures.",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-bp", "--biological_process",
-        help="Use GO Biological Process in fetures.",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-mf", "--molecular_function",
-        help="Use GO Molecular Function in fetures.",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-cc", "--cellular_component",
-        help="Use GO Cellular Component in fetures.",
-        action='store_true', default=False
-    )
-    parser.add_argument(
-        "-of", "--output_file",
-        help="Use pfam terms in fetures.",
-        type=str, default='/scripts/results/predictions.tsv'
-    )
-    return parser
+def parse_args(docopt_args):
+    parsed = {}
+
+    # String processing
+    if 'directory' in docopt_args:
+        if os.path.isdir(docopt_args['directory']):
+            parsed['directory'] = docopt_args['directory']
+        else:
+            parsed['directory'] = './'
+
+    # Selection parsing
+    selection = []
+    if '--interpro' in docopt_args:
+        selection.append(UniProt.data_types().INTERPRO.value)
+    if '--pfam' in docopt_args:
+        selection.append(UniProt.data_types().PFAM.value)
+    if '--mf' in docopt_args:
+        selection.append(UniProt.data_types().GO_MF.value)
+    if '--cc' in docopt_args:
+        selection.append(UniProt.data_types().GO_CC.value)
+    if '--bp' in docopt_args:
+        selection.append(UniProt.data_types().GO_BP.value)
+    if len(selection) == 0:
+        print("Must have at least one feature.")
+        sys.exit(0)
+    parsed['selection'] = selection
+
+    # bool parsing
+    if '--induce' in docopt_args:
+        parsed['induce'] = docopt_args['induce']
+    if '--verbose' in docopt_args:
+        parsed['verbose'] = docopt_args['verbose']
+    if '--use_cache' in docopt_args:
+        parsed['use_cache'] = docopt_args['use_cache']
+    if '--cost_sensitive' in docopt_args:
+        parsed['cost_sensitive'] = docopt_args['cost_sensitive']
+    if '--binary' in docopt_args:
+        parsed['binary'] = docopt_args['binary']
+
+    # Numeric parsing
+    if '--n_jobs' in docopt_args:
+        parsed['n_jobs'] = int(docopt_args['n_jobs'])
+    if '--n_splits' in docopt_args:
+        parsed['n_splits'] = int(docopt_args['n_splits'])
+    if '--iterations' in docopt_args:
+        parsed['iterations'] = int(docopt_args['iterations'])
+    if '--threshold' in docopt_args:
+        parsed['threshold'] = float(docopt_args['threshold'])
+
+    # Input/Output parsing
+    if '--output' in docopt_args:
+        try:
+            fp = open(docopt_args['output'], 'w')
+            parsed['output'] = docopt_args['output']
+            fp.close()
+        except IOError as e:
+            print(e)
+            sys.exit(0)
+    if '--input' in docopt_args:
+        try:
+            fp = open(docopt_args['input'], 'r')
+            parsed['input'] = docopt_args['input']
+            fp.close()
+        except IOError as e:
+            print(e)
+            sys.exit(0)
+
+    # Model parsing
+    if '--model' in docopt_args:
+        model = docopt_args['model']
+        if model not in supported_estimators():
+            print('Classifier not supported. Please choose one of:'.format(
+                '\t\n'.join(supported_estimators().keys)
+            ))
+            sys.exit(0)
+        else:
+            parsed['model'] = model
+
+    return parsed

@@ -81,11 +81,12 @@ class InteractionNetwork(object):
         found in `interactions_`
     """
 
-    def __init__(self, interactions):
+    def __init__(self, interactions, output_dir='./'):
         interactions = pd.read_csv(interactions, sep='\t')
         self.interactions_ = interactions
         self.columns_ = list(interactions.columns)
         self.gene_names_ = {}
+        self.output_dir_ = output_dir
         self.edges_ = list(zip(interactions[P1], interactions[G1]))
         p1_g1 = zip(interactions[P1], interactions[G1])
         p2_g2 = zip(interactions[P2], interactions[G2])
@@ -93,7 +94,7 @@ class InteractionNetwork(object):
             self.gene_names_[p1] = g1
             self.gene_names_[p2] = g2
 
-    def induce_subnetwork_from_label(self, label, threshold=0.5, output=False):
+    def induce_subnetwork_from_label(self, label, threshold=0.5):
         """
         Filter the interactions to contain those with predicted `label` at or
         over the `threshold`.
@@ -102,8 +103,6 @@ class InteractionNetwork(object):
             A ptm label.
         :param threshold: float, optional
             Minimum prediction probability.
-        :param output: boolean, optional
-            Write interaction, node and edge attribute files to disk.
 
         :return: Self
         """
@@ -116,20 +115,19 @@ class InteractionNetwork(object):
         label_idx = self.interactions_[
             self.interactions_[label] >= threshold
         ].index.values
-        if output:
-            pp_path = './results/{}_pp.tsv'.format(label)
-            noa_path = './results/{}_node_attrs.noa'.format(label)
-            eda_path = './results/{}_edge_attrs.eda'.format(label)
-            self._write_cytoscape_files(
-                pp_path=pp_path,
-                noa_path=noa_path,
-                eda_path=eda_path,
-                idx_selection=label_idx
-            )
+        pp_path = '{}/{}_pp.tsv'.format(self.output_dir_, label)
+        noa_path = '{}/{}_node_attrs.noa'.format(self.output_dir_, label)
+        eda_path = '{}/{}_edge_attrs.eda'.format(self.output_dir_, label)
+        self._write_cytoscape_files(
+            pp_path=pp_path,
+            noa_path=noa_path,
+            eda_path=eda_path,
+            idx_selection=label_idx
+        )
         return self
 
     def induce_subnetwork_from_pathway(self, accesion_list, threshold,
-                                       genes=False, output=False):
+                                       genes=False):
         """
         Filter the interactions to contain any interaction with both
         accessions in `accesion_list` and with predictions at or
@@ -141,8 +139,6 @@ class InteractionNetwork(object):
             Minimum prediction probability.
         :param genes: boolean, optional
             Use gene identifier accessions.
-        :param output: boolean, optional
-            Write interaction, node and edge attribute files to disk.
 
         :return: Self
         """
@@ -172,16 +168,16 @@ class InteractionNetwork(object):
         if len(edge_idx) == 0:
             ValueError("Threshold set too high and no subnetwork could be "
                        "induced with the given pathway list.")
-        if output:
-            pp_path = './results/pathway_pp.tsv'
-            noa_path = './results/pathway_node_attrs.noa'
-            eda_path = './results/pathway_edge_attrs.eda'
-            self._write_cytoscape_files(
-                pp_path=pp_path,
-                noa_path=noa_path,
-                eda_path=eda_path,
-                idx_selection=edge_idx
-            )
+        label = 'pathway'
+        pp_path = '{}/{}_pp.tsv'.format(self.output_dir_, label)
+        noa_path = '{}/{}_node_attrs.noa'.format(self.output_dir_, label)
+        eda_path = '{}/{}_edge_attrs.eda'.format(self.output_dir_, label)
+        self._write_cytoscape_files(
+            pp_path=pp_path,
+            noa_path=noa_path,
+            eda_path=eda_path,
+            idx_selection=edge_idx
+        )
         return edge_idx
 
     def _write_cytoscape_files(self, noa_path, eda_path,

@@ -54,6 +54,7 @@ setup(
         'goatools==0.6.10',
         'biopython==1.68',
         'python-igraph==0.7.1.post6',
-        'scikit-multilearn==0.0.5'
+        'scikit-multilearn==0.0.5',
+        'docopt==0.6.2'
     ]
 )

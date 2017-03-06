@@ -1,19 +1,45 @@
 #!/usr/bin/env python
 
 """
-This script runs the bootstrap kfold validation experiments as used in
-the publication.
+This script runs classifier training over the entire training data and then
+output predictions over the interactome.
+
+Usage:
+  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp] [--model=M]
+             [--n_jobs=J] [--splits=S] [--iterations=I] [--output=FILE]
+             [--directory=DIR]
+  predict.py -h | --help
+
+Options:
+  -h --help     Show this screen.
+  --interpro    Use interpro domains in features.
+  --pfam        Use Pfam domains in features.
+  --mf          Use Molecular Function Gene Ontology in features.
+  --cc          Use Cellular Compartment Gene Ontology in features.
+  --bp          Use Biological Process Gene Ontology in features.
+  --induce      Use ULCA inducer over Gene Ontology.
+  --verbose     Print intermediate output for debugging.
+  --use_cache   Use cached features if available.
+  --model=M         A binary classifier from Scikit-Learn implementing fit,
+                    predict and predict_proba [default: LogisticRegression]
+  --n_jobs=J        Number of processes to run in parallel [default: 1]
+  --splits=S        Number of cross-validation splits used during
+                    randomized grid search [default: 5]
+  --iterations=I    Number of randomized grid search iterations [default: 60]
+  --output=FILE     Output file [default: ./results/predictions.tsv]
 """
 
 import numpy as np
+from docopt import docopt
+args = docopt(__doc__)
 
-from pyPPI.base import make_arg_parser, P1, P2, G1, G2
+from pyPPI.base import parse_args, P1, P2, G1, G2
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import full_training_network_path
 from pyPPI.data import interactome_network_path
 
 from pyPPI.models.binary_relevance import BinaryRelevance
-from pyPPI.models import make_classifier, supported_estimators
+from pyPPI.models import make_classifier
 
 from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
@@ -28,14 +54,16 @@ from sklearn.metrics import f1_score, make_scorer
 
 
 if __name__ == '__main__':
-    n_jobs = 2
-    n_splits = 5
-    rcv_iter = 1
-    induce = True
-    verbose = True
-    use_feature_cache = True
-    save_path = './scripts/results/predictions.tsv'
-    fp = open(save_path, 'w')
+    args = parse_args(args)
+    n_jobs = args['n_jobs']
+    n_splits =args['n_splits']
+    rcv_iter = args['iterations']
+    induce = args['induce']
+    verbose = args['verbose']
+    selection = args['selection']
+    model = args['model']
+    use_feature_cache = args['use_cache']
+    fp = args['output']
 
     print("Loading data...")
     uniprot = get_active_instance(verbose=verbose)
@@ -80,7 +108,7 @@ if __name__ == '__main__':
         n_iter=rcv_iter,
         n_jobs=n_jobs,
         param_distributions=param_distribution,
-        estimator=make_classifier('LogisticRegression'),
+        estimator=make_classifier(model),
         scoring=make_scorer(f1_score, greater_is_better=True)
     )
     estimators = [
