@@ -3,15 +3,44 @@
 """
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
+
+Usage:
+  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+             [--use_cache] [--induce] [--verbose]
+             [--model=M] [--n_jobs=J] [--splits=S] [--iterations=I]
+             [--directory=DIR]
+  predict.py -h | --help
+
+Options:
+  -h --help     Show this screen.
+  --interpro    Use interpro domains in features.
+  --pfam        Use Pfam domains in features.
+  --mf          Use Molecular Function Gene Ontology in features.
+  --cc          Use Cellular Compartment Gene Ontology in features.
+  --bp          Use Biological Process Gene Ontology in features.
+  --induce      Use ULCA inducer over Gene Ontology.
+  --verbose     Print intermediate output for debugging.
+  --use_cache   Use cached features if available.
+  --model=M         A binary classifier from Scikit-Learn implementing fit,
+                    predict and predict_proba [default: LogisticRegression]
+  --n_jobs=J        Number of processes to run in parallel [default: 1]
+  --splits=S        Number of cross-validation splits used during
+                    randomized grid search [default: 5]
+  --iterations=I    Number of bootstrap iterations [default: 5]
+  --directory=DIR   Output directory [default: ./results/]
 """
 
 import numpy as np
+from datetime import datetime
+from docopt import docopt
+args = docopt(__doc__)
 
+from pyPPI.base import parse_args, su_make_dir, pretty_print_dict
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import testing_network_path, training_network_path
 
 from pyPPI.models.binary_relevance import BinaryRelevance
-from pyPPI.models import make_classifier, supported_estimators
+from pyPPI.models import make_classifier
 from pyPPI.model_selection.scoring import MultilabelScorer, Statistics
 from pyPPI.model_selection.experiment import KFoldExperiment, Bootstrap
 from pyPPI.model_selection.sampling import IterativeStratifiedKFold
@@ -30,23 +59,26 @@ from sklearn.metrics import recall_score, make_scorer
 
 
 if __name__ == '__main__':
-    n_jobs = 3
-    n_iter = 3
-    n_splits = 5
-    induce = True
-    verbose = True
-    use_feature_cache = True
+    args = parse_args(args)
+    n_jobs = args['n_jobs']
+    n_splits =args['n_splits']
+    n_iter = args['iterations']
+    induce = args['induce']
+    verbose = args['verbose']
+    selection = args['selection']
+    model = args['model']
+    use_feature_cache = args['use_cache']
+    direc = args['directory']
+
+    # Set up the folder for each experiment run named after the current time
+    folder = datetime.now().strftime("val_%y-%m-%d_%H-%M-%S")
+    direc = "{}/{}/".format(direc, folder)
+    su_make_dir(direc)
+    pretty_print_dict(args, open("{}/settings.json".format(direc)))
 
     print("Loading data...")
     uniprot = get_active_instance(verbose=verbose)
     data_types = UniProt.data_types()
-    selection = [
-        data_types.GO_MF.value,
-        data_types.GO_BP.value,
-        data_types.GO_CC.value,
-        data_types.INTERPRO.value,
-        data_types.PFAM.value
-    ]
     labels = load_ptm_labels()
     annotation_ex = AnnotationExtractor(
         induce=induce,
@@ -140,8 +172,9 @@ if __name__ == '__main__':
         return_df=True
     )
     validation_stats.to_csv(
-        'results/validation_stats.csv', sep='\t', index=False
+        '{}/validation_stats.csv'.format(direc), sep='\t', index=False
     )
     testing_stats.to_csv(
-        'results/testing_stats.csv', sep='\t', index=False
+        '{}/testing_stats.csv'.format(direc), sep='\t', index=False
     )
+

@@ -9,6 +9,7 @@ import sys
 import numpy as np
 import pandas as pd
 
+from ..data import load_ptm_labels
 from ..data_mining.uniprot import UniProt
 from ..models import supported_estimators
 
@@ -29,9 +30,12 @@ def su_make_dir(path, mode=0o777):
         os.chmod(path, mode)
 
 
-def pretty_print_dict(dictionary, n_tabs=0):
+def pretty_print_dict(dictionary, n_tabs=0, fp=None):
     for k in sorted(dictionary.keys()):
-        print('\t'*n_tabs + '{}:\t{}'.format(k, dictionary[k]))
+        if fp:
+            fp.write('\t'*n_tabs + '{}:\t{}\n'.format(k, dictionary[k]))
+        else:
+            print('\t'*n_tabs + '{}:\t{}'.format(k, dictionary[k]))
 
 
 def create_seeds(size, random_state):
@@ -144,11 +148,18 @@ def parse_args(docopt_args):
     parsed = {}
 
     # String processing
-    if 'directory' in docopt_args:
-        if os.path.isdir(docopt_args['directory']):
-            parsed['directory'] = docopt_args['directory']
+    if '--directory' in docopt_args:
+        if os.path.isdir(docopt_args['--directory']):
+            parsed['directory'] = docopt_args['--directory']
         else:
             parsed['directory'] = './'
+    if '--label' in docopt_args:
+        if docopt_args['--label'] not in load_ptm_labels():
+            print("Invalid label selection. Select one of: ".format(
+                ' ,'.join(load_ptm_labels())
+            ))
+            sys.exit(0)
+        parsed['label'] = docopt_args['--label']
 
     # Selection parsing
     selection = []
@@ -169,47 +180,59 @@ def parse_args(docopt_args):
 
     # bool parsing
     if '--induce' in docopt_args:
-        parsed['induce'] = docopt_args['induce']
+        parsed['induce'] = docopt_args['--induce']
     if '--verbose' in docopt_args:
-        parsed['verbose'] = docopt_args['verbose']
+        parsed['verbose'] = docopt_args['--verbose']
     if '--use_cache' in docopt_args:
-        parsed['use_cache'] = docopt_args['use_cache']
+        parsed['use_cache'] = docopt_args['--use_cache']
     if '--cost_sensitive' in docopt_args:
-        parsed['cost_sensitive'] = docopt_args['cost_sensitive']
+        parsed['cost_sensitive'] = docopt_args['--cost_sensitive']
     if '--binary' in docopt_args:
-        parsed['binary'] = docopt_args['binary']
+        parsed['binary'] = docopt_args['--binary']
+    if '--update_features' in docopt_args:
+        parsed['update_features'] = docopt_args['--update_features']
+    if '--update_mapping' in docopt_args:
+        parsed['update_mapping'] = docopt_args['--update_mapping']
 
     # Numeric parsing
     if '--n_jobs' in docopt_args:
-        parsed['n_jobs'] = int(docopt_args['n_jobs'])
+        parsed['n_jobs'] = int(docopt_args['--n_jobs'])
     if '--n_splits' in docopt_args:
-        parsed['n_splits'] = int(docopt_args['n_splits'])
+        parsed['n_splits'] = int(docopt_args['--n_splits'])
     if '--iterations' in docopt_args:
-        parsed['iterations'] = int(docopt_args['iterations'])
+        parsed['iterations'] = int(docopt_args['--iterations'])
     if '--threshold' in docopt_args:
-        parsed['threshold'] = float(docopt_args['threshold'])
+        parsed['threshold'] = float(docopt_args['--threshold'])
 
     # Input/Output parsing
     if '--output' in docopt_args:
         try:
-            fp = open(docopt_args['output'], 'w')
-            parsed['output'] = docopt_args['output']
+            if '--directory' in docopt_args:
+                fp = open(
+                    docopt_args['--directory'] + docopt_args['--output'], 'w')
+            else:
+                fp = open(docopt_args['--output'], 'w')
             fp.close()
+            parsed['output'] = docopt_args['--output']
         except IOError as e:
             print(e)
             sys.exit(0)
     if '--input' in docopt_args:
         try:
-            fp = open(docopt_args['input'], 'r')
-            parsed['input'] = docopt_args['input']
+            if '--directory' in docopt_args:
+                fp = open(
+                    docopt_args['--directory'] + docopt_args['--input'], 'r')
+            else:
+                fp = open(docopt_args['--input'], 'r')
             fp.close()
+            parsed['input'] = docopt_args['--input']
         except IOError as e:
             print(e)
             sys.exit(0)
 
     # Model parsing
     if '--model' in docopt_args:
-        model = docopt_args['model']
+        model = docopt_args['--model']
         if model not in supported_estimators():
             print('Classifier not supported. Please choose one of:'.format(
                 '\t\n'.join(supported_estimators().keys)

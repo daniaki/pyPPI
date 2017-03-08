@@ -12,8 +12,8 @@ Usage:
 Options:
   -h --help         Show this screen.
   --label=L         The label to induce the subnetwork from.
-  --input=FILE      Output file [default: ./results/predictions.tsv]
-  --directory=DIR   Output directory [default: ./results/]
+  --input=FILE      Input file [default: predictions.tsv]
+  --directory=DIR   Input/Output directory [default: ./results/]
   --threhsold=T     Include all edges with a label probability over this
                     number [default: 0.5]
 """

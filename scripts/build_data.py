@@ -1,14 +1,35 @@
 #!/usr/bin/env python
 
 """
-This script runs the bootstrap kfold validation experiments as used in
-the publication.
+This script runs classifier training over the entire training data and then
+output predictions over the interactome.
+
+Usage:
+  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+             [--update_features] [--update_mapping]
+             [--induce] [--verbose] [--n_jobs=J]
+  predict.py -h | --help
+
+Options:
+  -h --help     Show this screen.
+  --interpro    Use interpro domains in features.
+  --pfam        Use Pfam domains in features.
+  --mf          Use Molecular Function Gene Ontology in features.
+  --cc          Use Cellular Compartment Gene Ontology in features.
+  --bp          Use Biological Process Gene Ontology in features.
+  --induce      Use ULCA inducer over Gene Ontology.
+  --verbose     Print intermediate output for debugging.
+  --n_jobs=J            Number of processes to run in parallel [default: 1]
+  --update_features     Delete old feature cache and create a new one.
+  --update_mapping      Delete old accession mapping and create a new one.
 """
 
 import os
 import pandas as pd
+from docopt import docopt
+args = docopt(__doc__)
 
-from pyPPI.base import PPI, LABEL
+from pyPPI.base import PPI, parse_args
 from pyPPI.data import bioplex_network_path, pina2_network_path
 from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
 from pyPPI.data import innate_i_network_path, innate_c_network_path
@@ -33,19 +54,16 @@ from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 
 if __name__ == '__main__':
+    args = parse_args(args)
     uniprot = get_active_instance(verbose=True)
     data_types = UniProt.data_types()
-    selection = [
-        data_types.GO_MF.value,
-        data_types.GO_BP.value,
-        data_types.GO_CC.value,
-        data_types.INTERPRO.value,
-        data_types.PFAM.value
-    ]
     pathways = download_pathway_ids('hsa')
-    update_mapping = True
-    use_feature_cache = True
-    n_jobs = 8
+    n_jobs = args['n_jobs']
+    induce = args['induce']
+    verbose = args['verbose']
+    selection = args['selection']
+    update_features = args['update_features']
+    update_mapping = args['update_mapping']
 
     # Construct all the networks
     print("Building KEGG interactions...")
@@ -151,12 +169,12 @@ if __name__ == '__main__':
         selection=selection,
         n_jobs=n_jobs,
         verbose=True,
-        cache=use_feature_cache
+        cache=not update_features
     )
 
     cond_1 = os.path.isfile(ppi_features_path)
     cond_2 = os.path.isfile(accession_features_path)
-    if (not use_feature_cache) or (not cond_1) or (not cond_2):
+    if update_features or (not cond_1) or (not cond_2):
         tuple_gens = [zip(n.source, n.target) for n in networks]
         ppis = [(a, b) for tuples in tuple_gens for (a, b) in tuples]
         ae.fit(ppis)

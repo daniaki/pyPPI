@@ -5,9 +5,10 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp] [--model=M]
-             [--n_jobs=J] [--splits=S] [--iterations=I] [--output=FILE]
-             [--directory=DIR]
+  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+             [--use_cache] [--induce] [--verbose]
+             [--model=M] [--n_jobs=J] [--splits=S] [--iterations=I]
+             [--output=FILE] [--directory=DIR]
   predict.py -h | --help
 
 Options:
@@ -26,14 +27,17 @@ Options:
   --splits=S        Number of cross-validation splits used during
                     randomized grid search [default: 5]
   --iterations=I    Number of randomized grid search iterations [default: 60]
-  --output=FILE     Output file [default: ./results/predictions.tsv]
+  --output=FILE     Output file name [default: predictions.tsv]
+  --directory=DIR   Output directory [default: ./results/]
 """
 
 import numpy as np
+from datetime import datetime
 from docopt import docopt
 args = docopt(__doc__)
 
-from pyPPI.base import parse_args, P1, P2, G1, G2
+from pyPPI.base import parse_args, su_make_dir, pretty_print_dict
+from pyPPI.base import P1, P2, G1, G2
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import full_training_network_path
 from pyPPI.data import interactome_network_path
@@ -63,7 +67,15 @@ if __name__ == '__main__':
     selection = args['selection']
     model = args['model']
     use_feature_cache = args['use_cache']
-    fp = args['output']
+    out_file = args['output']
+    direc = args['directory']
+
+    # Set up the folder for each experiment run named after the current time
+    folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
+    direc = "{}/{}/".format(direc, folder)
+    su_make_dir(direc)
+    pretty_print_dict(args, open("{}/settings.json".format(direc)))
+    out_file = open("{}/{}".format(direc, out_file), "w")
 
     print("Loading data...")
     uniprot = get_active_instance(verbose=verbose)
@@ -132,7 +144,7 @@ if __name__ == '__main__':
     header = "{p1}\t{p2}\t{g1}\t{g2}\t{classes}\tsum\n".format(
         p1=P1, p2=P2, g1=G1, g2=G2, classes='\t'.join(sorted(mlb.classes_))
     )
-    fp.write(header)
+    out_file.write(header)
     acc = annotation_ex.accession_vocabulary[UniProt.accession_column()]
     genes = annotation_ex.accession_vocabulary[UniProt.data_types().GENE.value]
     accession_gene_map = {a: g for (a, g) in zip(acc, genes)}
@@ -145,6 +157,6 @@ if __name__ == '__main__':
             s=s, t=t, g1=g1, g2=g2, sum_pr=sum_pr,
             classes='\t'.join(['%.4f' % p for p in p_vec])
         )
-        fp.write(line)
-    fp.close()
+        out_file.write(line)
+    out_file.close()
     print("Done!")
