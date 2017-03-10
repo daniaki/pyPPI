@@ -68,8 +68,10 @@ class AnnotationExtractor(object):
     @property
     def selection(self):
         r_selection = []
+        go_cols = [_DATA_TYPES.GO.value, _DATA_TYPES.GO_MF.value,
+                   _DATA_TYPES.GO_BP.value, _DATA_TYPES.GO_CC.value]
         for s in self._selection:
-            if _DATA_TYPES.GO.value in s and self._induce:
+            if s in go_cols and self._induce:
                 s = 'i' + s
             r_selection.append(s)
         return r_selection
@@ -326,8 +328,6 @@ class AnnotationExtractor(object):
             Singular dataframe for PPI object.
         """
         terms = {}
-        go_cols = [_DATA_TYPES.GO.value, _DATA_TYPES.GO_MF.value,
-                   _DATA_TYPES.GO_BP.value, _DATA_TYPES.GO_CC.value]
         if self._induce:
             induced_cc, induced_bp, induced_mf = \
                 self._compute_induced_terms(ppi)

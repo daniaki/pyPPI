@@ -31,9 +31,11 @@ Options:
   --splits=S        Number of cross-validation splits used during
                     randomized grid search [default: 5]
   --iterations=I    Number of randomized grid search iterations [default: 60]
-  --input=FILE      Uniprot edge-list [default: 'None']
+  --input=FILE      Uniprot edge-list, with a path directory that absolute or
+                    relative to this script. Entries must be tab separated with
+                    header columns 'source' and 'target'. [default: 'None']
   --output=FILE     Output file name [default: predictions.tsv]
-  --directory=DIR   Output directory [default: ./results/]
+  --directory=DIR   Absolute or relative output directory [default: ./results/]
 """
 
 import os
