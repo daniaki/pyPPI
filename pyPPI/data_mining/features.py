@@ -45,8 +45,7 @@ class AnnotationExtractor(object):
     -----
     """
 
-    def __init__(self, induce, selection, n_jobs, verbose=False,
-                 cache=True):
+    def __init__(self, induce, selection, n_jobs, verbose=False, cache=True):
         self._n_jobs = n_jobs
         self._selection = selection
         self._induce = induce

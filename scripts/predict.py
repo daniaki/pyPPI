@@ -159,4 +159,3 @@ if __name__ == '__main__':
         )
         out_file.write(line)
     out_file.close()
-    print("Done!")
