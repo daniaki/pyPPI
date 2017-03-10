@@ -22,6 +22,32 @@ def validate_accession(accession):
         return accession.strip().upper()
 
 
+def edgelist_func(fp):
+    """
+    Parsing function a generic edgelist file.
+
+    :param fp: Open file handle containing the file to parse.
+    :return: Tuple source, target and label lists.
+    """
+    source_idx = 0
+    target_idx = 1
+    sources = []
+    targets = []
+    labels = []
+
+    # Remove header
+    next(fp)
+
+    for line in fp:
+        xs = line.strip().split('\t')
+        source = validate_accession(xs[source_idx].strip().upper())
+        target = validate_accession(xs[target_idx].strip().upper())
+        sources.append(source)
+        targets.append(target)
+        labels.append('-')
+    return sources, targets, labels
+
+
 def bioplex_func(fp):
     """
     Parsing function for bioplex tsv format.

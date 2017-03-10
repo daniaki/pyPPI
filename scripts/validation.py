@@ -5,11 +5,11 @@ This script runs the bootstrap kfold validation experiments as used in
 the publication.
 
 Usage:
-  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+  predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
              [--use_cache] [--induce] [--verbose]
              [--model=M] [--n_jobs=J] [--splits=S] [--iterations=I]
              [--directory=DIR]
-  predict.py -h | --help
+  predict_interactome.py -h | --help
 
 Options:
   -h --help     Show this screen.

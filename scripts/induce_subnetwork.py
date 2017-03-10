@@ -6,8 +6,8 @@ correspond to all edges labelled with `label` over the specified `threshold`
 probability.
 
 Usage:
-  predict.py [--input=FILE] [--label=L] [--threshold=T] [--directory=DIR]
-  predict.py -h | --help
+  predict_interactome.py [--input=FILE] [--label=L] [--threshold=T] [--directory=DIR]
+  predict_interactome.py -h | --help
 
 Options:
   -h --help         Show this screen.

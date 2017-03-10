@@ -185,6 +185,8 @@ def parse_args(docopt_args):
         parsed['verbose'] = docopt_args['--verbose']
     if '--use_cache' in docopt_args:
         parsed['use_cache'] = docopt_args['--use_cache']
+    if '--retrain' in docopt_args:
+        parsed['retrain'] = docopt_args['--retrain']
     if '--cost_sensitive' in docopt_args:
         parsed['cost_sensitive'] = docopt_args['--cost_sensitive']
     if '--binary' in docopt_args:
@@ -217,7 +219,9 @@ def parse_args(docopt_args):
         except IOError as e:
             print(e)
             sys.exit(0)
-    if '--input' in docopt_args:
+    if '--input' in docopt_args and docopt_args['--input'] == 'None':
+        parsed['input'] = docopt_args['--input']
+    elif '--input' in docopt_args:
         try:
             if '--directory' in docopt_args:
                 fp = open(

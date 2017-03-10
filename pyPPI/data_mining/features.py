@@ -275,6 +275,7 @@ class AnnotationExtractor(object):
             )
             for df in dfs:
                 self._update(df)
+            self.cache()
 
         # Convert the features for each ppi in the dataframe into a string
         if self._verbose:

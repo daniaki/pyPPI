@@ -46,6 +46,7 @@ innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab')
 pina2_sif_path = os.path.join(PATH, 'networks/PINA2_Homo_sapiens-20140521.sif')
 uniprot_record_cache = os.path.join(PATH, 'uprot_records.dict')
 uniprot_map_path = os.path.join(PATH, 'accession_map.json')
+classifier_path = os.path.join(PATH, 'classifier.pkl')
 
 
 def line_generator(io_func):

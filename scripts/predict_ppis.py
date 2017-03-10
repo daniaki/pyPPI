@@ -5,11 +5,11 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  predict.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-             [--use_cache] [--induce] [--verbose]
+  predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+             [--use_cache] [--retrain] [--induce] [--verbose]
              [--model=M] [--n_jobs=J] [--splits=S] [--iterations=I]
-             [--output=FILE] [--directory=DIR]
-  predict.py -h | --help
+             [--input=FILE] [--output=FILE] [--directory=DIR]
+  predict_interactome.py -h | --help
 
 Options:
   -h --help     Show this screen.
@@ -21,16 +21,23 @@ Options:
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
   --use_cache   Use cached features if available.
+  --retrain     Re-train classifier instead of loading previous version. If
+                using a previous version, you must use the same selection of
+                features along with the same induce setting.
   --model=M         A binary classifier from Scikit-Learn implementing fit,
-                    predict and predict_proba [default: LogisticRegression]
+                    predict and predict_proba [default: LogisticRegression].
+                    Ignored if using 'retrain'.
   --n_jobs=J        Number of processes to run in parallel [default: 1]
   --splits=S        Number of cross-validation splits used during
                     randomized grid search [default: 5]
   --iterations=I    Number of randomized grid search iterations [default: 60]
+  --input=FILE      Uniprot edge-list [default: 'None']
   --output=FILE     Output file name [default: predictions.tsv]
   --directory=DIR   Output directory [default: ./results/]
 """
 
+import os
+import pickle
 import numpy as np
 from datetime import datetime
 from docopt import docopt
@@ -39,8 +46,8 @@ args = docopt(__doc__)
 from pyPPI.base import parse_args, su_make_dir, pretty_print_dict
 from pyPPI.base import P1, P2, G1, G2
 from pyPPI.data import load_network_from_path, load_ptm_labels
-from pyPPI.data import full_training_network_path
-from pyPPI.data import interactome_network_path
+from pyPPI.data import full_training_network_path, generic_io
+from pyPPI.data import interactome_network_path, classifier_path
 
 from pyPPI.models.binary_relevance import BinaryRelevance
 from pyPPI.models import make_classifier
@@ -48,6 +55,8 @@ from pyPPI.models import make_classifier
 from pyPPI.data_mining.features import AnnotationExtractor
 from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.tools import xy_from_interaction_frame
+from pyPPI.data_mining.generic import edgelist_func, generic_to_dataframe
+from pyPPI.data_mining.tools import map_network_accessions
 
 from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -68,7 +77,9 @@ if __name__ == '__main__':
     model = args['model']
     use_feature_cache = args['use_cache']
     out_file = args['output']
+    input_file = args['input']
     direc = args['directory']
+    retrain = args['retrain']
 
     # Set up the folder for each experiment run named after the current time
     folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
@@ -95,11 +106,31 @@ if __name__ == '__main__':
         verbose=verbose,
         cache=use_feature_cache
     )
-    training = load_network_from_path(full_training_network_path)
-    testing = load_network_from_path(interactome_network_path)
+
+    # Get the input edge-list ready
+    if input_file == 'None':
+        testing = load_network_from_path(interactome_network_path)
+    else:
+        testing = generic_to_dataframe(
+            f_input=generic_io(input_file),
+            parsing_func=edgelist_func,
+            drop_nan=True,
+            allow_self_edges=True,
+            allow_duplicates=True
+        )
+        sources = set(p for df in testing for p in df.source.values)
+        targets = set(p for df in testing for p in df.target.values)
+        accessions = list(sources | targets)
+        accession_mapping = uniprot.batch_map(accessions)
+        testing = map_network_accessions(
+            interactions=testing, accession_map=accession_mapping,
+            drop_nan=True, allow_self_edges=True,
+            allow_duplicates=False, min_counts=None, merge=False
+        )
 
     # Get the features into X, and multilabel y indicator format
     print("Preparing training and testing data...")
+    training = load_network_from_path(full_training_network_path)
     X_train_ppis, y_train = xy_from_interaction_frame(training)
     X_test_ppis, _ = xy_from_interaction_frame(testing)
     X_train = annotation_ex.transform(X_train_ppis)
@@ -110,33 +141,38 @@ if __name__ == '__main__':
     y_train = mlb.transform(y_train)
 
     # Make the estimators and BR classifier
-    print("Making classifier...")
-    param_distribution = {
-        'C': np.arange(0.01, 10.01, step=0.01),
-        'penalty': ['l1', 'l2']
-    }
-    random_cv = RandomizedSearchCV(
-        cv=n_splits,
-        n_iter=rcv_iter,
-        n_jobs=n_jobs,
-        param_distributions=param_distribution,
-        estimator=make_classifier(model),
-        scoring=make_scorer(f1_score, greater_is_better=True)
-    )
-    estimators = [
-        Pipeline(
-            [('vectorizer', CountVectorizer(binary=False)),
-             ('clf', clone(random_cv))]
+    if retrain or not os.path.isfile(classifier_path):
+        print("Making classifier...")
+        param_distribution = {
+            'C': np.arange(0.01, 10.01, step=0.01),
+            'penalty': ['l1', 'l2']
+        }
+        random_cv = RandomizedSearchCV(
+            cv=n_splits,
+            n_iter=rcv_iter,
+            n_jobs=n_jobs,
+            param_distributions=param_distribution,
+            estimator=make_classifier(model),
+            scoring=make_scorer(f1_score, greater_is_better=True)
         )
-        for l in labels
-    ]
-    clf = BinaryRelevance(estimators, n_jobs=n_jobs)
+        estimators = [
+            Pipeline(
+                [('vectorizer', CountVectorizer(binary=False)),
+                 ('clf', clone(random_cv))]
+            )
+            for l in labels
+        ]
+        clf = BinaryRelevance(estimators, n_jobs=n_jobs)
 
-    # Fit the complete training data and make predictions.
-    print("Fitting data...")
-    clf.fit(X_train, y_train)
+        # Fit the complete training data and make predictions.
+        print("Fitting data...")
+        clf.fit(X_train, y_train)
+        with open(classifier_path, "wb") as fp:
+            pickle.dump(clf, fp)
 
     print("Making predictions...")
+    with open(classifier_path, 'w') as fp:
+        clf = pickle.load(open(classifier_path, "rb"))
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
