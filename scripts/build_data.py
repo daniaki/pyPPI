@@ -191,10 +191,7 @@ if __name__ == '__main__':
             unique_acc |= set(a for a, _ in ppis) | set(b for _, b in ppis)
         assert ae.accession_vocabulary.shape[0] == len(unique_acc)
         assert ae.ppi_vocabulary.shape[0] == len(unique_ppis)
-
-        pickle_pd_object(ae.accession_vocabulary, accession_features_path)
-        pickle_pd_object(ae.ppi_vocabulary, ppi_features_path)
-        pickle_pd_object(ae, annotation_extractor_path)
+        ae.cache()
 
     print("Saving networks and feature files...")
     save_network_to_path(kegg, kegg_network_path)
