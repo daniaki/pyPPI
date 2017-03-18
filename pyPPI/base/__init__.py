@@ -238,9 +238,9 @@ def parse_args(docopt_args):
 
     # Model parsing
     model = query_doctop_dict(docopt_args, '--model')
-    if model not in supported_estimators():
+    if model and model not in supported_estimators():
         print('Classifier not supported. Please choose one of:'.format(
-            '\t\n'.join(supported_estimators().keys)
+            '\t\n'.join(supported_estimators().keys())
         ))
         sys.exit(0)
     else:
