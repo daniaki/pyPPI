@@ -167,6 +167,12 @@ def parse_args(docopt_args):
             ))
             sys.exit(0)
         parsed['label'] = docopt_args['--label']
+    backend = query_doctop_dict(docopt_args, '--backend')
+    if backend and backend not in ['threading', 'multiprocessing']:
+        print("Backend must be one of 'threading' or 'multiprocessing'")
+        sys.exit(0)
+    else:
+        parsed['backend'] = docopt_args['--backend']
 
     # Selection parsing
     selection = []

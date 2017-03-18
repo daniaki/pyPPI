@@ -45,12 +45,14 @@ class AnnotationExtractor(object):
     -----
     """
 
-    def __init__(self, induce, selection, n_jobs, verbose=False, cache=True):
+    def __init__(self, induce, selection, n_jobs, verbose=False, cache=True,
+                 backend='threading'):
         self._n_jobs = n_jobs
         self._selection = selection
         self._induce = induce
         self._cache = cache
         self._verbose = verbose
+        self._backend = backend
         if cache:
             self._accession_df = read_pd_pickle(accession_features_path)
             self._ppi_df = read_pd_pickle(ppi_features_path)
@@ -179,7 +181,7 @@ class AnnotationExtractor(object):
             print('Computing selected features for each PPI...')
         compute_features = delayed(self._compute_features)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                       backend='threading')(
+                       backend=self._backend)(
             compute_features(ppi) for ppi in ppis
         )
 
@@ -189,7 +191,7 @@ class AnnotationExtractor(object):
 
         combine_dfs = delayed(concat_dataframes)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                            backend='threading')(
+                            backend=self._backend)(
             combine_dfs(df_list) for df_list in chunk_list(dfs, n=self._n_jobs)
         )
         for df in dfs:
@@ -261,7 +263,7 @@ class AnnotationExtractor(object):
                 print('Computing selected features for each new PPI...')
             compute_features = delayed(self._compute_features)
             dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                           backend='threading')(
+                           backend=self._backend)(
                 compute_features(ppi) for ppi in new_ppis
             )
 
@@ -272,7 +274,7 @@ class AnnotationExtractor(object):
             chunks = chunk_list(dfs, n=self._n_jobs)
             combine_dfs = delayed(concat_dataframes)
             dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                                backend='threading')(
+                                backend=self._backend)(
                 combine_dfs(df_list) for df_list in chunks
             )
             for df in dfs:

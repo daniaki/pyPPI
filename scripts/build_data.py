@@ -7,7 +7,7 @@ output predictions over the interactome.
 Usage:
   predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
              [--update_features] [--update_mapping]
-             [--induce] [--verbose] [--n_jobs=J]
+             [--induce] [--verbose] [--n_jobs=J] [--backend=B]
   predict_interactome.py -h | --help
 
 Options:
@@ -20,6 +20,7 @@ Options:
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
   --n_jobs=J            Number of processes to run in parallel [default: 1]
+  --backend=B           Python concurrent backend [default: threading]
   --update_features     Delete old feature cache and create a new one.
   --update_mapping      Delete old accession mapping and create a new one.
 """
@@ -64,6 +65,7 @@ if __name__ == '__main__':
     selection = args['selection']
     update_features = args['update_features']
     update_mapping = args['update_mapping']
+    backend = args['backend']
 
     # Construct all the networks
     print("Building KEGG interactions...")
@@ -169,7 +171,8 @@ if __name__ == '__main__':
         selection=selection,
         n_jobs=n_jobs,
         verbose=True,
-        cache=not update_features
+        cache=not update_features,
+        backend=backend,
     )
 
     cond_1 = os.path.isfile(ppi_features_path)
