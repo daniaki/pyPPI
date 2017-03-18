@@ -179,10 +179,11 @@ class AnnotationExtractor(object):
         # Run the intensive computation in parallel and append the local cache
         if self._verbose:
             print('Computing selected features for each PPI...')
+        chunks = chunk_list(ppis, n=self._n_jobs)
         compute_features = delayed(self._compute_features)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
                        backend=self._backend)(
-            compute_features(ppi) for ppi in ppis
+            compute_features(ppi_ls) for ppi_ls in chunks
         )
 
         # Running this in parallel speeds up the concatenation process a lot.
@@ -192,7 +193,7 @@ class AnnotationExtractor(object):
         combine_dfs = delayed(concat_dataframes)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
                             backend=self._backend)(
-            combine_dfs(df_list) for df_list in chunk_list(dfs, n=self._n_jobs)
+            combine_dfs(df_list) for df_list in dfs
         )
         for df in dfs:
             self._update(df)
@@ -262,20 +263,20 @@ class AnnotationExtractor(object):
             if self._verbose:
                 print('Computing selected features for each new PPI...')
             compute_features = delayed(self._compute_features)
+            chunks = chunk_list(new_ppis, n=self._n_jobs)
             dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
                            backend=self._backend)(
-                compute_features(ppi) for ppi in new_ppis
+                compute_features(ppis_ls) for ppis_ls in chunks
             )
 
             # Running this in parallel speeds up the concatenation
             # process a lot.
             if self._verbose:
                 print('Updating instance attributes...')
-            chunks = chunk_list(dfs, n=self._n_jobs)
             combine_dfs = delayed(concat_dataframes)
             dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
                                 backend=self._backend)(
-                combine_dfs(df_list) for df_list in chunks
+                combine_dfs(df_list) for df_list in dfs
             )
             for df in dfs:
                 self._update(df)
@@ -313,7 +314,7 @@ class AnnotationExtractor(object):
         else:
             return ppis
 
-    def _compute_features(self, ppi):
+    def _compute_features(self, ppis):
         """
         Builds a dataframe with columns `accession` containing the PPIs
         and columns containing the features requested by the `selection`
@@ -329,29 +330,32 @@ class AnnotationExtractor(object):
         :return: pd.DataFrame
             Singular dataframe for PPI object.
         """
-        terms = {}
-        if self._induce:
-            induced_cc, induced_bp, induced_mf = \
-                self._compute_induced_terms(ppi)
-            if _DATA_TYPES.GO.value in self._selection:
-                terms['igo'] = [induced_cc + induced_bp + induced_mf]
-            if _DATA_TYPES.GO_MF.value in self._selection:
-                terms['igo_mf'] = [induced_mf]
-            if _DATA_TYPES.GO_BP.value in self._selection:
-                terms['igo_bp'] = [induced_bp]
-            if _DATA_TYPES.GO_CC.value in self._selection:
-                terms['igo_cc'] = [induced_cc]
+        dfs = []
+        for ppi in ppis:
+            terms = {}
+            if self._induce:
+                induced_cc, induced_bp, induced_mf = \
+                    self._compute_induced_terms(ppi)
+                if _DATA_TYPES.GO.value in self._selection:
+                    terms['igo'] = [induced_cc + induced_bp + induced_mf]
+                if _DATA_TYPES.GO_MF.value in self._selection:
+                    terms['igo_mf'] = [induced_mf]
+                if _DATA_TYPES.GO_BP.value in self._selection:
+                    terms['igo_bp'] = [induced_bp]
+                if _DATA_TYPES.GO_CC.value in self._selection:
+                    terms['igo_cc'] = [induced_cc]
 
-        # Concatenate the other terms into strings
-        for s in self._selection:
-            data = [self._get_data_for_accession(p, s) for p in ppi]
-            if isinstance(data[-1], list):
-                data = list(chain.from_iterable(data))
-            terms[s] = [data]
+            # Concatenate the other terms into strings
+            for s in self._selection:
+                data = [self._get_data_for_accession(p, s) for p in ppi]
+                if isinstance(data[-1], list):
+                    data = list(chain.from_iterable(data))
+                terms[s] = [data]
 
-        terms[_ACCESSION_COLUMN] = [ppi]
-        df = pd.DataFrame(data=terms, columns=list(terms.keys()))
-        return df
+            terms[_ACCESSION_COLUMN] = [ppi]
+            df = pd.DataFrame(data=terms, columns=list(terms.keys()))
+            dfs.append(df)
+        return dfs
 
     def _compute_induced_terms(self, ppi):
         """

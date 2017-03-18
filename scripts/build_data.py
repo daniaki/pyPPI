@@ -20,7 +20,7 @@ Options:
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
   --n_jobs=J            Number of processes to run in parallel [default: 1]
-  --backend=B           Python concurrent backend [default: threading]
+  --backend=B           Python concurrent backend [default: multiprocessing]
   --update_features     Delete old feature cache and create a new one.
   --update_mapping      Delete old accession mapping and create a new one.
 """
