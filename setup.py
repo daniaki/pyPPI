@@ -42,7 +42,7 @@ setup(
     scripts=[
         './scripts/build_data.py',
         'scripts/induce_subnetwork.py',
-        'scripts/predict_interactome.py',
+        'scripts/predict_ppis.py',
         'scripts/validation.py'
     ],
     install_requires=[
