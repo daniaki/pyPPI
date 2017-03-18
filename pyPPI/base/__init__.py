@@ -144,16 +144,23 @@ class PPI(object):
         return iter(self.__proteins)
 
 
+def query_doctop_dict(docopt_dict, key):
+    if key in docopt_dict:
+        return docopt_dict[key]
+    else:
+        return False
+
+
 def parse_args(docopt_args):
     parsed = {}
 
     # String processing
-    if '--directory' in docopt_args:
+    if query_doctop_dict(docopt_args, '--directory'):
         if os.path.isdir(docopt_args['--directory']):
             parsed['directory'] = docopt_args['--directory']
         else:
             parsed['directory'] = './'
-    if '--label' in docopt_args:
+    if query_doctop_dict(docopt_args, '--label'):
         if docopt_args['--label'] not in load_ptm_labels():
             print("Invalid label selection. Select one of: ".format(
                 ' ,'.join(load_ptm_labels())
@@ -163,15 +170,15 @@ def parse_args(docopt_args):
 
     # Selection parsing
     selection = []
-    if '--interpro' in docopt_args:
+    if query_doctop_dict(docopt_args, '--interpro'):
         selection.append(UniProt.data_types().INTERPRO.value)
-    if '--pfam' in docopt_args:
+    if query_doctop_dict(docopt_args, '--pfam'):
         selection.append(UniProt.data_types().PFAM.value)
-    if '--mf' in docopt_args:
+    if query_doctop_dict(docopt_args, '--mf'):
         selection.append(UniProt.data_types().GO_MF.value)
-    if '--cc' in docopt_args:
+    if query_doctop_dict(docopt_args, '--cc'):
         selection.append(UniProt.data_types().GO_CC.value)
-    if '--bp' in docopt_args:
+    if query_doctop_dict(docopt_args, '--bp'):
         selection.append(UniProt.data_types().GO_BP.value)
     if len(selection) == 0:
         print("Must have at least one feature.")
@@ -179,37 +186,31 @@ def parse_args(docopt_args):
     parsed['selection'] = selection
 
     # bool parsing
-    if '--induce' in docopt_args:
-        parsed['induce'] = docopt_args['--induce']
-    if '--verbose' in docopt_args:
-        parsed['verbose'] = docopt_args['--verbose']
-    if '--use_cache' in docopt_args:
-        parsed['use_cache'] = docopt_args['--use_cache']
-    if '--retrain' in docopt_args:
-        parsed['retrain'] = docopt_args['--retrain']
-    if '--cost_sensitive' in docopt_args:
-        parsed['cost_sensitive'] = docopt_args['--cost_sensitive']
-    if '--binary' in docopt_args:
-        parsed['binary'] = docopt_args['--binary']
-    if '--update_features' in docopt_args:
-        parsed['update_features'] = docopt_args['--update_features']
-    if '--update_mapping' in docopt_args:
-        parsed['update_mapping'] = docopt_args['--update_mapping']
+    parsed['induce'] = query_doctop_dict(docopt_args, '--interpro')
+    parsed['verbose'] = query_doctop_dict(docopt_args, '--verbose')
+    parsed['use_cache'] = query_doctop_dict(docopt_args, '--use_cache')
+    parsed['retrain'] = query_doctop_dict(docopt_args, '--retrain')
+    parsed['binary'] = query_doctop_dict(docopt_args, '--binary')
+    parsed['cost_sensitive'] = query_doctop_dict(
+        docopt_args, '--cost_sensitive'
+    )
+    parsed['update_features'] = query_doctop_dict(
+        docopt_args, '--update_features'
+    )
+    parsed['update_mapping'] = query_doctop_dict(
+        docopt_args, '--update_mapping'
+    )
 
     # Numeric parsing
-    if '--n_jobs' in docopt_args:
-        parsed['n_jobs'] = int(docopt_args['--n_jobs'])
-    if '--n_splits' in docopt_args:
-        parsed['n_splits'] = int(docopt_args['--n_splits'])
-    if '--iterations' in docopt_args:
-        parsed['iterations'] = int(docopt_args['--iterations'])
-    if '--threshold' in docopt_args:
-        parsed['threshold'] = float(docopt_args['--threshold'])
+    parsed['n_jobs'] = int(query_doctop_dict(docopt_args, '--n_jobs'))
+    parsed['n_splits'] = int(query_doctop_dict(docopt_args, '--n_splits'))
+    parsed['iterations'] = int(query_doctop_dict(docopt_args, '--iterations'))
+    parsed['threshold'] = float(query_doctop_dict(docopt_args, '--threshold'))
 
     # Input/Output parsing
-    if '--output' in docopt_args:
+    if query_doctop_dict(docopt_args, '--output'):
         try:
-            if '--directory' in docopt_args:
+            if query_doctop_dict(docopt_args, '--directory'):
                 fp = open(
                     docopt_args['--directory'] + docopt_args['--output'], 'w')
             else:
@@ -219,11 +220,12 @@ def parse_args(docopt_args):
         except IOError as e:
             print(e)
             sys.exit(0)
-    if '--input' in docopt_args and docopt_args['--input'] == 'None':
+
+    if query_doctop_dict(docopt_args, '--input') == 'None':
         parsed['input'] = docopt_args['--input']
-    elif '--input' in docopt_args:
+    elif query_doctop_dict(docopt_args, '--input'):
         try:
-            if '--directory' in docopt_args:
+            if query_doctop_dict(docopt_args, '--directory'):
                 fp = open(
                     docopt_args['--directory'] + docopt_args['--input'], 'r')
             else:
@@ -235,14 +237,13 @@ def parse_args(docopt_args):
             sys.exit(0)
 
     # Model parsing
-    if '--model' in docopt_args:
-        model = docopt_args['--model']
-        if model not in supported_estimators():
-            print('Classifier not supported. Please choose one of:'.format(
-                '\t\n'.join(supported_estimators().keys)
-            ))
-            sys.exit(0)
-        else:
-            parsed['model'] = model
+    model = query_doctop_dict(docopt_args, '--model')
+    if model not in supported_estimators():
+        print('Classifier not supported. Please choose one of:'.format(
+            '\t\n'.join(supported_estimators().keys)
+        ))
+        sys.exit(0)
+    else:
+        parsed['model'] = model
 
     return parsed
