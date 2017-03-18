@@ -55,6 +55,7 @@ from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 
 if __name__ == '__main__':
     args = parse_args(args)
+    print(args)
     uniprot = get_active_instance(verbose=True)
     data_types = UniProt.data_types()
     pathways = download_pathway_ids('hsa')
