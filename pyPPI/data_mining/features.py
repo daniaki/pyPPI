@@ -179,7 +179,7 @@ class AnnotationExtractor(object):
         # Run the intensive computation in parallel and append the local cache
         if self._verbose:
             print('Computing selected features for each PPI...')
-        chunks = chunk_list(ppis, n=self._n_jobs)
+        chunks = chunk_list(list(ppis), n=self._n_jobs)
         compute_features = delayed(self._compute_features)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
                        backend=self._backend)(
@@ -263,7 +263,7 @@ class AnnotationExtractor(object):
             if self._verbose:
                 print('Computing selected features for each new PPI...')
             compute_features = delayed(self._compute_features)
-            chunks = chunk_list(new_ppis, n=self._n_jobs)
+            chunks = chunk_list(list(new_ppis), n=self._n_jobs)
             dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
                            backend=self._backend)(
                 compute_features(ppis_ls) for ppis_ls in chunks
