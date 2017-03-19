@@ -69,9 +69,7 @@ from sklearn.metrics import f1_score, make_scorer
 
 
 if __name__ == '__main__':
-    print('here')
     args = parse_args(args)
-    print("after")
     n_jobs = args['n_jobs']
     n_splits =args['n_splits']
     rcv_iter = args['iterations']
