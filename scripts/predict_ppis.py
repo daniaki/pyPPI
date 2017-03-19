@@ -7,7 +7,7 @@ output predictions over the interactome.
 Usage:
   predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
              [--use_cache] [--retrain] [--induce] [--verbose]
-             [--model=M] [--n_jobs=J] [--splits=S] [--iterations=I]
+             [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
              [--input=FILE] [--output=FILE] [--directory=DIR]
   predict_interactome.py -h | --help
 
@@ -28,9 +28,9 @@ Options:
                     predict and predict_proba [default: LogisticRegression].
                     Ignored if using 'retrain'.
   --n_jobs=J        Number of processes to run in parallel [default: 1]
-  --splits=S        Number of cross-validation splits used during
-                    randomized grid search [default: 5]
-  --iterations=I    Number of randomized grid search iterations [default: 60]
+  --n_splits=S      Number of cross-validation splits used during randomized
+                    grid search [default: 5]
+  --n_iterations=I  Number of randomized grid search iterations [default: 60]
   --input=FILE      Uniprot edge-list, with a path directory that absolute or
                     relative to this script. Entries must be tab separated with
                     header columns 'source' and 'target'. [default: None]
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     args = parse_args(args)
     n_jobs = args['n_jobs']
     n_splits =args['n_splits']
-    rcv_iter = args['iterations']
+    rcv_iter = args['n_iterations']
     induce = args['induce']
     verbose = args['verbose']
     selection = args['selection']

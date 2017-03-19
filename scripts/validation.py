@@ -7,7 +7,7 @@ the publication.
 Usage:
   predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
              [--use_cache] [--induce] [--verbose]
-             [--model=M] [--n_jobs=J] [--splits=S] [--iterations=I]
+             [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
              [--directory=DIR]
   predict_interactome.py -h | --help
 
@@ -24,9 +24,9 @@ Options:
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression]
   --n_jobs=J        Number of processes to run in parallel [default: 1]
-  --splits=S        Number of cross-validation splits used during
-                    randomized grid search [default: 5]
-  --iterations=I    Number of bootstrap iterations [default: 5]
+  --n_splits=S      Number of cross-validation splits used during randomized
+                    grid search [default: 5]
+  --n_iterations=I  Number of bootstrap iterations [default: 5]
   --directory=DIR   Output directory [default: ./results/]
 """
 

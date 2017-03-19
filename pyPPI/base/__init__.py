@@ -210,11 +210,11 @@ def parse_args(docopt_args):
     # Numeric parsing
     n_jobs = int(query_doctop_dict(docopt_args, '--n_jobs')) or 1
     n_splits = int(query_doctop_dict(docopt_args, '--n_splits')) or 5
-    iterations = int(query_doctop_dict(docopt_args, '--iterations')) or 5
+    iterations = int(query_doctop_dict(docopt_args, '--n_iterations')) or 5
     threshold = float(query_doctop_dict(docopt_args, '--threshold')) or 0.5
     parsed['n_jobs'] = n_jobs
     parsed['n_splits'] = n_splits
-    parsed['iterations'] = iterations
+    parsed['n_iterations'] = iterations
     parsed['threshold'] = threshold
 
     # Input/Output parsing
