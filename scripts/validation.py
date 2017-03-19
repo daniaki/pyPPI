@@ -62,7 +62,7 @@ if __name__ == '__main__':
     args = parse_args(args)
     n_jobs = args['n_jobs']
     n_splits =args['n_splits']
-    n_iter = args['iterations']
+    n_iter = args['n_iterations']
     induce = args['induce']
     verbose = args['verbose']
     selection = args['selection']
