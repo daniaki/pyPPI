@@ -92,7 +92,7 @@ if __name__ == '__main__':
               sort_keys=True)
     out_file = open("{}/{}".format(direc, out_file), "w")
 
-    print("Loading data...")
+    print("Loading feature data...")
     uniprot = get_active_instance(verbose=verbose)
     data_types = UniProt.data_types()
     selection = [
@@ -113,8 +113,10 @@ if __name__ == '__main__':
 
     # Get the input edge-list ready
     if input_file == 'None':
+        print("Loading interactome data...")
         testing = load_network_from_path(interactome_network_path)
     else:
+        print("Loading custom ppi data...")
         testing = generic_to_dataframe(
             f_input=generic_io(input_file),
             parsing_func=edgelist_func,
@@ -175,8 +177,8 @@ if __name__ == '__main__':
             pickle.dump(clf, fp)
 
     print("Making predictions...")
-    with open(classifier_path, 'w') as fp:
-        clf = pickle.load(open(classifier_path, "rb"))
+    with open(classifier_path, 'rb') as fp:
+        clf = pickle.load(fp)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
