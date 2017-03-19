@@ -33,7 +33,7 @@ Options:
   --iterations=I    Number of randomized grid search iterations [default: 60]
   --input=FILE      Uniprot edge-list, with a path directory that absolute or
                     relative to this script. Entries must be tab separated with
-                    header columns 'source' and 'target'. [default: 'None']
+                    header columns 'source' and 'target'. [default: None]
   --output=FILE     Output file name [default: predictions.tsv]
   --directory=DIR   Absolute or relative output directory [default: ./results/]
 """
@@ -69,7 +69,9 @@ from sklearn.metrics import f1_score, make_scorer
 
 
 if __name__ == '__main__':
+    print('here')
     args = parse_args(args)
+    print("after")
     n_jobs = args['n_jobs']
     n_splits =args['n_splits']
     rcv_iter = args['iterations']
