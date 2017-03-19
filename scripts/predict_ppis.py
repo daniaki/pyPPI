@@ -62,6 +62,7 @@ from pyPPI.data_mining.generic import edgelist_func, generic_to_dataframe
 from pyPPI.data_mining.tools import map_network_accessions
 
 from sklearn.base import clone
+from sklearn.externals import joblib
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import CountVectorizer
@@ -173,12 +174,10 @@ if __name__ == '__main__':
         # Fit the complete training data and make predictions.
         print("Fitting data...")
         clf.fit(X_train, y_train)
-        with open(classifier_path, "wb") as fp:
-            pickle.dump(clf, fp)
+        joblib.dump(clf, classifier_path)
 
     print("Making predictions...")
-    with open(classifier_path, 'rb') as fp:
-        clf = pickle.load(fp)
+    clf = joblib.load(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
