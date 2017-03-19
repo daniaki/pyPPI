@@ -39,12 +39,6 @@ setup(
             'data/hprd/*.txt'
         ]
     },
-    scripts=[
-        './scripts/build_data.py',
-        'scripts/induce_subnetwork.py',
-        'scripts/predict_ppis.py',
-        'scripts/validation.py'
-    ],
     install_requires=[
         'scikit-learn>=0.18.1',
         'pandas>=0.19.1',
