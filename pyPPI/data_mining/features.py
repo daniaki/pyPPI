@@ -17,10 +17,6 @@ from .ontology import get_up_to_lca, group_go_by_ontology
 from sklearn.utils.validation import check_is_fitted
 from sklearn.externals.joblib import Parallel, delayed
 
-import pprint
-
-
-
 _ACCESSION_COLUMN = UniProt.accession_column()
 _DATA_TYPES = UniProt.data_types()
 _SEP = UniProt.sep()
