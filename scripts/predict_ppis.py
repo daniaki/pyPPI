@@ -39,6 +39,7 @@ Options:
 """
 
 import os
+import json
 import pickle
 import numpy as np
 from datetime import datetime
@@ -87,7 +88,8 @@ if __name__ == '__main__':
     folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
-    pretty_print_dict(args, open("{}/settings.json".format(direc), 'w'))
+    json.dump(args, fp=open("{}/settings.json".format(direc), 'w'), indent=4,
+              sort_keys=True)
     out_file = open("{}/{}".format(direc, out_file), "w")
 
     print("Loading data...")

@@ -30,7 +30,7 @@ def su_make_dir(path, mode=0o777):
         os.chmod(path, mode)
 
 
-def pretty_print_dict(dictionary, n_tabs=0, fp=None):
+def pretty_print_dict(dictionary, n_tabs=1, fp=None):
     for k in sorted(dictionary.keys()):
         if fp:
             fp.write('\t'*n_tabs + '{}:\t{}\n'.format(k, dictionary[k]))
