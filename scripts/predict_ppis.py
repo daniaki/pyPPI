@@ -87,7 +87,7 @@ if __name__ == '__main__':
     folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
-    pretty_print_dict(args, open("{}/settings.json".format(direc)))
+    pretty_print_dict(args, open("{}/settings.json".format(direc), 'w'))
     out_file = open("{}/{}".format(direc, out_file), "w")
 
     print("Loading data...")
