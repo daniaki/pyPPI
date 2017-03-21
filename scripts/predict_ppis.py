@@ -5,11 +5,11 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-             [--use_cache] [--retrain] [--induce] [--verbose]
-             [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
-             [--input=FILE] [--output=FILE] [--directory=DIR]
-  predict_interactome.py -h | --help
+  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+                  [--use_cache] [--retrain] [--induce] [--verbose]
+                  [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
+                  [--input=FILE] [--output=FILE] [--directory=DIR]
+  predict_ppis.py -h | --help
 
 Options:
   -h --help     Show this screen.

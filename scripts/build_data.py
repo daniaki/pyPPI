@@ -5,10 +5,10 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-             [--update_features] [--update_mapping]
-             [--induce] [--verbose] [--n_jobs=J] [--backend=B]
-  predict_interactome.py -h | --help
+  build_data.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+                [--update_features] [--update_mapping]
+                [--induce] [--verbose] [--n_jobs=J] [--backend=B]
+  build_data.py -h | --help
 
 Options:
   -h --help     Show this screen.

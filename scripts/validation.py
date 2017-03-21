@@ -5,11 +5,11 @@ This script runs the bootstrap kfold validation experiments as used in
 the publication.
 
 Usage:
-  predict_interactome.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+  validation.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
              [--use_cache] [--induce] [--verbose]
              [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
              [--directory=DIR]
-  predict_interactome.py -h | --help
+  validation.py -h | --help
 
 Options:
   -h --help     Show this screen.
@@ -24,8 +24,7 @@ Options:
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression]
   --n_jobs=J        Number of processes to run in parallel [default: 1]
-  --n_splits=S      Number of cross-validation splits used during randomized
-                    grid search [default: 5]
+  --n_splits=S      Number of cross-validation splits [default: 5]
   --n_iterations=I  Number of bootstrap iterations [default: 5]
   --directory=DIR   Output directory [default: ./results/]
 """
