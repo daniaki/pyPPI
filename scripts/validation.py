@@ -29,12 +29,13 @@ Options:
   --directory=DIR   Output directory [default: ./results/]
 """
 
+import json
 import numpy as np
 from datetime import datetime
 from docopt import docopt
 args = docopt(__doc__)
 
-from pyPPI.base import parse_args, su_make_dir, pretty_print_dict
+from pyPPI.base import parse_args, su_make_dir
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import testing_network_path, training_network_path
 
@@ -73,7 +74,8 @@ if __name__ == '__main__':
     folder = datetime.now().strftime("val_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
-    pretty_print_dict(args, open("{}/settings.json".format(direc)))
+    json.dump(args, fp=open("{}/settings.json".format(direc), 'w'), indent=4,
+              sort_keys=True)
 
     print("Loading data...")
     uniprot = get_active_instance(verbose=verbose)

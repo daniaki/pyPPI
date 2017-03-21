@@ -40,13 +40,12 @@ Options:
 
 import os
 import json
-import pickle
 import numpy as np
 from datetime import datetime
 from docopt import docopt
 args = docopt(__doc__)
 
-from pyPPI.base import parse_args, su_make_dir, pretty_print_dict
+from pyPPI.base import parse_args, su_make_dir
 from pyPPI.base import P1, P2, G1, G2
 from pyPPI.data import load_network_from_path, load_ptm_labels
 from pyPPI.data import full_training_network_path, generic_io
