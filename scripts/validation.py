@@ -126,7 +126,7 @@ if __name__ == '__main__':
     estimators = [
         Pipeline(
             [('vectorizer', CountVectorizer(binary=False)),
-             ('clf', make_classifier(model))]
+             ('clf', clone(random_cv))]
         )
         for l in labels
     ]
@@ -136,11 +136,11 @@ if __name__ == '__main__':
     print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
-        estimator=clf, cv=cv, n_jobs=n_jobs,
+        estimator=clf, cv=cv, n_jobs=1,
         verbose=verbose, backend='multiprocessing'
     )
     bootstrap = Bootstrap(
-        kfold_experiemnt=kf, n_iter=n_iter, n_jobs=1,
+        kfold_experiemnt=kf, n_iter=1, n_jobs=1,
         verbose=verbose, backend='multiprocessing'
     )
 
