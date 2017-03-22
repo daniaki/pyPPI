@@ -69,11 +69,15 @@ class Bootstrap(object):
         return np.asarray(scores)
 
     def fit(self, X, y):
-        fit_func = delayed(self._fit)
-        self.experiments = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                                    backend=self.backend)(
-            fit_func(X, y, i) for i in range(self.n_iter)
-        )
+        if self.n_jobs > 1:
+            fit_func = delayed(self._fit)
+            self.experiments = Parallel(n_jobs=self.n_jobs,
+                                        verbose=self.verbose,
+                                        backend=self.backend)(
+                fit_func(X, y, i) for i in range(self.n_iter)
+            )
+        else:
+            self.experiments = [self._fit(X, y, i) for i in range(self.n_iter)]
         self.fitted_ = True
         return self
 
@@ -285,12 +289,17 @@ class KFoldExperiment(object):
         if hasattr(self.cv_, 'split'):
             self.cv_ = list(self.cv_.split(X, y))
 
-        fit = delayed(self._fit_single)
-        self.estimators_ = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
-                                    backend=self.backend)(
-            fit(X, y, train_idx, i) for i, (train_idx, _)
-            in enumerate(self.cv_)
-        )
+        if self.n_jobs_ > 1:
+            fit = delayed(self._fit_single)
+            self.estimators_ = Parallel(n_jobs=self.n_jobs_,
+                                        verbose=self.verbose_,
+                                        backend=self.backend)(
+                fit(X, y, train_idx, i) for i, (train_idx, _)
+                in enumerate(self.cv_)
+            )
+        else:
+            self.estimators_ = [self._fit_single(X, y, train_idx, i)
+                                for i, (train_idx, _) in enumerate(self.cv_)]
         self.fitted_ = True
         return self
 

@@ -70,8 +70,6 @@ if __name__ == '__main__':
     use_feature_cache = args['use_cache']
     direc = args['directory']
 
-    print(args)
-
     # Set up the folder for each experiment run named after the current time
     folder = datetime.now().strftime("val_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
@@ -140,15 +138,13 @@ if __name__ == '__main__':
         verbose=verbose, backend='multiprocessing'
     )
     bootstrap = Bootstrap(
-        kfold_experiemnt=kf, n_iter=1, n_jobs=1,
+        kfold_experiemnt=kf, n_iter=n_iter, n_jobs=n_jobs,
         verbose=verbose, backend='multiprocessing'
     )
 
     # Fit the data
     print("Fitting training data...")
-    kf.fit(X_train, y_train)
-    import sys
-    sys.exit()
+    bootstrap.fit(X_train, y_train)
 
     # Make the scoring functions
     print("Evaluating performance...")
