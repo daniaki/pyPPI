@@ -132,11 +132,11 @@ if __name__ == '__main__':
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
         estimator=clf, cv=cv, n_jobs=n_splits,
-        verbose=True, backend='multiprocessing'
+        verbose=verbose, backend='multiprocessing'
     )
     bootstrap = Bootstrap(
         kfold_experiemnt=kf, n_iter=n_iter, n_jobs=n_jobs,
-        verbose=True, backend='multiprocessing'
+        verbose=verbose, backend='multiprocessing'
     )
 
     # Fit the data
