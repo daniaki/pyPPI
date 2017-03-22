@@ -58,8 +58,8 @@ class Bootstrap(object):
         self.backend = backend
 
     def _fit(self, X, y, i):
-        if self.verbose:
-            print("Fitting Bootstrap run {}".format(i + 1))
+        if self.verbose_:
+            print("Fitting Bootstrap iteration {}".format(i+1))
         return self.experiments[i].fit(X, y)
 
     def _scores(self, X, y, i, dispatch_func, score_funcs, thresholds, mean):
@@ -227,9 +227,9 @@ class KFoldExperiment(object):
             backend=self.backend
         )
 
-    def _fit_single(self, X, y, train_idx):
+    def _fit_single(self, X, y, train_idx, i):
         if self.verbose_:
-            print("Fitting KFoldExperiment {}".format(id(self)))
+            print("\tFitting Fold {}".format(i+1))
         estimator = clone(self.base_estimator_)
         if hasattr(estimator, 'random_state'):
             estimator.set_params(**{'random_state': self.random_state_})
@@ -288,7 +288,8 @@ class KFoldExperiment(object):
         fit = delayed(self._fit_single)
         self.estimators_ = Parallel(n_jobs=self.n_jobs_, verbose=self.verbose_,
                                     backend=self.backend)(
-            fit(X, y, train_idx) for (train_idx, _) in self.cv_
+            fit(X, y, train_idx, i) for i, (train_idx, _)
+            in enumerate(self.cv_)
         )
         self.fitted_ = True
         return self
