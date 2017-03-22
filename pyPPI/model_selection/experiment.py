@@ -58,6 +58,8 @@ class Bootstrap(object):
         self.backend = backend
 
     def _fit(self, X, y, i):
+        if self.verbose:
+            print("Fitting Bootstrap run {}".format(i + 1))
         return self.experiments[i].fit(X, y)
 
     def _scores(self, X, y, i, dispatch_func, score_funcs, thresholds, mean):
@@ -226,6 +228,8 @@ class KFoldExperiment(object):
         )
 
     def _fit_single(self, X, y, train_idx):
+        if self.verbose_:
+            print("Fitting KFoldExperiment {}".format(id(self)))
         estimator = clone(self.base_estimator_)
         if hasattr(estimator, 'random_state'):
             estimator.set_params(**{'random_state': self.random_state_})
