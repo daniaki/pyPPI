@@ -80,7 +80,11 @@ if __name__ == '__main__':
               sort_keys=True)
 
     print("Loading data...")
-    uniprot = get_active_instance(verbose=verbose)
+    uniprot = get_active_instance(
+        verbose=verbose,
+        sprot_cache=None,
+        trembl_cache=None
+    )
     data_types = UniProt.data_types()
     labels = load_ptm_labels()
     annotation_ex = AnnotationExtractor(
