@@ -47,4 +47,6 @@ def make_classifier(algorithm, class_weight='balanced', random_state=None):
         estimator.set_params(**{'class_weight': class_weight})
     if hasattr(estimator, 'random_state'):
         estimator.set_params(**{'random_state': random_state})
+    if hasattr(estimator, 'probability'):
+        estimator.set_params(**{'probability': True})
     return estimator

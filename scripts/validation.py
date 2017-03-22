@@ -117,9 +117,10 @@ if __name__ == '__main__':
     }
     random_cv = RandomizedSearchCV(
         cv=3,
+        n_jobs=1,
         n_iter=60,
         param_distributions=param_distribution,
-        estimator=make_classifier('LogisticRegression'),
+        estimator=make_classifier(model),
         scoring=make_scorer(f1_score, greater_is_better=True)
     )
     estimators = [
@@ -129,14 +130,13 @@ if __name__ == '__main__':
         )
         for l in labels
     ]
-    clf = BinaryRelevance(estimators, n_jobs=n_jobs)
+    clf = BinaryRelevance(estimators, n_jobs=1)
 
     # Make the bootstrap and KFoldExperiments
     print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
-        estimator=clf, cv=cv, n_jobs=n_splits,
-        verbose=verbose, backend='multiprocessing'
+        estimator=clf, cv=cv, verbose=verbose
     )
     bootstrap = Bootstrap(
         kfold_experiemnt=kf, n_iter=n_iter, n_jobs=n_jobs,
