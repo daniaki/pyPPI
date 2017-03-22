@@ -126,7 +126,7 @@ if __name__ == '__main__':
     estimators = [
         Pipeline(
             [('vectorizer', CountVectorizer(binary=False)),
-             ('clf', clone(random_cv))]
+             ('clf', make_classifier(model))]
         )
         for l in labels
     ]
