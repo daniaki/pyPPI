@@ -70,6 +70,8 @@ if __name__ == '__main__':
     use_feature_cache = args['use_cache']
     direc = args['directory']
 
+    print(args)
+
     # Set up the folder for each experiment run named after the current time
     folder = datetime.now().strftime("val_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
@@ -130,11 +132,11 @@ if __name__ == '__main__':
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
         estimator=clf, cv=cv, n_jobs=n_splits,
-        verbose=verbose, backend='multiprocessing'
+        verbose=True, backend='multiprocessing'
     )
     bootstrap = Bootstrap(
         kfold_experiemnt=kf, n_iter=n_iter, n_jobs=n_jobs,
-        verbose=verbose, backend='multiprocessing'
+        verbose=True, backend='multiprocessing'
     )
 
     # Fit the data
