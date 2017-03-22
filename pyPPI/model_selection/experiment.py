@@ -58,7 +58,7 @@ class Bootstrap(object):
         self.backend = backend
 
     def _fit(self, X, y, i):
-        if self.verbose_:
+        if self.verbose:
             print("Fitting Bootstrap iteration {}".format(i+1))
         return self.experiments[i].fit(X, y)
 
