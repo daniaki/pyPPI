@@ -50,7 +50,6 @@ from pyPPI.data_mining.uniprot import UniProt, get_active_instance
 from pyPPI.data_mining.tools import xy_from_interaction_frame
 
 from sklearn.base import clone
-from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import CountVectorizer
@@ -131,7 +130,7 @@ if __name__ == '__main__':
         )
         for l in labels
     ]
-    clf = OneVsRestClassifier(estimators[0], n_jobs=1)
+    clf = BinaryRelevance(estimators, n_jobs=1)
 
     # Make the bootstrap and KFoldExperiments
     print("Setting up experiments...")

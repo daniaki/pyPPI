@@ -168,7 +168,7 @@ if __name__ == '__main__':
             )
             for l in labels
         ]
-        clf = BinaryRelevance(estimators)
+        clf = BinaryRelevance(estimators, n_jobs=1)
 
         # Fit the complete training data and make predictions.
         print("Fitting data...")
