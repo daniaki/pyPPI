@@ -146,8 +146,9 @@ if __name__ == '__main__':
 
     # Fit the data
     print("Fitting training data...")
-    import cProfile
-    cProfile.run('bootstrap.fit(X_train, y_train)')
+    kf.fit(X_train, y_train)
+    import sys
+    sys.exit()
 
     # Make the scoring functions
     print("Evaluating performance...")
