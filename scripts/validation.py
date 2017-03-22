@@ -146,7 +146,8 @@ if __name__ == '__main__':
 
     # Fit the data
     print("Fitting training data...")
-    bootstrap.fit(X_train, y_train)
+    import cProfile
+    cProfile.run('bootstrap.fit(X_train, y_train)')
 
     # Make the scoring functions
     print("Evaluating performance...")
