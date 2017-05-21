@@ -61,7 +61,7 @@ from sklearn.metrics import recall_score, make_scorer
 if __name__ == '__main__':
     args = parse_args(args)
     n_jobs = args['n_jobs']
-    n_splits =args['n_splits']
+    n_splits = args['n_splits']
     n_iter = args['n_iterations']
     induce = args['induce']
     verbose = args['verbose']
@@ -134,11 +134,11 @@ if __name__ == '__main__':
     print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
-        estimator=clf, cv=cv, n_jobs=1,
+        estimator=clf, cv=cv, n_jobs=n_jobs,
         verbose=verbose, backend='multiprocessing'
     )
     bootstrap = Bootstrap(
-        kfold_experiemnt=kf, n_iter=n_iter, n_jobs=n_jobs,
+        kfold_experiemnt=kf, n_iter=n_iter, n_jobs=1,
         verbose=verbose, backend='multiprocessing'
     )
 

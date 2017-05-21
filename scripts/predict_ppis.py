@@ -43,7 +43,6 @@ import json
 import numpy as np
 from datetime import datetime
 from docopt import docopt
-args = docopt(__doc__)
 
 from pyPPI.base import parse_args, su_make_dir
 from pyPPI.base import P1, P2, G1, G2
@@ -68,11 +67,12 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import f1_score, make_scorer
 
+args = docopt(__doc__)
 
 if __name__ == '__main__':
     args = parse_args(args)
     n_jobs = args['n_jobs']
-    n_splits =args['n_splits']
+    n_splits = args['n_splits']
     rcv_iter = args['n_iterations']
     induce = args['induce']
     verbose = args['verbose']
