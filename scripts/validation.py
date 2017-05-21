@@ -115,7 +115,7 @@ if __name__ == '__main__':
     }
     random_cv = RandomizedSearchCV(
         cv=3,
-        n_jobs=n_jobs,
+        n_jobs=1,
         n_iter=60,
         param_distributions=param_distribution,
         estimator=make_classifier(model),
@@ -128,7 +128,7 @@ if __name__ == '__main__':
         )
         for l in labels
     ]
-    clf = BinaryRelevance(estimators, n_jobs=1)
+    clf = BinaryRelevance(estimators, n_jobs=n_jobs)
 
     # Make the bootstrap and KFoldExperiments
     print("Setting up experiments...")

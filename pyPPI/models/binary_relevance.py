@@ -120,13 +120,14 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         # n_jobs > 1 in can results in slower performance due to the overhead
         # of spawning threads.  See joblib issue #112.
         self.estimators = Parallel(n_jobs=self.n_jobs,
-                                   backend='multiprocessing')(
+                                   backend='threading')(
             delayed(_fit_binary)(
-            e, X, column, classes=[
-                "not %s" % self.label_binarizer_.classes_[i],
-                self.label_binarizer_.classes_[i]]
+                e, X, column, classes=[
+                    "not %s" % self.label_binarizer_.classes_[i],
+                    self.label_binarizer_.classes_[i]
+                ]
             )
-                for (i, column), e in zip(enumerate(columns), self.estimators)
+            for (i, column), e in zip(enumerate(columns), self.estimators)
         )
         self.fitted_ = True
         return self
