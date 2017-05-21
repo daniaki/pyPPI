@@ -115,7 +115,7 @@ if __name__ == '__main__':
     }
     random_cv = RandomizedSearchCV(
         cv=3,
-        n_jobs=1,
+        n_jobs=n_jobs,
         n_iter=60,
         param_distributions=param_distribution,
         estimator=make_classifier(model),
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
-        estimator=clf, cv=cv, n_jobs=n_jobs,
+        estimator=clf, cv=cv, n_jobs=1,
         verbose=verbose, backend='multiprocessing'
     )
     bootstrap = Bootstrap(
