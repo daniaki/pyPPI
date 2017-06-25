@@ -55,7 +55,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import f1_score, precision_score
-from sklearn.metrics import recall_score, make_scorer
+from sklearn.metrics import recall_score, make_scorer, label_ranking_average_precision_score
 
 
 if __name__ == '__main__':
