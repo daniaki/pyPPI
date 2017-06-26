@@ -74,9 +74,10 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         Whether a OneVsRestClassifier is a multilabel classifier.
     """
 
-    def __init__(self, estimators, n_jobs=1):
+    def __init__(self, estimators, n_jobs=1, backend='threading'):
         self.estimators = estimators
         self.n_jobs = n_jobs
+        self._backend = backend
 
     def __str__(self):
         return "BinaryRelevance(estimators={}, n_jobs={})".format(
@@ -119,8 +120,8 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         # In cases where individual estimators are very fast to train setting
         # n_jobs > 1 in can results in slower performance due to the overhead
         # of spawning threads.  See joblib issue #112.
-        self.estimators = Parallel(n_jobs=self.n_jobs,
-                                   backend='threading')(
+
+        self.estimators = Parallel(n_jobs=self.n_jobs, backend=self._backend)(
             delayed(_fit_binary)(
                 e, X, column, classes=[
                     "not %s" % self.label_binarizer_.classes_[i],
@@ -182,9 +183,8 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         Y = Y.tocsc()
         columns = (col.toarray().ravel() for col in Y.T)
 
-        self.estimators = Parallel(n_jobs=self.n_jobs)(
-            delayed(_partial_fit_binary)(self.estimators[i], X,
-                                         next(columns))
+        self.estimators = Parallel(n_jobs=self.n_jobs, backend=self._backend)(
+            delayed(_partial_fit_binary)(self.estimators[i], X, next(columns))
             for i in range(self.n_classes_))
 
         self.fitted_ = True
@@ -390,3 +390,93 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
             raise AttributeError(
                 "Base estimator doesn't have an intercept_ attribute.")
         return np.array([e.intercept_.ravel() for e in self.estimators])
+
+
+# -------------------------- Skmulti-learn Utilities ----------------------- #
+def get_coefs(clf):
+    """
+    Return the feature weightings for each estimator. If estimator is a
+    pipeline, then it assumes the last step is the estimator.
+
+    :return: array-like, shape (n_classes_, n_features)
+    """
+    check_is_fitted(clf, 'fitted_')
+
+    def feature_imp(estimator):
+        if hasattr(estimator, 'steps'):
+            estimator = estimator.steps[-1][-1]
+        if hasattr(estimator, "coef_"):
+            return estimator.coef_
+        elif hasattr(estimator, "coefs_"):
+            return estimator.coefs_
+        elif hasattr(estimator, "feature_importances_"):
+            return estimator.feature_importances_
+        else:
+            raise AttributeError(
+                "Estimator {} doesn't support "
+                "feature coefficients.".format(type(estimator)))
+
+    coefs = [feature_imp(e) for e in get_br_estimators(clf)]
+    if sp.issparse(coefs[0]):
+        return sp.vstack(coefs)
+    return np.vstack(coefs)
+
+
+def zip_classes(clf):
+    """
+    Zip the class indices with the classifiers
+    """
+    if not isinstance(clf, BinaryRelevance):
+        raise TypeError("Need a Skmultilearn BR classifier.")
+    estimators = clf.estimators
+    classes = clf.partition
+    return list(zip(classes, estimators))
+
+
+def get_br_estimators(clf):
+    """
+    Get the classifiers from a multi-label Binary Relevance classifier.
+    """
+    from skmultilearn.problem_transform.br import BinaryRelevance
+    if not isinstance(clf, BinaryRelevance):
+        raise TypeError("Need a Skmultilearn BR classifier.")
+    br_classifers = clf.classifiers
+    if isinstance(br_classifers[-1], RandomizedSearchCV):
+        return [e.best_estimator_ for e in br_classifers]
+    if isinstance(br_classifers[-1], GridSearchCV):
+        return [e.best_estimator_ for e in br_classifers]
+    elif isinstance(br_classifers[-1], CalibratedClassifierCV):
+        return [e.calibrated_classifiers_ for e in br_classifers]
+    else:
+        return br_classifers
+
+
+def top_n_features(clf, n, absolute=False, vectorizer=None):
+    """
+    Return the top N features. If estimator is a pipeline, then it assumes
+    the first step is the vectoriser holding the feature names.
+
+    :return: array like, shape (n_estimators, n).
+        Each element in a list is a tuple (feature_idx, weight).
+    """
+    check_is_fitted(clf, 'fitted_')
+    top_features = []
+    estimators = get_br_estimators(clf)
+    coefs = get_coefs(clf)
+    for e, coef in zip(estimators, coefs):
+        if absolute:
+            coef = abs(coef)
+        if hasattr(e, 'steps') and vectorizer is None:
+            vectorizer = e.steps[0][-1]
+        idx_coefs = sorted(
+            enumerate(coef), key=itemgetter(1), reverse=True)[:n]
+        if vectorizer:
+            idx = [idx for (idx, w) in idx_coefs]
+            ws = [w for (idx, w) in idx_coefs]
+            print(vectorizer.get_feature_names())
+            features = np.asarray(vectorizer.get_feature_names())[idx]
+            top_features.append(list(zip(features, ws)))
+        else:
+            top_features.append(idx_coefs)
+    return top_features
+

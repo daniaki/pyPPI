@@ -52,6 +52,7 @@ from pyPPI.data_mining.tools import xy_from_interaction_frame
 from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import f1_score, precision_score
@@ -69,6 +70,12 @@ if __name__ == '__main__':
     model = args['model']
     use_feature_cache = args['use_cache']
     direc = args['directory']
+
+    backend = 'multiprocessing'
+    if backend == 'multiprocessing':
+        n_jobs = (n_jobs // 2) or 1
+    else:
+        n_jobs = (n_jobs - 1) or 1
 
     # Set up the folder for each experiment run named after the current time
     folder = datetime.now().strftime("val_%y-%m-%d_%H-%M-%S")
@@ -90,7 +97,8 @@ if __name__ == '__main__':
         selection=selection,
         n_jobs=n_jobs,
         verbose=verbose,
-        cache=use_feature_cache
+        cache=use_feature_cache,
+        backend='threading'
     )
     training = load_network_from_path(training_network_path)
     testing = load_network_from_path(testing_network_path)
@@ -113,33 +121,37 @@ if __name__ == '__main__':
         'C': np.arange(0.01, 10.01, step=0.01),
         'penalty': ['l1', 'l2']
     }
-    random_cv = RandomizedSearchCV(
-        cv=3,
-        n_jobs=1,
-        n_iter=60,
-        param_distributions=param_distribution,
-        estimator=make_classifier(model),
-        scoring=make_scorer(f1_score, greater_is_better=True)
-    )
+
+    def make_rcv():
+        random_cv = RandomizedSearchCV(
+            cv=3,
+            n_jobs=1,
+            n_iter=60,
+            param_distributions=param_distribution,
+            estimator=make_classifier(model),
+            scoring=make_scorer(f1_score, greater_is_better=True)
+        )
+        return random_cv
+
     estimators = [
         Pipeline(
             [('vectorizer', CountVectorizer(binary=False)),
-             ('clf', clone(random_cv))]
+             ('clf', make_rcv())]
         )
         for l in labels
     ]
-    clf = BinaryRelevance(estimators, n_jobs=n_jobs)
+    clf = BinaryRelevance(estimators, n_jobs=n_jobs, backend=backend)
 
     # Make the bootstrap and KFoldExperiments
     print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
         estimator=clf, cv=cv, n_jobs=1,
-        verbose=verbose, backend='multiprocessing'
+        verbose=verbose, backend=backend
     )
     bootstrap = Bootstrap(
         kfold_experiemnt=kf, n_iter=n_iter, n_jobs=1,
-        verbose=verbose, backend='multiprocessing'
+        verbose=verbose, backend=backend
     )
 
     # Fit the data
