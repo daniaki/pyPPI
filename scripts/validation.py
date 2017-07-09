@@ -118,7 +118,7 @@ if __name__ == '__main__':
     # Make the estimators and BR classifier
     print("Making classifier...")
     param_distribution = {
-        'C': np.arange(0.01, 10.01, step=0.01),
+        'C': np.arange(0.01, 20.01, step=0.01),
         'penalty': ['l1', 'l2']
     }
 
@@ -140,13 +140,13 @@ if __name__ == '__main__':
         )
         for l in labels
     ]
-    clf = BinaryRelevance(estimators, n_jobs=n_jobs, backend=backend)
+    clf = OneVsRestClassifier(estimators, n_jobs=1)
 
     # Make the bootstrap and KFoldExperiments
     print("Setting up experiments...")
     cv = IterativeStratifiedKFold(n_splits=n_splits, shuffle=True)
     kf = KFoldExperiment(
-        estimator=clf, cv=cv, n_jobs=1,
+        estimator=clf, cv=cv, n_jobs=n_jobs,
         verbose=verbose, backend=backend
     )
     bootstrap = Bootstrap(
