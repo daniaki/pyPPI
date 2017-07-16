@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 This module contains functions to open and parse the files found in this
 directory (data) and generally act as datatypes. This is so other parts of the
@@ -8,25 +6,28 @@ program do not become coupled to the data parsing process.
 
 import json
 import os
+import gzip
 import pandas as pd
 from goatools import obo_parser
 
-PATH, _ = os.path.split(__file__)
+PATH = os.path.normpath(os.path.join(os.path.expanduser('~'), '.pyppi/'))
 
 hprd_mappings_txt = os.path.join(PATH, 'hprd/HPRD_ID_MAPPINGS.txt')
 hprd_ptms_txt = os.path.join(PATH, 'hprd/POST_TRANSLATIONAL_MODIFICATIONS.txt')
-uniprot_trembl_dat = os.path.join(PATH, 'uniprot_trembl_human.dat')
-uniprot_sprot_dat = os.path.join(PATH, 'uniprot_sprot_human.dat')
-swissprot_hsa_path = os.path.join(PATH, 'swiss_hsa.list')
+uniprot_trembl_dat = os.path.join(PATH, 'uniprot_trembl_human.dat.gz')
+uniprot_sprot_dat = os.path.join(PATH, 'uniprot_sprot_human.dat.gz')
+swissprot_hsa_path = os.path.join(PATH, 'hsa_swiss-prot.list')
 uniprot_hsa_path = os.path.join(PATH, 'uniprot_hsa.list')
-obo_file = os.path.join(PATH, 'gene_ontology.1_2.obo')
+obo_file = os.path.join(PATH, 'go.obo')
 ipr_snames_path = os.path.join(PATH, 'ipr_short_names.dat')
 ipr_lnames_path = os.path.join(PATH, 'ipr_names.dat')
-pfam_names_path = os.path.join(PATH, 'pfam_names.tsv')
+pfam_names_path = os.path.join(PATH, 'Pfam-A.clans.tsv.gz')
+
 ptm_labels_path = os.path.join(PATH, 'labels.tsv')
 annotation_extractor_path = os.path.join(PATH, 'annotation_extractor.pkl')
 accession_features_path = os.path.join(PATH, 'accession_features.pkl')
 ppi_features_path = os.path.join(PATH, 'ppi_features.pkl')
+
 kegg_network_path = os.path.join(PATH, 'networks/kegg_network.tsv')
 hprd_network_path = os.path.join(PATH, 'networks/hprd_network.tsv')
 pina2_network_path = os.path.join(PATH, 'networks/pina2_network.tsv')
@@ -35,15 +36,14 @@ innate_i_network_path = os.path.join(PATH, 'networks/innate_i_network.tsv')
 innate_c_network_path = os.path.join(PATH, 'networks/innate_c_network.tsv')
 testing_network_path = os.path.join(PATH, 'networks/testing_network.tsv')
 training_network_path = os.path.join(PATH, 'networks/training_network.tsv')
-full_training_network_path = os.path.join(PATH,
-                                          'networks/full_training_network.tsv')
-interactome_network_path = os.path.join(PATH,
-                                        'networks/interactome_network.tsv')
-bioplex_v2_path = os.path.join(PATH, 'networks/BioPlex_interactionList_v2.tsv')
-bioplex_v4_path = os.path.join(PATH, 'networks/BioPlex_interactionList_v4.tsv')
-innate_c_mitab_path = os.path.join(PATH, 'networks/innatedb_curated.mitab')
-innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab')
-pina2_sif_path = os.path.join(PATH, 'networks/PINA2_Homo_sapiens-20140521.sif')
+full_training_network_path = os.path.join(PATH,'networks/full_training_network.tsv')
+interactome_network_path = os.path.join(PATH, 'networks/interactome_network.tsv')
+
+bioplex_v4_path = os.path.join(PATH, 'networks/BioPlex_interactionList_v4a.tsv')
+innate_c_mitab_path = os.path.join(PATH, 'networks/innatedb_curated.mitab.gz')
+innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab.gz')
+pina2_sif_path = os.path.join(PATH, 'networks/pina2_homo_sapiens-20140521.sif')
+
 uniprot_record_cache = os.path.join(PATH, 'uprot_records.dict')
 uniprot_map_path = os.path.join(PATH, 'accession_map.json')
 classifier_path = os.path.join(PATH, 'classifier.pkl')
@@ -57,6 +57,8 @@ def line_generator(io_func):
     def wrapper_func():
         fp = io_func()
         for line in fp:
+            if isinstance(line, bytes):
+                yield line.decode('utf-8')
             yield line
         fp.close()
     return wrapper_func
@@ -89,7 +91,7 @@ def swissprot_hsa_list():
 @line_generator
 def uniprot_sprot():
     try:
-        return open(uniprot_sprot_dat, 'r')
+        return gzip.open(uniprot_sprot_dat, 'rt')
     except IOError as e:
         print(e)
 
@@ -97,7 +99,7 @@ def uniprot_sprot():
 @line_generator
 def uniprot_trembl():
     try:
-        return open(uniprot_trembl_dat, 'r')
+        return gzip.open(uniprot_trembl_dat, 'rt')
     except IOError as e:
         print(e)
 
@@ -119,14 +121,6 @@ def hprd_id_map():
 
 
 @line_generator
-def bioplex_v2():
-    try:
-        return open(bioplex_v2_path, 'r')
-    except IOError as e:
-        print(e)
-
-
-@line_generator
 def bioplex_v4():
     try:
         return open(bioplex_v4_path, 'r')
@@ -137,7 +131,7 @@ def bioplex_v4():
 @line_generator
 def innate_curated():
     try:
-        return open(innate_c_mitab_path, 'r')
+        return gzip.open(innate_c_mitab_path, 'rt')
     except IOError as e:
         print(e)
 
@@ -145,7 +139,7 @@ def innate_curated():
 @line_generator
 def innate_imported():
     try:
-        return open(innate_i_mitab_path, 'r')
+        return gzip.open(innate_i_mitab_path, 'rt')
     except IOError as e:
         print(e)
 
@@ -207,7 +201,7 @@ def pfam_name_map(lowercase_keys=False):
     """
     Parse the pfam list into a dictionary.
     """
-    fp = open(pfam_names_path, 'r')
+    fp = gzip.open(pfam_names_path, 'rt')
     pf_map = {}
     for line in fp:
         if lowercase_keys:

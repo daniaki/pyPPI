@@ -44,20 +44,20 @@ import numpy as np
 from datetime import datetime
 from docopt import docopt
 
-from pyPPI.base import parse_args, su_make_dir
-from pyPPI.base import P1, P2, G1, G2
-from pyPPI.data import load_network_from_path, load_ptm_labels
-from pyPPI.data import full_training_network_path, generic_io
-from pyPPI.data import interactome_network_path, classifier_path
+from pyppi.base import parse_args, su_make_dir
+from pyppi.base import P1, P2, G1, G2
+from pyppi.data import load_network_from_path, load_ptm_labels
+from pyppi.data import full_training_network_path, generic_io
+from pyppi.data import interactome_network_path, classifier_path
 
-from pyPPI.models.binary_relevance import BinaryRelevance
-from pyPPI.models import make_classifier
+from pyppi.models.binary_relevance import BinaryRelevance
+from pyppi.models import make_classifier
 
-from pyPPI.data_mining.features import AnnotationExtractor
-from pyPPI.data_mining.uniprot import UniProt, get_active_instance
-from pyPPI.data_mining.tools import xy_from_interaction_frame
-from pyPPI.data_mining.generic import edgelist_func, generic_to_dataframe
-from pyPPI.data_mining.tools import map_network_accessions
+from pyppi.data_mining.features import AnnotationExtractor
+from pyppi.data_mining.uniprot import UniProt, get_active_instance
+from pyppi.data_mining.tools import xy_from_interaction_frame
+from pyppi.data_mining.generic import edgelist_func, generic_to_dataframe
+from pyppi.data_mining.tools import map_network_accessions
 
 from sklearn.base import clone
 from sklearn.externals import joblib
@@ -142,6 +142,23 @@ if __name__ == '__main__':
     X_train = annotation_ex.transform(X_train_ppis)
     X_test = annotation_ex.transform(X_test_ppis)
 
+    # Get all annotations used during training
+    training_go = set([
+        g.strip() for gs in X_train
+        for g in x.split(',')
+        if 'go' in g.strip().lower()
+    ])
+    training_pfam = set([
+        g.strip() for gs in X_train
+        for g in x.split(',')
+        if 'pf' in g.strip().lower()
+    ])
+    training_ipr = set([
+        g.strip() for gs in X_train
+        for g in x.split(',')
+        if 'ipr' in g.strip().lower()
+    ])
+
     mlb = MultiLabelBinarizer(classes=labels)
     mlb.fit(y_train)
     y_train = mlb.transform(y_train)
@@ -192,10 +209,35 @@ if __name__ == '__main__':
         p_vec = [p for _, p in sorted(zip(mlb.classes_, p_vec))]
         g1 = accession_gene_map.get(s, ['-'])[0] or '-'
         g2 = accession_gene_map.get(t, ['-'])[0] or '-'
+
+        # Compute the usability of each of the annotation sets
+        annots = annotation_ex.transform([s, t])
+        go = set([
+            g.strip() for gs in annots
+            for g in x.split(',')
+            if 'go' in g.strip().lower()
+        ])
+        pf = set([
+            g.strip() for gs in annots
+            for g in x.split(',')
+            if 'pf' in g.strip().lower()
+        ])
+        ipr = set([
+            g.strip() for gs in annots
+            for g in x.split(',')
+            if 'ipr' in g.strip().lower()
+        ])
+        usability_go = (go & training_go) / (go | training_go)
+        usability_pf = (pf & training_pfam) / (pf | training_pfam)
+        usability_ipr = (ipr & training_ipr) / (ipr | training_ipr)
+
         sum_pr = sum(p_vec)
-        line = "{s}\t{t}\t{g1}\t{g2}\t{classes}\t{sum_pr}\n".format(
-            s=s, t=t, g1=g1, g2=g2, sum_pr=sum_pr,
-            classes='\t'.join(['%.4f' % p for p in p_vec])
-        )
+        line = "{s}\t{t}\t{g1}\t{g2}\t{classes}\t{sum_pr}\t{usability_go}" \
+               "\t{usability_pf}\t{usability_ipr}\n".format(
+                s=s, t=t, g1=g1, g2=g2, sum_pr=sum_pr,
+                classes='\t'.join(['%.4f' % p for p in p_vec]),
+                usability_go=usability_go,
+                usability_pf=usability_pf,
+                usability_ipr=usability_ipr)
         out_file.write(line)
     out_file.close()

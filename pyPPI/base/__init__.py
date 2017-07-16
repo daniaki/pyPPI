@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Collection of utility operations that don't go anywhere else.
 """

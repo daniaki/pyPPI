@@ -1,7 +1,26 @@
 from setuptools import setup
 
+import os
+import glob
+import shutil
+
+# Copy script files
+home_folder = os.path.normpath(os.path.join(os.path.expanduser('~'), '.pyppi/'))
+print("Copying data files to '{}'".format(home_folder))
+os.makedirs(home_folder, exist_ok=True)
+for file in glob.glob("data/*.*"):
+    shutil.copy(file, home_folder)
+
+os.makedirs(home_folder + '/hprd', exist_ok=True)
+for file in glob.glob("data/hprd/*.*"):
+    shutil.copy(file, home_folder + '/hprd')
+
+os.makedirs(home_folder + '/networks', exist_ok=True)
+for file in glob.glob("data/networks/*.*"):
+    shutil.copy(file, home_folder + '/networks')
+
 setup(
-    name='pyPPI',
+    name='pyppi',
     version='0.1',
     description='Predict the post-translation modification/signalling function'
                 ' of protein-protein interactions',
@@ -9,36 +28,16 @@ setup(
     url='http://github.com/daniaki/pyPPI',
     author='Daniel Esposito',
     author_email='danielce90@gmail.com',
-    license='LICENSE.txt',
+    license=open('LICENSE', 'rt').read(),
     packages=[
-        'pyPPI',
-        'pyPPI.base',
-        'pyPPI.data',
-        'pyPPI.data.hprd',
-        'pyPPI.data.networks',
-        'pyPPI.data_mining',
+        'pyppi',
+        'pyppi.base',
+        'pyppi.data',
+        'pyppi.data_mining',
         'pyPPI.model_selection',
         'pyPPI.models',
         'pyPPI.network_analysis',
     ],
-    package_data={
-        'pyPPI': [
-            'data/*.pkl',
-            'data/*.json',
-            'data/*.obo',
-            'data/*.dat',
-            'data/*.list',
-            'data/*.tsv',
-            'data/*.txt',
-            'data/*.csv',
-            'data/networks/*.tsv',
-            'data/networks/*.mitab',
-            'data/networks/*.sif',
-            'data/networks/*.txt',
-            'data/networks/*.csv',
-            'data/hprd/*.txt'
-        ]
-    },
     install_requires=[
         'scikit-learn>=0.18.1',
         'pandas>=0.19.1',

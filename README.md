@@ -13,7 +13,11 @@ This can be used as a command line tool with the provided scripts, or custom
 made scripts. Alterantively, the tool can be integrated into an existing
 project using the simple API described in the examples.
 
-# Examples
+# Install
+pip setup.py install
+
+Note: for windows users you will need to install python-igraph from 
+http://www.lfd.uci.edu/~gohlke/pythonlibs/ before using setup.py.
 
 
 # Citation

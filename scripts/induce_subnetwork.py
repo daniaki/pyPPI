@@ -21,8 +21,8 @@ Options:
 
 from docopt import docopt
 
-from pyPPI.base import parse_args
-from pyPPI.network_analysis import InteractionNetwork
+from pyppi.base import parse_args
+from pyppi.network_analysis import InteractionNetwork
 
 if __name__ == '__main__':
     args = parse_args(docopt(__doc__))

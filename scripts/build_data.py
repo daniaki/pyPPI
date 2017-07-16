@@ -30,29 +30,29 @@ import pandas as pd
 from docopt import docopt
 args = docopt(__doc__)
 
-from pyPPI.base import PPI, parse_args
-from pyPPI.data import bioplex_network_path, pina2_network_path
-from pyPPI.data import bioplex_v4, pina2, innate_curated, innate_imported
-from pyPPI.data import innate_i_network_path, innate_c_network_path
-from pyPPI.data import interactome_network_path, full_training_network_path
-from pyPPI.data import kegg_network_path, hprd_network_path
-from pyPPI.data import load_uniprot_accession_map, save_uniprot_accession_map
-from pyPPI.data import testing_network_path, training_network_path
-from pyPPI.data import save_network_to_path
-from pyPPI.data import save_ptm_labels
-from pyPPI.data import ppi_features_path, accession_features_path
-from pyPPI.data import annotation_extractor_path
-from pyPPI.data import pickle_pd_object
+from pyppi.base import PPI, parse_args
+from pyppi.data import bioplex_network_path, pina2_network_path
+from pyppi.data import bioplex_v4, pina2, innate_curated, innate_imported
+from pyppi.data import innate_i_network_path, innate_c_network_path
+from pyppi.data import interactome_network_path, full_training_network_path
+from pyppi.data import kegg_network_path, hprd_network_path
+from pyppi.data import load_uniprot_accession_map, save_uniprot_accession_map
+from pyppi.data import testing_network_path, training_network_path
+from pyppi.data import save_network_to_path
+from pyppi.data import save_ptm_labels
+from pyppi.data import ppi_features_path, accession_features_path
+from pyppi.data import annotation_extractor_path
+from pyppi.data import pickle_pd_object
 
-from pyPPI.data_mining.features import AnnotationExtractor
-from pyPPI.data_mining.generic import bioplex_func, mitab_func, pina_func
-from pyPPI.data_mining.generic import generic_to_dataframe
-from pyPPI.data_mining.hprd import hprd_to_dataframe
-from pyPPI.data_mining.tools import process_interactions, LABEL
-from pyPPI.data_mining.tools import remove_intersection, remove_labels
-from pyPPI.data_mining.tools import map_network_accessions
-from pyPPI.data_mining.uniprot import UniProt, get_active_instance
-from pyPPI.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
+from pyppi.data_mining.features import AnnotationExtractor
+from pyppi.data_mining.generic import bioplex_func, mitab_func, pina_func
+from pyppi.data_mining.generic import generic_to_dataframe
+from pyppi.data_mining.hprd import hprd_to_dataframe
+from pyppi.data_mining.tools import process_interactions, LABEL
+from pyppi.data_mining.tools import remove_intersection, remove_labels
+from pyppi.data_mining.tools import map_network_accessions
+from pyppi.data_mining.uniprot import UniProt, get_active_instance
+from pyppi.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 
 if __name__ == '__main__':
     args = parse_args(args)

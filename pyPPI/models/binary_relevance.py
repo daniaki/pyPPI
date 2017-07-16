@@ -340,6 +340,7 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
                 ws = [w for (idx, w) in idx_coefs]
                 print(vectorizer.get_feature_names())
                 features = np.asarray(vectorizer.get_feature_names())[idx]
+                features = [x.upper().replace('GO', 'GO:') for x in features]
                 top_features.append(list(zip(features, ws)))
             else:
                 top_features.append(idx_coefs)

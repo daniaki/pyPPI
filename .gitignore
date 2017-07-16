@@ -14,6 +14,7 @@
 *.eda
 *.noa
 .idea/
+*.gz
 pyPPI/__pycache__/
 pyPPI/base/__pycache__/
 pyPPI/data/__pycache__/

@@ -14,7 +14,7 @@ from itertools import product
 import pandas as pd
 from numpy import NaN
 
-from pyPPI.base import SOURCE, TARGET, LABEL
+from ..base import SOURCE, TARGET, LABEL
 from ..base import PPI
 
 

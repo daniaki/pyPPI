@@ -33,21 +33,22 @@ import json
 import numpy as np
 from datetime import datetime
 from docopt import docopt
+
 args = docopt(__doc__)
 
-from pyPPI.base import parse_args, su_make_dir
-from pyPPI.data import load_network_from_path, load_ptm_labels
-from pyPPI.data import testing_network_path, training_network_path
+from pyppi.base import parse_args, su_make_dir
+from pyppi.data import load_network_from_path, load_ptm_labels
+from pyppi.data import testing_network_path, training_network_path
 
-from pyPPI.models.binary_relevance import BinaryRelevance
-from pyPPI.models import make_classifier
-from pyPPI.model_selection.scoring import MultilabelScorer, Statistics
-from pyPPI.model_selection.experiment import KFoldExperiment, Bootstrap
-from pyPPI.model_selection.sampling import IterativeStratifiedKFold
+from pyppi.models.binary_relevance import BinaryRelevance
+from pyppi.models import make_classifier
+from pyppi.model_selection.scoring import MultilabelScorer, Statistics
+from pyppi.model_selection.experiment import KFoldExperiment, Bootstrap
+from pyppi.model_selection.sampling import IterativeStratifiedKFold
 
-from pyPPI.data_mining.features import AnnotationExtractor
-from pyPPI.data_mining.uniprot import UniProt, get_active_instance
-from pyPPI.data_mining.tools import xy_from_interaction_frame
+from pyppi.data_mining.features import AnnotationExtractor
+from pyppi.data_mining.uniprot import UniProt, get_active_instance
+from pyppi.data_mining.tools import xy_from_interaction_frame
 
 from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -56,7 +57,12 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import f1_score, precision_score
-from sklearn.metrics import recall_score, make_scorer, label_ranking_average_precision_score
+from sklearn.metrics import (
+    recall_score, make_scorer, label_ranking_average_precision_score)
+
+
+def write_top_features(self, directory):
+    pass
 
 
 if __name__ == '__main__':
@@ -70,19 +76,15 @@ if __name__ == '__main__':
     model = args['model']
     use_feature_cache = args['use_cache']
     direc = args['directory']
-
     backend = 'multiprocessing'
-    if backend == 'multiprocessing':
-        n_jobs = (n_jobs // 2) or 1
-    else:
-        n_jobs = (n_jobs - 1) or 1
 
     # Set up the folder for each experiment run named after the current time
-    folder = datetime.now().strftime("val_%y-%m-%d_%H-%M-%S")
+    folder = datetime.now().strftime("val_%y-%m-%d_%H-%M")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
-    json.dump(args, fp=open("{}/settings.json".format(direc), 'w'), indent=4,
-              sort_keys=True)
+    json.dump(
+        args, fp=open("{}/settings.json".format(direc), 'w'),
+        indent=4, sort_keys=True)
 
     print("Loading data...")
     uniprot = get_active_instance(
@@ -140,7 +142,7 @@ if __name__ == '__main__':
         )
         for l in labels
     ]
-    clf = OneVsRestClassifier(estimators, n_jobs=1)
+    clf = BinaryRelevance(estimators, n_jobs=1)
 
     # Make the bootstrap and KFoldExperiments
     print("Setting up experiments...")
@@ -196,3 +198,11 @@ if __name__ == '__main__':
         '{}/testing_stats.csv'.format(direc), sep='\t', index=False
     )
 
+    with open('{}/{}'.format(folder, 'top_features'), 'wt') as fp:
+        classes = mlb.classes
+        top_features = clf.top_n_features(20, absolute=True)
+        for label, (fs, ws) in zip(classes, top_features):
+            fp.write("{}\n".format(label))
+            for line in ['\t'.join(tup) for tup in zip(fs, ws)]:
+                fp.write("{}\n".format(line))
+            fp.write('\n')
