@@ -34,9 +34,9 @@ setup(
         'pyppi.base',
         'pyppi.data',
         'pyppi.data_mining',
-        'pyPPI.model_selection',
-        'pyPPI.models',
-        'pyPPI.network_analysis',
+        'pyppi.model_selection',
+        'pyppi.models',
+        'pyppi.network_analysis',
     ],
     install_requires=[
         'scikit-learn>=0.18.1',
