@@ -15,6 +15,7 @@
 *.noa
 .idea/
 *.gz
+*.DS_Store
 pyPPI/__pycache__/
 pyPPI/base/__pycache__/
 pyPPI/data/__pycache__/
@@ -23,5 +24,6 @@ pyPPI/model_selection/__pycache__/
 pyPPI/models/__pycache__/
 pyPPI/network_analysis/__pycache__/
 build/
+data/
 dist/
 pyPPI.egg-info/
