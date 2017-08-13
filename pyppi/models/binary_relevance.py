@@ -10,7 +10,7 @@ import numpy as np
 import scipy.sparse as sp
 from operator import itemgetter
 
-from sklearn.multiclass import _partial_fit_binary,_predict_binary, _fit_binary
+from sklearn.multiclass import _partial_fit_binary, _predict_binary, _fit_binary
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from sklearn.calibration import CalibratedClassifierCV
 
@@ -177,8 +177,8 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
 
         if np.setdiff1d(y, self.classes_):
             raise ValueError(("Mini-batch contains {0} while classes " +
-                             "must be subset of {1}").format(np.unique(y),
-                                                             self.classes_))
+                              "must be subset of {1}").format(np.unique(y),
+                                                              self.classes_))
         Y = self.label_binarizer_.transform(y)
         Y = Y.tocsc()
         columns = (col.toarray().ravel() for col in Y.T)
@@ -360,7 +360,7 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         """
         Return the feature weightings for each estimator. If estimator is a
         pipeline, then it assumes the last step is the estimator.
- 
+
         :return: array-like, shape (n_classes_, n_features)
         """
         check_is_fitted(self, 'fitted_')
@@ -452,9 +452,9 @@ def get_br_estimators(clf):
         return br_classifers
 
 
-def top_n_features(clf, n, absolute=False, vectorizer=None):
+def top_n_features(n, clf, absolute=False, vectorizer=None):
     """
-    Return the top N features. If estimator is a pipeline, then it assumes
+    Return the top N features. If clf is a pipeline, then it assumes
     the first step is the vectoriser holding the feature names.
 
     :return: array like, shape (n_estimators, n).
@@ -462,22 +462,21 @@ def top_n_features(clf, n, absolute=False, vectorizer=None):
     """
     check_is_fitted(clf, 'fitted_')
     top_features = []
-    estimators = get_br_estimators(clf)
     coefs = get_coefs(clf)
-    for e, coef in zip(estimators, coefs):
-        if absolute:
-            coef = abs(coef)
-        if hasattr(e, 'steps') and vectorizer is None:
-            vectorizer = e.steps[0][-1]
-        idx_coefs = sorted(
-            enumerate(coef), key=itemgetter(1), reverse=True)[:n]
-        if vectorizer:
-            idx = [idx for (idx, w) in idx_coefs]
-            ws = [w for (idx, w) in idx_coefs]
-            print(vectorizer.get_feature_names())
-            features = np.asarray(vectorizer.get_feature_names())[idx]
-            top_features.append(list(zip(features, ws)))
-        else:
-            top_features.append(idx_coefs)
-    return top_features
 
+    if absolute:
+        coef = abs(coef)
+    if hasattr(e, 'steps') and vectorizer is None:
+        vectorizer = e.steps[0][-1]
+    idx_coefs = sorted(
+        enumerate(coef), key=itemgetter(1), reverse=True
+    )[:n]
+    if vectorizer:
+        idx = [idx for (idx, w) in idx_coefs]
+        ws = [w for (idx, w) in idx_coefs]
+        features = np.asarray(vectorizer.get_feature_names())[idx]
+        top_features.append(list(zip(features, ws)))
+    else:
+        top_features.append(idx_coefs)
+
+    return top_features
