@@ -36,10 +36,13 @@ innate_i_network_path = os.path.join(PATH, 'networks/innate_i_network.tsv')
 innate_c_network_path = os.path.join(PATH, 'networks/innate_c_network.tsv')
 testing_network_path = os.path.join(PATH, 'networks/testing_network.tsv')
 training_network_path = os.path.join(PATH, 'networks/training_network.tsv')
-full_training_network_path = os.path.join(PATH,'networks/full_training_network.tsv')
-interactome_network_path = os.path.join(PATH, 'networks/interactome_network.tsv')
+full_training_network_path = os.path.join(
+    PATH, 'networks/full_training_network.tsv')
+interactome_network_path = os.path.join(
+    PATH, 'networks/interactome_network.tsv')
 
-bioplex_v4_path = os.path.join(PATH, 'networks/BioPlex_interactionList_v4a.tsv')
+bioplex_v4_path = os.path.join(
+    PATH, 'networks/BioPlex_interactionList_v4a.tsv')
 innate_c_mitab_path = os.path.join(PATH, 'networks/innatedb_curated.mitab.gz')
 innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab.gz')
 pina2_sif_path = os.path.join(PATH, 'networks/pina2_homo_sapiens-20140521.sif')
@@ -191,8 +194,8 @@ def ipr_name_map(lowercase_keys=False, short_names=True):
         else:
             xs = line.strip().upper().split("\t")
         term = xs[0].upper()
-        descrip = xs[1]
-        ipr_map[term] = descrip
+        descrip = xs[1].strip()
+        ipr_map[term.lower() if lowercase_keys else term.upper()] = descrip
     fp.close()
     return ipr_map
 
@@ -209,8 +212,8 @@ def pfam_name_map(lowercase_keys=False):
         else:
             xs = line.strip().upper().split("\t")
         term = xs[0].upper()
-        descrip = xs[-1]
-        pf_map[term] = descrip
+        descrip = xs[-1].strip()
+        pf_map[term.lower() if lowercase_keys else term.upper()] = descrip
     fp.close()
     return pf_map
 
@@ -262,5 +265,3 @@ def read_pd_pickle(path):
 
 def pickle_pd_object(obj, path):
     return obj.to_pickle(path)
-
-

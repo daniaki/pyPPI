@@ -65,122 +65,94 @@ class IterativeStratifiedKFold(_BaseKFold):
         return IterativeStratifiedKFold(self.n_splits,
                                         self.shuffle, self.random_state)
 
-    def _arg_with_ties(self, array, arg_func=min, break_ties=False):
-        """
-        Breaks a tie by random choice using supplied if one occurs.
-        """
-        # get min/max element
-        array = list(array)
-        elem = arg_func(array)
-        argxs = [i for i in range(len(array)) if array[i] == elem]
-        rng = check_random_state(self.random_state)
-        if break_ties:
-            return rng.choice(argxs, size=1, replace=False)[0]
-        else:
-            return sorted(argxs)
-
     def _iterative_stratification(self, y):
         """
         Implementation of the Iterative Stratification algorithm from
         Sechidis et al. 2011.
         """
-        r = 1 / self.n_splits
-        range_folds = range(self.n_splits)
-        folds_idx = [[] for _ in range_folds]
-        rng = check_random_state(self.random_state)
-        test_idx = np.zeros(y.shape[0], dtype=int)
+        random = check_random_state(self.random_state)
 
-        # Unlabelled samples removed and split up last.
-        no_label_y = [idx for idx, s in enumerate(y) if sum(s) == 0]
-        labelled_y = [idx for idx, s in enumerate(y) if sum(s) != 0]
+        y = np.asarray(y)
+        if len(y.shape) != 2 and y.shape[1] < 2:
+            raise ValueError(
+                "Requires y to be of shape (n_samples, n_labels)")
 
-        n_samples = len(labelled_y)
-        unique_y = np.asarray(range(y.shape[1]))
-        y_counts = np.zeros((len(unique_y),), dtype=int)
-        for c in unique_y:
-            y_counts[c] = np.sum(y[:, c])
-        unique_y = np.asarray([s for s, c in zip(unique_y, y_counts) if c > 0])
-        y_counts = y_counts[y_counts != 0]
+        n_labels = y.shape[1]
+        n_instances = y.shape[0]
+        desired_proportions = 1 / self.n_splits
+        desired_counts_per_fold = desired_proportions * n_instances
 
-        # Calculate the desired number of samples for each subset
-        subset_c_j = np.asarray([n_samples*r for _ in range_folds])
+        folds = [[] for _ in range(self.n_splits)]
+        fold_instance_counts = np.zeros(shape=(self.n_splits,))
+        fold_labels_counts = np.zeros(shape=(self.n_splits, n_labels))
 
-        # Calculate the desired number of samples from each label for
-        # each subset
-        n_samples_for_label = {l: c*r for (c, l) in zip(y_counts, unique_y)}
-        subset_c_ij = np.asarray([n_samples_for_label.copy()
-                                  for _ in range_folds], dtype='object')
-        completed_labels = []
-        sampled_indices = set()
+        label_idxs = np.asarray(range(n_labels))
+        y_counts = np.sum(y, axis=0)
+        placed_instances = np.zeros(shape=(n_instances,))
+        desired_label_counts_per_fold = y_counts * desired_proportions
 
-        while len(sampled_indices) < n_samples:
+        while sum(fold_instance_counts) < n_instances:
             # Find the label with the fewest (but at least one) remaining
-            # samples, breaking ties randomly.
-            n_samples_for_label = {l: c*r for (c, l) in zip(y_counts, unique_y)
-                                   if l not in completed_labels}
-            index = self._arg_with_ties(
-                n_samples_for_label.values(), arg_func=min, break_ties=True
-            )
-            label = list(n_samples_for_label.keys())[index]
-            y_l = [idx for idx in labelled_y if y[idx][label] == 1]
+            # examples breaking ties randomly
+            min_remaining = np.min(y_counts[y_counts > 0])
+            l_fewest_remaining_instances = random.choice(
+                np.where(y_counts == min_remaining)[0], size=1
+            )[0]
+            label = l_fewest_remaining_instances
 
-            for idx in y_l:
-                # Ignore indices we have already sampled.
-                if idx in sampled_indices:
-                    continue
-
-                # Find the subset(s) with the largest number of desired
-                # samples for this label.
-                fold_indices = self._arg_with_ties(
-                    [subset_c_ij[i][label] for i in range_folds], arg_func=max,
-                    break_ties=False
-                )
+            # Get the instances with this label that have not been placed
+            # already.
+            idxs = np.where(y[:, label] == 1)[0]
+            idxs = idxs[placed_instances[idxs] == 0]
+            for idx, instance in zip(idxs, y[idxs, :]):
+                # Find the fold with the largest number of desired examples
+                # for this label
+                fold_counts_for_label = fold_labels_counts[:, label]
+                min_label_count = np.min(fold_counts_for_label)
+                fs_with_least_label_count = np.where(
+                    fold_counts_for_label == min_label_count)[0]
 
                 # Breaking ties by considering the largest number of desired
-                # samples, breaking further ties randomly.
-                index = self._arg_with_ties(
-                    subset_c_j[fold_indices], arg_func=max, break_ties=True
-                )
-                fold_index = fold_indices[index]
+                # examples in these folds, breaking further ties randomly.
+                instance_counts_for_fs = fold_instance_counts[
+                    fs_with_least_label_count]
+                min_instance_count = np.min(instance_counts_for_fs)
+                fs_with_least_instance_count = np.where(
+                    instance_counts_for_fs == min_instance_count)
 
-                # Enter the instance to the proper fold
-                row = y[idx]
-                folds_idx[fold_index].append(idx)
-                sampled_indices.add(idx)
+                fold_pool = fs_with_least_label_count[
+                    fs_with_least_instance_count]
+                chosen_fold = random.choice(fold_pool, size=1)[0]
 
-                # Update the sampled labeled statistics of this fold
-                for row_l in unique_y:
-                    if row[row_l] == 1:
-                        subset_c_ij[fold_index][row_l] -= 1
+                # Append the index and update fold information
+                folds[chosen_fold].append(idx)
+                fold_instance_counts[chosen_fold] += 1
 
-            # Update the sampled proportion statistics of this fold
-            subset_c_j[fold_index] -= 1
-            completed_labels.append(label)
+                instance_labels = np.where(instance == 1)
+                fold_labels_counts[chosen_fold, instance_labels] += 1
+                placed_instances[idx] = 1
+                y_counts[instance_labels] -= 1
 
-        # Split up the unlablled samples
-        rng.shuffle(no_label_y)
-        if len(no_label_y) > 0:
-            for i, c in enumerate(chunk_list(no_label_y, self.n_splits)):
-                folds_idx[i] += c
-
-        # Test for disjoint-ness:
-        for a in folds_idx:
-            for b in folds_idx:
-                if id(a) == id(b):
+        # Check that all folds are disjoint.
+        assert(sum(fold_instance_counts) == n_instances)
+        for f1 in folds:
+            for f2 in folds:
+                if f1 is f2:
                     continue
-                assert len(set(a) & set(b)) == 0
+                is_disjoint = len(set(f1) & set(f2)) == 0
+                if not is_disjoint:
+                    raise ValueError("Folds are not disjoint.")
 
-        assert sum([len(f) for f in folds_idx]) == y.shape[0]
-        for i in range(self.n_splits):
-            idx = np.asarray(folds_idx[i], dtype=int)
-            test_idx[idx] = i
-        return test_idx
+        test_folds = np.zeros(shape=(n_instances,))
+        for i, fold in enumerate(folds):
+            test_folds[fold] = i
+        return test_folds
 
     def _make_test_folds(self, X, y=None, groups=None):
         rng = check_random_state(self.random_state)
         # shuffle X and y here.
         if self.shuffle:
-            Xy = list(zip(X,y))
+            Xy = list(zip(X, y))
             rng.shuffle(Xy)
             X = np.array([xy[0] for xy in Xy])
             y = np.array([xy[1] for xy in Xy])
@@ -199,7 +171,7 @@ class IterativeStratifiedKFold(_BaseKFold):
                            " be less than n_splits=%d."
                            % (min_groups, self.n_splits)), Warning)
 
-        # pre-assign each sample to a test fold index using individual KFold
+        # pre-assign each sample to a test fold index using
         test_folds = self._iterative_stratification(y)
         return test_folds
 
@@ -260,3 +232,121 @@ class IterativeStratifiedKFold(_BaseKFold):
         y = check_array(y, ensure_2d=False, dtype=None)
         return super(IterativeStratifiedKFold, self).split(X, y, groups)
 
+
+def iterative_stratified_k_fold(y, n_splits, random_state=None, shuffle=True):
+    """
+    Function implementation of the Iterative Stratification algorithm from
+    Sechidis et al. 2011 for mult-label outputs.
+
+    Parameters
+    ----------
+    y : array-like, shape (n_samples, n_outputs)
+            The target variable for supervised learning problems.
+            Stratification is done based on the y labels.
+
+    n_splits : int, default=3
+        Number of folds. Must be at least 2.
+
+    shuffle : boolean, optional
+        Whether to shuffle each stratification of the data before splitting
+        into batches.
+
+    random_state : None, int or RandomState
+        When shuffle=True, pseudo-random number generator state used for
+        shuffling. If None, use default numpy RNG for shuffling.
+
+    Returns
+    -------
+    `generator`
+        A generator of tuples of with train indices and test indices.
+    """
+    if random_state is None:
+        random = np.random
+    else:
+        random = np.random.RandomState(seed=random_state)
+
+    y = np.asarray(y)
+    if len(y.shape) != 2 and y.shape[1] < 2:
+        raise ValueError("Requires y to be of shape (n_samples, n_labels)")
+
+    if shuffle:
+        random.shuffle(y)
+
+    n_labels = y.shape[1]
+    n_instances = y.shape[0]
+    desired_proportions = 1 / n_splits
+    desired_counts_per_fold = desired_proportions * n_instances
+
+    folds = [[] for _ in range(n_splits)]
+    fold_instance_counts = np.zeros(shape=(n_splits,))
+    fold_labels_counts = np.zeros(shape=(n_splits, n_labels))
+
+    label_idxs = np.asarray(range(n_labels))
+    y_counts = np.sum(y, axis=0)
+    placed_instances = np.zeros(shape=(n_instances,))
+    desired_label_counts_per_fold = y_counts * desired_proportions
+
+    while sum(fold_instance_counts) < n_instances:
+        # Find the label with the fewest (but at least one) remaining examples
+        # breaking ties randomly
+        min_remaining = np.min(y_counts[y_counts > 0])
+        l_fewest_remaining_instances = random.choice(
+            np.where(y_counts == min_remaining)[0], size=1
+        )[0]
+        label = l_fewest_remaining_instances
+
+        # Get the instances with this label that have not been placed already.
+        idxs = np.where(y[:, label] == 1)[0]
+        idxs = idxs[placed_instances[idxs] == 0]
+        for idx, instance in zip(idxs, y[idxs, :]):
+            # Find the fold with the largest number of desired examples for
+            # this label
+            fold_counts_for_label = fold_labels_counts[:, label]
+            min_label_count = np.min(fold_counts_for_label)
+            fs_with_least_label_count = np.where(
+                fold_counts_for_label == min_label_count)[0]
+
+            # Breaking ties by considering the largest number of desired
+            # examples in these folds, breaking further ties randomly.
+            instance_counts_for_fs = fold_instance_counts[
+                fs_with_least_label_count]
+            min_instance_count = np.min(instance_counts_for_fs)
+            fs_with_least_instance_count = np.where(
+                instance_counts_for_fs == min_instance_count)
+
+            fold_pool = fs_with_least_label_count[
+                fs_with_least_instance_count]
+            chosen_fold = random.choice(fold_pool, size=1)[0]
+
+            # Append the index and update fold information
+            folds[chosen_fold].append(idx)
+            fold_instance_counts[chosen_fold] += 1
+
+            instance_labels = np.where(instance == 1)
+            fold_labels_counts[chosen_fold, instance_labels] += 1
+            placed_instances[idx] = 1
+            y_counts[instance_labels] -= 1
+
+    # Check that all folds are disjoint.
+    assert(sum(fold_instance_counts) == n_instances)
+    for f1 in folds:
+        for f2 in folds:
+            if f1 is f2:
+                continue
+            is_disjoint = len(set(f1) & set(f2)) == 0
+            if not is_disjoint:
+                raise ValueError("Folds are not disjoint.")
+
+    test_folds = np.zeros(shape=(n_instances,))
+    for i, fold in enumerate(folds):
+        test_folds[fold] = i
+
+    for i in range(n_splits):
+        train_idx, test_idx = np.where(test_folds != i)[
+            0], np.where(test_folds == i)[0]
+        is_disjoint = len(set(train_idx) & set(test_idx)) == 0
+        if not is_disjoint:
+            raise ValueError("Folds are not disjoint.")
+        if not len(train_idx) + len(test_idx) == n_instances:
+            raise ValueError("Missing instances for fold {}".format(i))
+        yield train_idx, test_idx
