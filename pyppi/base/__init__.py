@@ -31,9 +31,9 @@ def su_make_dir(path, mode=0o777):
 def pretty_print_dict(dictionary, n_tabs=1, fp=None):
     for k in sorted(dictionary.keys()):
         if fp:
-            fp.write('\t'*n_tabs + '{}:\t{}\n'.format(k, dictionary[k]))
+            fp.write('\t' * n_tabs + '{}:\t{}\n'.format(k, dictionary[k]))
         else:
-            print('\t'*n_tabs + '{}:\t{}'.format(k, dictionary[k]))
+            print('\t' * n_tabs + '{}:\t{}'.format(k, dictionary[k]))
 
 
 def create_seeds(size, random_state):
@@ -70,11 +70,11 @@ def chunk_list(ls, n):
         return []
     if n == 1:
         return ls
-    ranges = list(range(0, len(ls), int(np.ceil(len(ls)/n))))
+    ranges = list(range(0, len(ls), int(np.ceil(len(ls) / n))))
     tup_ranges = []
-    for i in range(len(ranges)-1):
-        tup_ranges.append((ranges[i], ranges[i+1]))
-    tup_ranges.append((ranges[i+1], len(ls) + 1))
+    for i in range(len(ranges) - 1):
+        tup_ranges.append((ranges[i], ranges[i + 1]))
+    tup_ranges.append((ranges[i + 1], len(ls) + 1))
     for (i, j) in tup_ranges:
         yield ls[i: j]
 
@@ -153,6 +153,22 @@ def parse_args(docopt_args):
     parsed = {}
 
     # String processing
+    if query_doctop_dict(docopt_args, '--hidden'):
+        hidden_layers_sizes = []
+        layers = docopt_args['--hidden']
+        if not isinstance(str, layers):
+            print("Hidden layers must be a comma delimited string")
+            sys.exit(0)
+
+        for l in [x.strip() for x in layers.strip().split(',') if x.strip()]:
+            try:
+                n_neurons = int(l)
+                hidden_layers_sizes.append(n_neurons)
+            except TypeError:
+                print("Hidden layers must be a comma delimited string of integers")
+                sys.exit(0)
+        parsed["hidden"] = hidden_layers_sizes
+
     if query_doctop_dict(docopt_args, '--directory'):
         if os.path.isdir(docopt_args['--directory']):
             parsed['directory'] = docopt_args['--directory']
@@ -190,6 +206,7 @@ def parse_args(docopt_args):
     parsed['selection'] = selection
 
     # bool parsing
+    parsed['abs'] = query_doctop_dict(docopt_args, '--abs')
     parsed['induce'] = query_doctop_dict(docopt_args, '--interpro')
     parsed['verbose'] = query_doctop_dict(docopt_args, '--verbose')
     parsed['use_cache'] = query_doctop_dict(docopt_args, '--use_cache')
@@ -209,11 +226,15 @@ def parse_args(docopt_args):
     n_jobs = int(query_doctop_dict(docopt_args, '--n_jobs')) or 1
     n_splits = int(query_doctop_dict(docopt_args, '--n_splits')) or 5
     iterations = int(query_doctop_dict(docopt_args, '--n_iterations')) or 5
+    iterations = int(query_doctop_dict(docopt_args, '--h_iterations')) or 60
+    iterations = int(query_doctop_dict(docopt_args, '--top')) or 25
     threshold = float(query_doctop_dict(docopt_args, '--threshold')) or 0.5
     parsed['n_jobs'] = n_jobs
     parsed['n_splits'] = n_splits
     parsed['n_iterations'] = iterations
     parsed['threshold'] = threshold
+    parsed['h_iterations'] = threshold
+    parsed['top'] = threshold
 
     # Input/Output parsing
     if query_doctop_dict(docopt_args, '--output'):
