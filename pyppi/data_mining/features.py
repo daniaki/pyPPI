@@ -9,10 +9,11 @@ import pandas as pd
 from itertools import chain
 
 from ..base import PPI, chunk_list, concat_dataframes
-from ..data import pickle_pd_object, read_pd_pickle, load_go_dag
+from ..data import pickle_pd_object, read_pd_pickle
 from ..data import accession_features_path, ppi_features_path
 from .uniprot import UniProt, get_active_instance
 from .ontology import get_up_to_lca, group_go_by_ontology
+from .ontology import get_active_instance as get_active_godag
 
 from sklearn.utils.validation import check_is_fitted
 from sklearn.externals.joblib import Parallel, delayed
@@ -20,7 +21,6 @@ from sklearn.externals.joblib import Parallel, delayed
 _ACCESSION_COLUMN = UniProt.accession_column()
 _DATA_TYPES = UniProt.data_types()
 _SEP = UniProt.sep()
-_GO_DAG = load_go_dag()
 
 
 class AnnotationExtractor(object):
@@ -52,9 +52,11 @@ class AnnotationExtractor(object):
         self._cache = cache
         self._verbose = verbose
         self._backend = backend
+        self.ppi_idx_map = {}
         if cache:
             self._accession_df = read_pd_pickle(accession_features_path)
             self._ppi_df = read_pd_pickle(ppi_features_path)
+            self._build_ppi_idx_map()
 
     @property
     def ppi_vocabulary(self):
@@ -168,7 +170,7 @@ class AnnotationExtractor(object):
 
         # first run sets up the accession_df attribute dataframe
         if self._verbose:
-            print('Downloading features for each PPI...')
+            print('Acquiring features for PPIs...')
         _df = get_active_instance().features_to_dataframe(accessions)
         if hasattr(self, '_accession_df'):
             _df = pd.concat([self._accession_df, _df], ignore_index=True)
@@ -177,7 +179,7 @@ class AnnotationExtractor(object):
 
         # Run the intensive computation in parallel and append the local cache
         if self._verbose:
-            print('Computing selected features for each PPI...')
+            print('Computing selected features for PPIs...')
         chunks = chunk_list(list(ppis), n=self._n_jobs)
         compute_features = delayed(self._compute_features)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
@@ -191,11 +193,12 @@ class AnnotationExtractor(object):
 
         combine_dfs = delayed(concat_dataframes)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                            backend=self._backend)(
+                       backend=self._backend)(
             combine_dfs(df_list) for df_list in dfs
         )
         for df in dfs:
             self._update(df)
+        self._build_ppi_idx_map()
         return self
 
     def fit_transform(self, X):
@@ -216,16 +219,12 @@ class AnnotationExtractor(object):
         check_is_fitted(self, '_ppi_df')
 
         # Convert the features for each ppi in the dataframe into a string
-        if self._verbose:
-            print('Stringing selected features for each PPI...')
         features = pd.DataFrame()
         ppis = self._validate_input(X, use_set=False)
-        features['X'] = self._ppi_df.apply(self._string_features, axis=1)
-        ppi_acc = self._ppi_df[_ACCESSION_COLUMN].values
-        ppi_index = self._ppi_df.index
-        ppi_idx_map = {ppi: idx for (ppi, idx) in zip(ppi_acc, ppi_index)}
-        selector = [ppi_idx_map[ppi] for ppi in ppis]
-        return features.loc[selector, ]['X'].values
+        selector = [self.ppi_idx_map[ppi] for ppi in ppis]
+        selected_ppis = self._ppi_df.loc[selector, ]
+        features['X'] = selected_ppis.apply(self._string_features, axis=1)
+        return features['X'].values
 
     def transform(self, X):
         """
@@ -244,54 +243,21 @@ class AnnotationExtractor(object):
         check_is_fitted(self, '_accession_df')
         check_is_fitted(self, '_ppi_df')
         ppis_set = self._validate_input(X, use_set=True)
-
-        if self._verbose:
-            print('Finding new PPIs...')
         fitted_ppis = set(self._ppi_df[_ACCESSION_COLUMN].values)
         new_ppis = ppis_set - fitted_ppis
 
-        # Run the intensive computation in parallel and append the local cache
         if len(new_ppis) > 0:
-            # Get the new accessions, update the _accession_df and then
-            # compute features for these only. This will update _ppi_df
-            new_accessions = set(acc for ppi in new_ppis for acc in ppi)
-            if self._verbose:
-                print('Updating accession feature cache...')
-            self._update(new_accessions)
-
-            if self._verbose:
-                print('Computing selected features for each new PPI...')
-            compute_features = delayed(self._compute_features)
-            chunks = chunk_list(list(new_ppis), n=self._n_jobs)
-            dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                           backend=self._backend)(
-                compute_features(ppis_ls) for ppis_ls in chunks
+            raise ValueError(
+                "Encountered new ppis {}. Please re-fit.".format(new_ppis)
             )
-
-            # Running this in parallel speeds up the concatenation
-            # process a lot.
-            if self._verbose:
-                print('Updating instance attributes...')
-            combine_dfs = delayed(concat_dataframes)
-            dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,
-                                backend=self._backend)(
-                combine_dfs(df_list) for df_list in dfs
-            )
-            for df in dfs:
-                self._update(df)
-            self.cache()
 
         # Convert the features for each ppi in the dataframe into a string
-        if self._verbose:
-            print('Stringing selected features for each PPI...')
         features = pd.DataFrame()
         ppis = self._validate_input(X, use_set=False)
-        features['X'] = self._ppi_df.apply(self._string_features, axis=1)
-        ppi_acc = self._ppi_df[_ACCESSION_COLUMN].values
-        ppi_index = self._ppi_df.index
-        ppi_idx_map = {ppi: idx for (ppi, idx) in zip(ppi_acc, ppi_index)}
-        selector = [ppi_idx_map[ppi] for ppi in ppis]
-        return features.loc[selector, ]['X'].values
+        selector = [self.ppi_idx_map[ppi] for ppi in ppis]
+        selected_ppis = self._ppi_df.loc[selector, ]
+        features['X'] = selected_ppis.apply(self._string_features, axis=1)
+        return features['X'].values
 
     def _validate_input(self, X, use_set=False):
         """
@@ -385,14 +351,14 @@ class AnnotationExtractor(object):
                     term_set += self._get_data_for_accession(p, s)
             go_terms_sets += [term_set]
 
-        ont_dicts = [group_go_by_ontology(ts, _GO_DAG, _SEP)
+        ont_dicts = [group_go_by_ontology(ts, get_active_godag(), _SEP)
                      for ts in go_terms_sets]
         term_sets_cc = [d['cc'] for d in ont_dicts]
         term_sets_bp = [d['bp'] for d in ont_dicts]
         term_sets_mf = [d['mf'] for d in ont_dicts]
-        induced_cc = get_up_to_lca(term_sets_cc, _GO_DAG)
-        induced_bp = get_up_to_lca(term_sets_bp, _GO_DAG)
-        induced_mf = get_up_to_lca(term_sets_mf, _GO_DAG)
+        induced_cc = get_up_to_lca(term_sets_cc, get_active_godag())
+        induced_bp = get_up_to_lca(term_sets_bp, get_active_godag())
+        induced_mf = get_up_to_lca(term_sets_mf, get_active_godag())
         return induced_cc, induced_bp, induced_mf
 
     def _get_data_for_accession(self, accession, column):
@@ -426,9 +392,10 @@ class AnnotationExtractor(object):
             return list(values)
 
         except KeyError:
-            print("Warning: Couldn't find entry for {}. Use the Transform "
-                  "method if PPI list contains new entries.".format(accession))
-            return []
+            raise ValueError(
+                "Warning: Couldn't find entry for {}. Use the fit_transform "
+                "method if PPI list contains new entries.".format(accession)
+            )
 
     def _string_features(self, row):
         """
@@ -495,6 +462,11 @@ class AnnotationExtractor(object):
         else:
             raise TypeError("Expected DataFrame or List of PPI objects")
 
+    def _build_ppi_idx_map(self):
+        ppi_acc = self._ppi_df[_ACCESSION_COLUMN].values
+        ppi_index = self._ppi_df.index
+        self.ppi_idx_map = {ppi: idx for (ppi, idx) in zip(ppi_acc, ppi_index)}
+
     def cache(self):
         """
         Save instance attributes to a pickle file.
@@ -512,20 +484,3 @@ class AnnotationExtractor(object):
         pickle_pd_object(self.accession_vocabulary, accession_features_path)
         pickle_pd_object(self.ppi_vocabulary, ppi_features_path)
         return self
-
-# -------------------------------------------------------------------------- #
-def test():
-    ppis = [PPI('P00813', 'P40855'), PPI('Q6ICG6', 'Q8NFS9')]
-    a = AnnotationExtractor(
-        True,
-        ['go', 'interpro', 'pfam'], 1,
-        True
-    )
-    a.fit(ppis)
-    return a, ppis
-
-
-def do_it():
-    from ..data import load_go_dag
-    from ..data_mining import uniprot as up
-    return up.UniProt(sprot_cache='', trembl_cache=''), load_go_dag()

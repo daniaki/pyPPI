@@ -7,7 +7,7 @@ output predictions over the interactome.
 Usage:
   predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
                   [--use_cache] [--retrain] [--induce] [--verbose]
-                  [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
+                  [--model=M] [--n_jobs=J] [--n_splits=S] [--h_iterations=I]
                   [--input=FILE] [--output=FILE] [--directory=DIR]
   predict_ppis.py -h | --help
 
@@ -30,7 +30,7 @@ Options:
   --n_jobs=J        Number of processes to run in parallel [default: 1]
   --n_splits=S      Number of cross-validation splits used during randomized
                     grid search [default: 5]
-  --n_iterations=I  Number of randomized grid search iterations [default: 60]
+  --h_iterations=H  Number of randomized grid search iterations [default: 60]
   --input=FILE      Uniprot edge-list, with a path directory that absolute or
                     relative to this script. Entries must be tab separated with
                     header columns 'source' and 'target'. [default: None]
@@ -39,6 +39,7 @@ Options:
 """
 
 import os
+import logging
 import json
 import numpy as np
 from datetime import datetime
@@ -50,8 +51,7 @@ from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import full_training_network_path, generic_io
 from pyppi.data import interactome_network_path, classifier_path
 
-from pyppi.models.binary_relevance import BinaryRelevance
-from pyppi.models import make_classifier
+from pyppi.models import make_classifier, get_parameter_distribution_form_model
 
 from pyppi.data_mining.features import AnnotationExtractor
 from pyppi.data_mining.uniprot import UniProt, get_active_instance
@@ -63,17 +63,25 @@ from sklearn.base import clone
 from sklearn.externals import joblib
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import f1_score, make_scorer
 
 args = docopt(__doc__)
+logging.captureWarnings(False)
+logging.basicConfig(
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%m-%d-%Y %I:%M:%S',
+    level=logging.DEBUG,
+)
+logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
     args = parse_args(args)
     n_jobs = args['n_jobs']
     n_splits = args['n_splits']
-    rcv_iter = args['n_iterations']
+    rcv_iter = args['h_iterations']
     induce = args['induce']
     verbose = args['verbose']
     selection = args['selection']
@@ -88,20 +96,15 @@ if __name__ == '__main__':
     folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
-    json.dump(args, fp=open("{}/settings.json".format(direc), 'w'), indent=4,
-              sort_keys=True)
+    json.dump(
+        args, fp=open("{}/settings.json".format(direc), 'w'),
+        indent=4, sort_keys=True
+    )
     out_file = open("{}/{}".format(direc, out_file), "w")
 
-    print("Loading feature data...")
+    logger.info("Loading feature data...")
     uniprot = get_active_instance(verbose=verbose)
     data_types = UniProt.data_types()
-    selection = [
-        data_types.GO_MF.value,
-        data_types.GO_BP.value,
-        data_types.GO_CC.value,
-        data_types.INTERPRO.value,
-        data_types.PFAM.value
-    ]
     labels = load_ptm_labels()
     annotation_ex = AnnotationExtractor(
         induce=induce,
@@ -113,10 +116,10 @@ if __name__ == '__main__':
 
     # Get the input edge-list ready
     if input_file == 'None':
-        print("Loading interactome data...")
+        logger.info("Loading interactome data...")
         testing = load_network_from_path(interactome_network_path)
     else:
-        print("Loading custom ppi data...")
+        logger.info("Loading custom ppi data...")
         testing = generic_to_dataframe(
             f_input=generic_io(input_file),
             parsing_func=edgelist_func,
@@ -135,7 +138,7 @@ if __name__ == '__main__':
         )
 
     # Get the features into X, and multilabel y indicator format
-    print("Preparing training and testing data...")
+    logger.info("Preparing training and testing data...")
     training = load_network_from_path(full_training_network_path)
     X_train_ppis, y_train = xy_from_interaction_frame(training)
     X_test_ppis, _ = xy_from_interaction_frame(testing)
@@ -144,18 +147,18 @@ if __name__ == '__main__':
 
     # Get all annotations used during training
     training_go = set([
-        g.strip() for gs in X_train
-        for g in x.split(',')
+        g.strip().lower() for gs in X_train
+        for g in gs.split(',')
         if 'go' in g.strip().lower()
     ])
     training_pfam = set([
-        g.strip() for gs in X_train
-        for g in x.split(',')
+        g.strip().lower() for gs in X_train
+        for g in gs.split(',')
         if 'pf' in g.strip().lower()
     ])
     training_ipr = set([
-        g.strip() for gs in X_train
-        for g in x.split(',')
+        g.strip().lower() for gs in X_train
+        for g in gs.split(',')
         if 'ipr' in g.strip().lower()
     ])
 
@@ -165,42 +168,40 @@ if __name__ == '__main__':
 
     # Make the estimators and BR classifier
     if retrain or not os.path.isfile(classifier_path):
-        print("Making classifier...")
-        param_distribution = {
-            'C': np.arange(0.01, 10.01, step=0.01),
-            'penalty': ['l1', 'l2']
-        }
+        logger.info("Making classifier...")
+        param_distribution = get_parameter_distribution_form_model(model)
         random_cv = RandomizedSearchCV(
             cv=n_splits,
             n_iter=rcv_iter,
-            n_jobs=n_jobs,
+            n_jobs=1,
             param_distributions=param_distribution,
             estimator=make_classifier(model),
-            scoring=make_scorer(f1_score, greater_is_better=True)
+            scoring=make_scorer(f1_score, greater_is_better=True),
+            random_state=42
         )
-        estimators = [
-            Pipeline(
-                [('vectorizer', CountVectorizer(binary=False)),
-                 ('clf', clone(random_cv))]
-            )
-            for l in labels
-        ]
-        clf = BinaryRelevance(estimators, n_jobs=1)
+        estimator = Pipeline(
+            [
+                ('vectorizer', CountVectorizer(binary=False)),
+                ('clf', clone(random_cv))
+            ]
+        )
+        clf = OneVsRestClassifier(estimator, n_jobs=n_jobs)
 
         # Fit the complete training data and make predictions.
-        print("Fitting data...")
+        logger.info("Fitting data...")
         clf.fit(X_train, y_train)
         joblib.dump(clf, classifier_path)
 
-    print("Making predictions...")
+    logger.info("Making predictions...")
     clf = joblib.load(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
-    print("Writing results to file...")
-    header = "{p1}\t{p2}\t{g1}\t{g2}\t{classes}\tsum\n".format(
-        p1=P1, p2=P2, g1=G1, g2=G2, classes='\t'.join(sorted(mlb.classes_))
-    )
+    logger.info("Writing results to file...")
+    header = "{p1}\t{p2}\t{g1}\t{g2}\t{classes}\tsum" \
+        "\tusability_go\tusability_pfam\tusability_interpro\n".format(
+            p1=P1, p2=P2, g1=G1, g2=G2, classes='\t'.join(sorted(mlb.classes_))
+        )
     out_file.write(header)
     acc = annotation_ex.accession_vocabulary[UniProt.accession_column()]
     genes = annotation_ex.accession_vocabulary[UniProt.data_types().GENE.value]
@@ -211,33 +212,45 @@ if __name__ == '__main__':
         g2 = accession_gene_map.get(t, ['-'])[0] or '-'
 
         # Compute the usability of each of the annotation sets
-        annots = annotation_ex.transform([s, t])
+        annots = annotation_ex.transform([(s, t)])
         go = set([
-            g.strip() for gs in annots
-            for g in x.split(',')
+            g.strip().lower() for gs in annots
+            for g in gs.split(',')
             if 'go' in g.strip().lower()
         ])
         pf = set([
-            g.strip() for gs in annots
-            for g in x.split(',')
+            g.strip().lower() for gs in annots
+            for g in gs.split(',')
             if 'pf' in g.strip().lower()
         ])
         ipr = set([
-            g.strip() for gs in annots
-            for g in x.split(',')
+            g.strip().lower() for gs in annots
+            for g in gs.split(',')
             if 'ipr' in g.strip().lower()
         ])
-        usability_go = (go & training_go) / (go | training_go)
-        usability_pf = (pf & training_pfam) / (pf | training_pfam)
-        usability_ipr = (ipr & training_ipr) / (ipr | training_ipr)
+
+        try:
+            usability_go = len(go & training_go) / len(go)
+        except ZeroDivisionError:
+            usability_go = np.NaN
+
+        try:
+            usability_pf = len(pf & training_pfam) / len(pf)
+        except ZeroDivisionError:
+            usability_pf = np.NaN
+
+        try:
+            usability_ipr = len(ipr & training_ipr) / len(ipr)
+        except ZeroDivisionError:
+            usability_ipr = np.NaN
 
         sum_pr = sum(p_vec)
         line = "{s}\t{t}\t{g1}\t{g2}\t{classes}\t{sum_pr}\t{usability_go}" \
                "\t{usability_pf}\t{usability_ipr}\n".format(
-                s=s, t=t, g1=g1, g2=g2, sum_pr=sum_pr,
-                classes='\t'.join(['%.4f' % p for p in p_vec]),
-                usability_go=usability_go,
-                usability_pf=usability_pf,
-                usability_ipr=usability_ipr)
+                   s=s, t=t, g1=g1, g2=g2, sum_pr=sum_pr,
+                   classes='\t'.join(['%.4f' % p for p in p_vec]),
+                   usability_go='%.4f' % usability_go,
+                   usability_pf='%.4f' % usability_pf,
+                   usability_ipr='%.4f' % usability_ipr)
         out_file.write(line)
     out_file.close()

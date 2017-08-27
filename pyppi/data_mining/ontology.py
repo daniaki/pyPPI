@@ -9,12 +9,26 @@ Created on 23-02-2016
 import numpy as np
 from functools import reduce
 
+from ..data import load_go_dag
+
+__GODAG__ = None
+
+
+def get_active_instance(**kwargs):
+    global __GODAG__
+    if __GODAG__ is None:
+        print("First time loading on GO-DAG instance. "
+              "Make take a few moments")
+        __GODAG__ = load_go_dag(**kwargs)
+    return __GODAG__
 
 # ------------------------------------------------------ #
 #
 #                  UTILITY OPERATIONS
 #
 # ------------------------------------------------------ #
+
+
 def group_go_by_ontology(data, dag, sep=','):
     if isinstance(data, str):
         p_go = [t.upper() for t in data.split(sep) if 'GO' in t.upper()]
@@ -58,7 +72,7 @@ def frequency_distribution(corpus):
     n = len(corpus)
     for w in corpus:
         dist[w] += 1.0
-    dist = {k: (v/n) for k, v in dist.items()}
+    dist = {k: (v / n) for k, v in dist.items()}
     return dist
 
 

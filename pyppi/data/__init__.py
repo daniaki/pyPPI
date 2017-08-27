@@ -181,7 +181,7 @@ def load_go_dag(optional_attrs=None):
     return obo_parser.GODag(obo_file, optional_attrs=default)
 
 
-def ipr_name_map(lowercase_keys=False, short_names=True):
+def ipr_name_map(short_names=True):
     """
     Parse the interpro list into a dictionary.
     """
@@ -189,33 +189,39 @@ def ipr_name_map(lowercase_keys=False, short_names=True):
     fp = open(file, 'r')
     ipr_map = {}
     for line in fp:
-        if lowercase_keys:
-            xs = line.strip().lower().split("\t")
-        else:
-            xs = line.strip().upper().split("\t")
+        xs = line.strip().split("\t")
         term = xs[0].upper()
         descrip = xs[1].strip()
-        ipr_map[term.lower() if lowercase_keys else term.upper()] = descrip
+        ipr_map[term] = descrip
     fp.close()
     return ipr_map
 
 
-def pfam_name_map(lowercase_keys=False):
+def pfam_name_map():
     """
     Parse the pfam list into a dictionary.
     """
     fp = gzip.open(pfam_names_path, 'rt')
     pf_map = {}
     for line in fp:
-        if lowercase_keys:
-            xs = line.strip().lower().split("\t")
-        else:
-            xs = line.strip().upper().split("\t")
+        xs = line.strip().split("\t")
         term = xs[0].upper()
         descrip = xs[-1].strip()
-        pf_map[term.lower() if lowercase_keys else term.upper()] = descrip
+        pf_map[term] = descrip
     fp.close()
     return pf_map
+
+
+def get_term_description(term, go_dag, ipr_map, pfam_map):
+    term = term.upper()
+    if 'GO' in term:
+        term = term.replace("GO", "GO:")
+        return go_dag[term].name
+    elif 'IPR' in term.lower():
+        return ipr_map[term]
+    elif 'PF' in term.lower():
+        return pfam_map[term]
+    return None
 
 
 def load_uniprot_accession_map():

@@ -153,22 +153,6 @@ def parse_args(docopt_args):
     parsed = {}
 
     # String processing
-    if query_doctop_dict(docopt_args, '--hidden'):
-        hidden_layers_sizes = []
-        layers = docopt_args['--hidden']
-        if not isinstance(str, layers):
-            print("Hidden layers must be a comma delimited string")
-            sys.exit(0)
-
-        for l in [x.strip() for x in layers.strip().split(',') if x.strip()]:
-            try:
-                n_neurons = int(l)
-                hidden_layers_sizes.append(n_neurons)
-            except TypeError:
-                print("Hidden layers must be a comma delimited string of integers")
-                sys.exit(0)
-        parsed["hidden"] = hidden_layers_sizes
-
     if query_doctop_dict(docopt_args, '--directory'):
         if os.path.isdir(docopt_args['--directory']):
             parsed['directory'] = docopt_args['--directory']
@@ -225,16 +209,16 @@ def parse_args(docopt_args):
     # Numeric parsing
     n_jobs = int(query_doctop_dict(docopt_args, '--n_jobs')) or 1
     n_splits = int(query_doctop_dict(docopt_args, '--n_splits')) or 5
-    iterations = int(query_doctop_dict(docopt_args, '--n_iterations')) or 5
-    iterations = int(query_doctop_dict(docopt_args, '--h_iterations')) or 60
-    iterations = int(query_doctop_dict(docopt_args, '--top')) or 25
+    n_iterations = int(query_doctop_dict(docopt_args, '--n_iterations')) or 5
+    h_iterations = int(query_doctop_dict(docopt_args, '--h_iterations')) or 60
+    top_features = int(query_doctop_dict(docopt_args, '--top')) or 25
     threshold = float(query_doctop_dict(docopt_args, '--threshold')) or 0.5
     parsed['n_jobs'] = n_jobs
     parsed['n_splits'] = n_splits
-    parsed['n_iterations'] = iterations
+    parsed['n_iterations'] = n_iterations
     parsed['threshold'] = threshold
-    parsed['h_iterations'] = threshold
-    parsed['top'] = threshold
+    parsed['h_iterations'] = h_iterations
+    parsed['top'] = top_features
 
     # Input/Output parsing
     if query_doctop_dict(docopt_args, '--output'):

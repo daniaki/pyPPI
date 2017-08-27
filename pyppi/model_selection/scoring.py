@@ -8,12 +8,25 @@ and a class for housing statistics which wraps around a pandas dataframe.
 import numpy as np
 import pandas as pd
 
+from sklearn.metrics import confusion_matrix
+
+
+def specificity(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    return tn / (tn + fp)
+
+
+def fdr_score(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    return fp / (tp + fp)
+
 
 class MultilabelScorer(object):
     """
     Simple helper class to wrap over a binary metric in sci-kit to
     enable support for simple multi-label scoring.
     """
+
     def __init__(self, sklearn_binary_metric):
         self.scorer = sklearn_binary_metric
 
@@ -107,8 +120,8 @@ class Statistics(object):
             fp = open(fp, mode)
         max_word_len = max([len(l) for l in labels])
         for l in sorted(labels):
-            fp.write('{}'.format(l) + ' ' * (max_word_len-len(l))
-                     + '\tmean' + ' '*6 + '\tstd\n')
+            fp.write('{}'.format(l) + ' ' * (max_word_len - len(l))
+                     + '\tmean' + ' ' * 6 + '\tstd\n')
             for s in sorted(self.statistic_types()):
                 mu, std = self.get_statistic(l, s)
                 fp.write('\t{}:'.format(s) + ' ' *
@@ -163,7 +176,7 @@ class Statistics(object):
                 data_sc = data[:, :, i, j].ravel()
                 stats.update_statistics(c, s, data_sc)
 
-        assert len(stats.frame()) == axis_0*axis_1*axis_2*axis_3
+        assert len(stats.frame()) == axis_0 * axis_1 * axis_2 * axis_3
         if return_df:
             return stats.frame()
         return stats

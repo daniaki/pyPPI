@@ -10,6 +10,8 @@ import numpy as np
 import scipy.sparse as sp
 from operator import itemgetter
 
+from ..data import get_term_description
+
 from sklearn.multiclass import _partial_fit_binary, _predict_binary, _fit_binary
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from sklearn.calibration import CalibratedClassifierCV
@@ -393,36 +395,7 @@ class BinaryRelevance(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         return np.array([e.intercept_.ravel() for e in self.estimators])
 
 
-# -------------------------- Skmulti-learn Utilities ----------------------- #
-def get_coefs(clf):
-    """
-    Return the feature weightings for each estimator. If estimator is a
-    pipeline, then it assumes the last step is the estimator.
-
-    :return: array-like, shape (n_classes_, n_features)
-    """
-    check_is_fitted(clf, 'fitted_')
-
-    def feature_imp(estimator):
-        if hasattr(estimator, 'steps'):
-            estimator = estimator.steps[-1][-1]
-        if hasattr(estimator, "coef_"):
-            return estimator.coef_
-        elif hasattr(estimator, "coefs_"):
-            return estimator.coefs_
-        elif hasattr(estimator, "feature_importances_"):
-            return estimator.feature_importances_
-        else:
-            raise AttributeError(
-                "Estimator {} doesn't support "
-                "feature coefficients.".format(type(estimator)))
-
-    coefs = [feature_imp(e) for e in get_br_estimators(clf)]
-    if sp.issparse(coefs[0]):
-        return sp.vstack(coefs)
-    return np.vstack(coefs)
-
-
+# -------------------------- Utilities ----------------------- #
 def zip_classes(clf):
     """
     Zip the class indices with the classifiers
@@ -452,7 +425,32 @@ def get_br_estimators(clf):
         return br_classifers
 
 
-def top_n_features(n, clf, absolute=False, vectorizer=None):
+def get_coefs(clf):
+    """
+    Return the feature weightings for each estimator. If estimator is a
+    pipeline, then it assumes the last step is the estimator.
+
+    :return: array-like, shape (n_classes_, n_features)
+    """
+    def feature_imp(estimator):
+        if hasattr(estimator, 'steps'):
+            estimator = estimator.steps[-1][-1]
+        if hasattr(estimator, "coef_"):
+            return estimator.coef_
+        elif hasattr(estimator, "coefs_"):
+            return estimator.coefs_
+        elif hasattr(estimator, "feature_importances_"):
+            return estimator.feature_importances_
+        else:
+            raise AttributeError(
+                "Estimator {} doesn't support "
+                "feature coefficients.".format(type(estimator)))
+
+    return feature_imp(clf.best_estimator_)
+
+
+def top_n_features(n, clf, go_dag, ipr_map, pfam_map,
+                   absolute=False, vectorizer=None):
     """
     Return the top N features. If clf is a pipeline, then it assumes
     the first step is the vectoriser holding the feature names.
@@ -460,23 +458,29 @@ def top_n_features(n, clf, absolute=False, vectorizer=None):
     :return: array like, shape (n_estimators, n).
         Each element in a list is a tuple (feature_idx, weight).
     """
-    check_is_fitted(clf, 'fitted_')
     top_features = []
-    coefs = get_coefs(clf)
+    coefs = get_coefs(clf)[0]
 
     if absolute:
-        coef = abs(coef)
-    if hasattr(e, 'steps') and vectorizer is None:
-        vectorizer = e.steps[0][-1]
+        coefs = abs(coefs)
+    if hasattr(clf, 'steps') and vectorizer is None:
+        vectorizer = clf.steps[0][-1]
     idx_coefs = sorted(
-        enumerate(coef), key=itemgetter(1), reverse=True
+        enumerate(coefs), key=itemgetter(1), reverse=True
     )[:n]
     if vectorizer:
         idx = [idx for (idx, w) in idx_coefs]
         ws = [w for (idx, w) in idx_coefs]
-        features = np.asarray(vectorizer.get_feature_names())[idx]
-        top_features.append(list(zip(features, ws)))
+        names = np.asarray(vectorizer.get_feature_names())[idx]
+        descriptions = np.asarray(
+            [
+                get_term_description(
+                    term=x, go_dag=go_dag,
+                    ipr_map=ipr_map, pfam_map=pfam_map,
+                )
+                for x in names
+            ]
+        )
+        return list(zip(names, descriptions, ws))
     else:
-        top_features.append(idx_coefs)
-
-    return top_features
+        return [(idx, idx, coef) for (idx, coef) in idx_coefs]

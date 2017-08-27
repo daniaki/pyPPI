@@ -11,7 +11,6 @@ from sklearn.ensemble import ExtraTreesClassifier, GradientBoostingClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
 from sklearn.svm import OneClassSVM, SVC
-from sklearn.neural_network import MLPClassifier
 from sklearn.naive_bayes import MultinomialNB, GaussianNB, BernoulliNB
 from sklearn.base import clone
 
@@ -29,7 +28,6 @@ def supported_estimators():
         'KNeighborsClassifier': KNeighborsClassifier,
         'BayesianGaussianMixture': BayesianGaussianMixture,
         'GaussianMixture': GaussianMixture,
-        'MLPClassifier': MLPClassifier,
         'MultinomialNB': MultinomialNB,
         'GaussianNB': GaussianNB,
         'BernoulliNB': BernoulliNB
@@ -129,14 +127,6 @@ def get_parameter_distribution_form_model(model):
         params["n_init"] = np.arange(1, 4, step=1)
         params["init_params"] = ['kmeans']
 
-    elif model == "MLPClassifier":
-        params["activation"] = ['identity', 'logistic', 'tanh', 'relu']
-        params["batch_size"] = list(np.arange(200, 10000, step=200)) + ["auto"]
-        params["alpha"] = np.arange(0.0001, 0.1, step=0.0001)
-        params["learning_rate"] = ['constant', 'invscaling', 'adaptive']
-        params["max_iter"] = [100, 150, 200, 250, 300]
-        params["momentum"] = np.arange(0.01, 1, step=0.01)
-
     elif model == "MultinomialNB":
         params["alpha"] = np.arange(0, 5, step=0.01)
 
@@ -149,7 +139,7 @@ def get_parameter_distribution_form_model(model):
     return params
 
 
-def make_classifier(algorithm, class_weight='balanced', random_state=None, hidden_layers=None):
+def make_classifier(algorithm, class_weight='balanced', random_state=None):
     supported = supported_estimators()
     estimator = supported.get(algorithm, LogisticRegression)()
     if hasattr(estimator, 'n_jobs'):
@@ -160,7 +150,4 @@ def make_classifier(algorithm, class_weight='balanced', random_state=None, hidde
         estimator.set_params(**{'random_state': random_state})
     if hasattr(estimator, 'probability'):
         estimator.set_params(**{'probability': True})
-    if hasattr(estimator, "hidden_layer_sizes"):
-        if hidden_layers is not None:
-            estimator.set_params(**{'hidden_layer_sizes': hidden_layers})
     return estimator
