@@ -26,7 +26,7 @@ Options:
                     predict and predict_proba [default: LogisticRegression]
   --n_jobs=J        Number of processes to run in parallel [default: 1]
   --n_splits=S      Number of cross-validation splits [default: 5]
-  --h_iterations=H  Number of hyperparameter tuning 
+  --h_iterations=H  Number of hyperparameter tuning
                     iterations per fold [default: 60]
   --n_iterations=I  Number of bootstrap iterations [default: 5]
   --directory=DIR   Output directory [default: ./results/]
@@ -169,7 +169,7 @@ if __name__ == "__main__":
             i: {
                 j: [] for j in range(n_splits)
             } for i in range(n_iter)
-        } for l in labels
+        } for l in mlb.classes
     }
     params = get_parameter_distribution_form_model(model)
 
@@ -209,8 +209,8 @@ if __name__ == "__main__":
             y_valid_f_proba = []
             y_test_f_proba = []
 
-            for label in sorted(labels):
-                label_idx = labels.index(label)
+            for label in sorted(mlb.classes):
+                label_idx = list(mlb.classes).index(label)
                 logging.info("Fitting label {}.".format(label))
 
                 # Prepare all training and testing data
@@ -384,9 +384,9 @@ if __name__ == "__main__":
         multilabel_statistics, allow_pickle=False
     )
 
-    logging.info("Writing label order.")
+    logging.info("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
-        fp.write(",".join(sorted(labels)))
+        fp.write(",".join(sorted(mlb.classes)))
 
     logging.info("Writing top features to file.")
     with open('{}/{}'.format(direc, 'top_features.json'), 'wt') as fp:
