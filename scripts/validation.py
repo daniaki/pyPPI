@@ -112,8 +112,8 @@ if __name__ == "__main__":
     go_dag = load_godag()
     uniprot = get_active_instance(
         verbose=verbose,
-        sprot_cache=None,
-        trembl_cache=None
+        sprot_cache=False if use_feature_cache else True,
+        trembl_cache=False if use_feature_cache else True
     )
     data_types = UniProt.data_types()
     labels = load_ptm_labels()
