@@ -258,18 +258,22 @@ if __name__ == "__main__":
                     clf.fit(X_train_l, y_train_l)
 
                 # Validation scores in binary and probability format
+                logging.info("Making predictions on validation data.")
                 y_valid_l_pred = clf.predict(X_valid_l)
                 y_valid_l_proba = clf.predict_proba(X_valid_l)
 
                 # Held-out testing scores in binary and probability format
+                logging.info("Making predictions on testing data.")
                 y_test_l_pred = clf.predict(X_test_l)
                 y_test_l_proba = clf.predict_proba(X_test_l)
 
                 # Store these per label results in a list which we will
                 # later use to stack into a multi-label array.
+                logging.info("Storing validation predictions.")
                 y_valid_f_pred.append([[x] for x in y_valid_l_pred])
                 y_valid_f_proba.append([[x[1]] for x in y_valid_l_proba])
 
+                logging.info("Storing testing predictions.")
                 y_test_f_pred.append([[x] for x in y_test_l_pred])
                 y_test_f_proba.append([[x[1]] for x in y_test_l_proba])
 
