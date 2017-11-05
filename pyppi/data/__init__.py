@@ -183,7 +183,7 @@ def load_go_dag(optional_attrs=None):
 
 def ipr_name_map(short_names=True):
     """
-    Parse the interpro list into a dictionary.
+    Parse the interpro list into a dictionary. Expects uppercase accessions.
     """
     file = ipr_snames_path if short_names else ipr_lnames_path
     fp = open(file, 'r')
@@ -199,7 +199,7 @@ def ipr_name_map(short_names=True):
 
 def pfam_name_map():
     """
-    Parse the pfam list into a dictionary.
+    Parse the pfam list into a dictionary. Expects uppercase accessions.
     """
     fp = gzip.open(pfam_names_path, 'rt')
     pf_map = {}
@@ -217,9 +217,9 @@ def get_term_description(term, go_dag, ipr_map, pfam_map):
     if 'GO' in term:
         term = term.replace("GO", "GO:")
         return go_dag[term].name
-    elif 'IPR' in term.lower():
+    elif 'IPR' in term:
         return ipr_map[term]
-    elif 'PF' in term.lower():
+    elif 'PF' in term:
         return pfam_map[term]
     return None
 
