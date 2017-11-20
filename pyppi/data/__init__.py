@@ -57,8 +57,8 @@ def line_generator(io_func):
     Decorator to turn a io dealing function into an iterator of file lines.
     :param io_func: function that opens a file with error handling
     """
-    def wrapper_func():
-        fp = io_func()
+    def wrapper_func(*args, **kwargs):
+        fp = io_func(*args, **kwargs)
         for line in fp:
             if isinstance(line, bytes):
                 yield line.decode('utf-8')
@@ -69,90 +69,57 @@ def line_generator(io_func):
 
 @line_generator
 def generic_io(file):
-    try:
-        return open(file, 'r')
-    except IOError as e:
-        print(e)
+    return open(file, 'r')
 
 
 @line_generator
 def uniprot_hsa_list():
-    try:
-        return open(uniprot_hsa_path, 'r')
-    except IOError as e:
-        print(e)
+    return open(uniprot_hsa_path, 'r')
 
 
 @line_generator
 def swissprot_hsa_list():
-    try:
-        return open(swissprot_hsa_path, 'r')
-    except IOError as e:
-        print(e)
+    return open(swissprot_hsa_path, 'r')
 
 
 @line_generator
 def uniprot_sprot():
-    try:
-        return gzip.open(uniprot_sprot_dat, 'rt')
-    except IOError as e:
-        print(e)
+    return gzip.open(uniprot_sprot_dat, 'rt')
 
 
 @line_generator
 def uniprot_trembl():
-    try:
-        return gzip.open(uniprot_trembl_dat, 'rt')
-    except IOError as e:
-        print(e)
+    return gzip.open(uniprot_trembl_dat, 'rt')
 
 
 @line_generator
 def hprd_ptms():
-    try:
-        return open(hprd_ptms_txt, 'r')
-    except IOError as e:
-        print(e)
+    return open(hprd_ptms_txt, 'r')
 
 
 @line_generator
 def hprd_id_map():
-    try:
-        return open(hprd_mappings_txt, 'r')
-    except IOError as e:
-        print(e)
+    return open(hprd_mappings_txt, 'r')
 
 
 @line_generator
 def bioplex_v4():
-    try:
-        return open(bioplex_v4_path, 'r')
-    except IOError as e:
-        print(e)
+    return open(bioplex_v4_path, 'r')
 
 
 @line_generator
 def innate_curated():
-    try:
-        return gzip.open(innate_c_mitab_path, 'rt')
-    except IOError as e:
-        print(e)
+    return gzip.open(innate_c_mitab_path, 'rt')
 
 
 @line_generator
 def innate_imported():
-    try:
-        return gzip.open(innate_i_mitab_path, 'rt')
-    except IOError as e:
-        print(e)
+    return gzip.open(innate_i_mitab_path, 'rt')
 
 
 @line_generator
 def pina2():
-    try:
-        return open(pina2_sif_path, 'r')
-    except IOError as e:
-        print(e)
+    return open(pina2_sif_path, 'r')
 
 
 def hsa_swissprot_map():

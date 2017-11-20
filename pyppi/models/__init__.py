@@ -35,7 +35,7 @@ def supported_estimators():
     return allowed
 
 
-def get_parameter_distribution_form_model(model):
+def get_parameter_distribution_for_model(model):
     if model not in supported_estimators():
         raise ValueError("{} is not a supported model".format(model))
 

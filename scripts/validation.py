@@ -36,6 +36,8 @@ import json
 import logging
 import pandas as pd
 import numpy as np
+import scipy as sp
+from itertools import product
 from operator import itemgetter
 from collections import Counter
 from datetime import datetime
@@ -180,7 +182,7 @@ if __name__ == "__main__":
         ('Specificity', specificity),
         ('FDR', fdr_score)
     ]
-    multilabel_scores_funcs = [
+    multilabel_scoring_funcs = [
         ('Label Ranking Loss', label_ranking_loss),
         ('Label Ranking Average Precision',
             label_ranking_average_precision_score),
@@ -188,11 +190,11 @@ if __name__ == "__main__":
         ('Macro (un-weighted) F1', f1_score)
     ]
     n_scorers = len(binary_scoring_funcs)
-    n_ml_scorers = len(multilabel_scores_funcs)
+    n_ml_scorers = len(multilabel_scoring_funcs)
 
     # 2: position 0 is for validation, position 1 is for testing
-    binary_statistics = np.zeros((n_iter, n_splits, n_classes, 2, n_scorers))
-    multilabel_statistics = np.zeros((n_iter, n_splits, 2, n_ml_scorers))
+    binary_statistics = np.zeros((n_classes, 2, n_scorers, n_iter, n_splits))
+    multilabel_statistics = np.zeros((2, n_ml_scorers, n_iter, n_splits))
 
     # Begin the main show!
     # ------------------------------------------------------------------- #
@@ -209,8 +211,7 @@ if __name__ == "__main__":
             y_valid_f_proba = []
             y_test_f_proba = []
 
-            for label in sorted(mlb.classes):
-                label_idx = list(mlb.classes).index(label)
+            for label_idx, label in enumerate(mlb.classes):
                 logging.info("Fitting label {}.".format(label))
 
                 # Prepare all training and testing data
@@ -295,9 +296,9 @@ if __name__ == "__main__":
                             average='binary'
                         )
                     binary_statistics[
-                        bs_iter, fold_iter, label_idx, 0, func_idx] = scores_v
+                        label_idx, 0, func_idx, bs_iter, fold_iter] = scores_v
                     binary_statistics[
-                        bs_iter, fold_iter, label_idx, 1, func_idx] = scores_t
+                        label_idx, 1, func_idx, bs_iter, fold_iter] = scores_t
 
                 logging.info("Computing top label features for fold.")
                 # Get the top 20 features for this labels's run.
@@ -326,7 +327,7 @@ if __name__ == "__main__":
             y_test_f_proba = np.hstack(y_test_f_proba)
 
             for func_idx, (func_name, func) in \
-                    enumerate(multilabel_scores_funcs):
+                    enumerate(multilabel_scoring_funcs):
                 if func_name == 'Macro (weighted) F1':
                     scores_v = func(
                         y_valid_f, y_valid_f_pred, average='weighted'
@@ -345,53 +346,161 @@ if __name__ == "__main__":
                     scores_t = func(y_test_f, y_test_f_pred)
 
                 multilabel_statistics[
-                    bs_iter, fold_iter, 0, func_idx] = scores_v
+                    0, func_idx, bs_iter, fold_iter] = scores_v
                 multilabel_statistics[
-                    bs_iter, fold_iter, 1, func_idx] = scores_t
+                    1, func_idx, bs_iter, fold_iter] = scores_t
 
     # Write out all the statistics to a multi-indexed dataframe
-    # Also store the raw numpy arrays and the order of the labels
     # -------------------------------------------------------------------- #
     logging.info("Writing statistics to file.")
-    func_names = [n for n, _ in binary_scoring_funcs]
-    iterables = [
-        range(n_iter), range(n_splits), mlb.classes,
-        ["validation", "holdout"], func_names
-    ]
-    names = [
-        'bootstrap iteration', 'fold iteration',
-        'labels', 'condition', 'score function'
-    ]
-    index = pd.MultiIndex.from_product(iterables, names=names)
-    binary_df = pd.DataFrame(binary_statistics.ravel(), index=index)[0]
-    binary_df.to_csv('{}/{}'.format(direc, 'binary_stats.csv'), sep=',')
-    np.save(
-        '{}/{}'.format(direc, 'binary_stats.np'),
-        binary_statistics, allow_pickle=False
-    )
 
-    func_names = [n for n, _ in multilabel_scores_funcs]
-    iterables = [
-        range(n_iter), range(n_splits), ["validation", "holdout"], func_names
+    # Binary Statistics
+    # -------------------------------------------------------------------- #
+    dim_a_size = len(mlb.classes) * 2 * len(binary_scoring_funcs)
+    dim_b_size = n_iter * n_splits
+
+    func_names = [n for n, _ in binary_scoring_funcs]
+    iterables = [mlb.classes, ["validation", "holdout"], func_names]
+    names = ['Labels', 'Condition', 'Metric']
+    tuples = list(product(*iterables))
+    index = pd.MultiIndex.from_tuples(tuples, names=names)
+
+    names = ['Bootstrap Iteration', 'Fold Iteration']
+    arrays = [
+        ['B{}'.format(i) for i in range(n_iter)],
+        ['F{}'.format(i) for i in range(n_splits)]
     ]
-    names = [
-        'bootstrap iteration', 'fold iteration',
-        'condition', 'score function'
+    tuples = list(product(*arrays))
+    columns = pd.MultiIndex.from_tuples(tuples, names=names)
+
+    binary_df = pd.DataFrame(
+        binary_statistics.reshape((dim_a_size, dim_b_size)),
+        index=index, columns=columns
+    ).sort_index()
+    binary_df.to_csv('{}/{}'.format(direc, 'binary_stats.csv'), sep=',')
+
+    # Multi-label Statistics
+    # -------------------------------------------------------------------- #
+    dim_a_size = 2 * len(multilabel_scoring_funcs)
+    dim_b_size = n_iter * n_splits
+
+    func_names = [n for n, _ in multilabel_scoring_funcs]
+    iterables = [["validation", "holdout"], func_names]
+    names = ['Condition', 'Metric']
+    tuples = list(product(*iterables))
+    index = pd.MultiIndex.from_tuples(tuples, names=names)
+
+    names = ['Bootstrap Iteration', 'Fold Iteration']
+    arrays = [
+        ['B{}'.format(i) for i in range(n_iter)],
+        ['F{}'.format(i) for i in range(n_splits)]
     ]
-    index = pd.MultiIndex.from_product(iterables, names=names)
-    multilabel_df = pd.DataFrame(multilabel_statistics.ravel(), index=index)[0]
+    tuples = list(product(*arrays))
+    columns = pd.MultiIndex.from_tuples(tuples, names=names)
+
+    multilabel_df = pd.DataFrame(
+        multilabel_statistics.reshape((dim_a_size, dim_b_size)),
+        index=index, columns=columns
+    ).sort_index()
     multilabel_df.to_csv(
         '{}/{}'.format(direc, 'multilabel_stats.csv'), sep=','
     )
-    np.save(
-        '{}/{}'.format(direc, 'multilabel_stats.np'),
-        multilabel_statistics, allow_pickle=False
-    )
 
+    # Top N Features, train/y-array index order
+    # -------------------------------------------------------------------- #
     logging.info("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
-        fp.write(",".join(sorted(mlb.classes)))
+        fp.write(",".join(mlb.classes))
 
     logging.info("Writing top features to file.")
     with open('{}/{}'.format(direc, 'top_features.json'), 'wt') as fp:
         json.dump(top_features, fp, indent=4, sort_keys=True)
+
+# Compute label similarity heatmaps and label correlation heatmap
+# -------------------------------------------------------------------- #
+label_features = {l: set() for l in mlb.classes}
+for idx, label in enumerate(mlb.classes):
+    selector = y_train[:, idx] == 1
+    positive_cases = X_train[selector]
+    for feature_string in positive_cases:
+        unique = set(feature_string.split(','))
+        label_features[label] |= unique
+
+j_v_similarity_matrix = np.zeros((len(mlb.classes), len(mlb.classes)))
+d_v_similarity_matrix = np.zeros((len(mlb.classes), len(mlb.classes)))
+for i, class_1 in enumerate(sorted(mlb.classes)):
+    for j, class_2 in enumerate(sorted(mlb.classes)):
+        set_1 = label_features[class_1]
+        set_2 = label_features[class_2]
+        jaccard = len(set_1 & set_2) / len(set_1 | set_2)
+        dice = 2 * len(set_1 & set_2) / (len(set_1) + len(set_2))
+        j_v_similarity_matrix[i, j] = jaccard
+        d_v_similarity_matrix[i, j] = dice
+
+
+# Create label correlation matrix and then create a new one
+# Where the columns and rows are in alphabetical order.
+label_correlation, _ = sp.stats.spearmanr(y_train)
+s_label_correlation = np.zeros_like(label_correlation)
+for i, class_1 in enumerate(sorted(mlb.classes)):
+    for j, class_2 in enumerate(sorted(mlb.classes)):
+        index_1 = mlb.classes.index(class_1)
+        index_2 = mlb.classes.index(class_2)
+        s_label_correlation[i, j] = label_correlation[index_1, index_2]
+
+
+header = "Columns: {}\nRows: {}".format(
+    ','.join(sorted(mlb.classes)), ','.join(sorted(mlb.classes))
+)
+np.savetxt(
+    X=j_v_similarity_matrix,
+    fname='{}/{}'.format(direc, 'j_v_similarity_matrix.csv'),
+    header=header, delimiter=','
+)
+np.savetxt(
+    X=d_v_similarity_matrix,
+    fname='{}/{}'.format(direc, 'd_v_similarity_matrix.csv'),
+    header=header, delimiter=','
+)
+np.savetxt(
+    X=s_label_correlation, fname='{}/{}'.format(direc, 'label_spearmanr.csv'),
+    header=header, delimiter=','
+)
+
+# Compute label similarity heatmaps for the holdout set
+# -------------------------------------------------------------------- #
+holdout_labels = ('dephosphorylation', 'phosphorylation')
+holdout_label_features = {l: set() for l in holdout_labels}
+for idx, label in enumerate(mlb.classes):
+    if label in holdout_labels:
+        selector = y_test[:, idx] == 1
+        positive_cases = X_test[selector]
+        for feature_string in positive_cases:
+            unique = set(feature_string.split(','))
+            holdout_label_features[label] |= unique
+
+j_t_similarity_matrix = np.zeros((2, len(mlb.classes)))
+d_t_similarity_matrix = np.zeros((2, len(mlb.classes)))
+for i, class_1 in enumerate(sorted(holdout_labels)):
+    for j, class_2 in enumerate(sorted(mlb.classes)):
+        set_1 = holdout_label_features[class_1]
+        set_2 = label_features[class_2]
+        jaccard = len(set_1 & set_2) / len(set_1 | set_2)
+        dice = 2 * len(set_1 & set_2) / (len(set_1) + len(set_2))
+        print(class_1, class_2, jaccard)
+        j_t_similarity_matrix[i, j] = jaccard
+        d_t_similarity_matrix[i, j] = dice
+
+header = "Columns: {}\nRows: {}".format(
+    ','.join(sorted(mlb.classes)), ','.join(sorted(holdout_labels))
+)
+np.savetxt(
+    X=j_t_similarity_matrix,
+    fname='{}/{}'.format(direc, 'j_t_similarity_matrix.csv'),
+    header=header, delimiter=','
+)
+np.savetxt(
+    X=d_t_similarity_matrix,
+    fname='{}/{}'.format(direc, 'd_t_similarity_matrix.csv'),
+    header=header, delimiter=','
+)

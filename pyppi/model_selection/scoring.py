@@ -18,6 +18,8 @@ def specificity(y_true, y_pred):
 
 def fdr_score(y_true, y_pred):
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    if (tp + fp) == 0:
+        return 0.0
     return fp / (tp + fp)
 
 
