@@ -29,8 +29,9 @@ UNIPROT_ORD_KEY = dict(P=0, Q=1, O=2)
 def get_active_instance(**kwargs):
     global __UNIPROT__
     if __UNIPROT__ is None:
-        print("First time loading on UniProt instance. "
-              "Make take a few moments")
+        if kwargs.get('verbose', False):
+            print("First time loading on UniProt instance. "
+                  "Make take a few moments")
         __UNIPROT__ = UniProt(**kwargs)
     return __UNIPROT__
 
@@ -54,7 +55,7 @@ class UniProt(object):
     """
 
     def __init__(self, sprot_cache=uniprot_sprot, trembl_cache=uniprot_trembl,
-                 taxonid='9606', verbose=False, retries=10, wait=10, n_jobs=1,
+                 taxonid='9606', verbose=False, retries=3, wait=5, n_jobs=1,
                  allow_download=False):
         """
         Class constructor
@@ -78,7 +79,8 @@ class UniProt(object):
         self.n_jobs = n_jobs
         self.allow_download = allow_download
 
-        print('Warning: Loading dat files, may take a few minutes.')
+        if self.verbose:
+            print('Warning: Loading dat files, may take a few minutes.')
         if sprot_cache:
             # Load the swissprot records if file can be found
             for record in SwissProt.parse(sprot_cache()):
@@ -207,7 +209,7 @@ class UniProt(object):
                 time.sleep(self.wait)
                 try:
                     if self.verbose:
-                        print('Retry {}/{}...'.format(i+1, self.retries))
+                        print('Retry {}/{}...'.format(i + 1, self.retries))
                     handle = ExPASy.get_sprot_raw(accession)
                     record = SwissProt.read(handle)
                     success = True
@@ -413,7 +415,7 @@ class UniProt(object):
         """
         data = {}
         if self.verbose:
-            print("Acquiring data for accession {}/{}..".format(i+1, n))
+            print("Acquiring data for accession {}/{}..".format(i + 1, n))
 
         for d in data_types:
             if isinstance(d, Enum) or isinstance(d, EnumMeta):

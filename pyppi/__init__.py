@@ -5,5 +5,6 @@ __all__ = [
     'model_selection',
     'models',
     'network_analysis',
-    'output'
+    'output',
+    'tests'
 ]

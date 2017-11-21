@@ -44,8 +44,8 @@ class AnnotationExtractor(object):
     -----
     """
 
-    def __init__(self, induce, selection, n_jobs, verbose=False, cache=True,
-                 backend='threading'):
+    def __init__(self, induce, selection, n_jobs=1, verbose=False, cache=False,
+                 backend='multiprocessing'):
         self._n_jobs = n_jobs
         self._selection = selection
         self._induce = induce
@@ -111,7 +111,11 @@ class AnnotationExtractor(object):
         invalid_indices = [ind for (ind, i) in enumerate(v_indicator) if i < 2]
         if indices:
             return invalid_indices
-        return invalid_ppis
+
+        if isinstance(X[0], PPI):
+            return invalid_ppis
+        else:
+            return [tuple(ppi) for ppi in invalid_ppis]
 
     def valid_ppis(self, X, indices=False):
         """
@@ -144,7 +148,11 @@ class AnnotationExtractor(object):
         valid_indices = [ind for (ind, i) in enumerate(v_indicator) if i > 1]
         if indices:
             return valid_indices
-        return valid_ppis
+
+        if isinstance(X[0], PPI):
+            return valid_ppis
+        else:
+            return [tuple(ppi) for ppi in valid_ppis]
 
     def fit(self, X, y=None):
         """
@@ -180,6 +188,7 @@ class AnnotationExtractor(object):
         # Run the intensive computation in parallel and append the local cache
         if self._verbose:
             print('Computing selected features for PPIs...')
+
         chunks = chunk_list(list(ppis), n=self._n_jobs)
         compute_features = delayed(self._compute_features)
         dfs = Parallel(n_jobs=self._n_jobs, verbose=self._verbose,

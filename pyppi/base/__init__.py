@@ -6,6 +6,8 @@ import os
 import sys
 import numpy as np
 import pandas as pd
+from itertools import islice
+import math
 
 from ..data import load_ptm_labels
 from ..data_mining.uniprot import UniProt
@@ -64,19 +66,24 @@ def concat_dataframes(dfs, reset_index=False):
     return combined
 
 
+def take(n, iterable):
+    "Return first n items of the iterable as a list"
+    return list(islice(iterable, n))
+
+
 def chunk_list(ls, n):
-    """Yield successive n-sized chunks from l."""
-    if n == 0:
-        return []
-    if n == 1:
-        return ls
-    ranges = list(range(0, len(ls), int(np.ceil(len(ls) / n))))
-    tup_ranges = []
-    for i in range(len(ranges) - 1):
-        tup_ranges.append((ranges[i], ranges[i + 1]))
-    tup_ranges.append((ranges[i + 1], len(ls) + 1))
-    for (i, j) in tup_ranges:
-        yield ls[i: j]
+    """
+    Split a list into n sublists.
+    """
+    if n < 1:
+        raise ValueError("n must be greater than 0.")
+    else:
+        consumed = 0
+        elements_per_sublist = int(math.ceil(len(ls) / n))
+        while consumed < len(ls):
+            sublist = take(elements_per_sublist, ls[consumed:])
+            consumed += len(sublist)
+            yield sublist
 
 
 class PPI(object):
