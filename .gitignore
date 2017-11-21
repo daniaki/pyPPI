@@ -1,11 +1,13 @@
 .idea/*
 *.csv
+.vscode/*
 *.tab
 *.list
 *.dat
 *.obo
 *.txt
 *.mitab
+*.pyc
 *.sif
 *.pkl
 *tsv
@@ -13,7 +15,11 @@
 *.json
 *.eda
 *.noa
+__pycache__/*
+.ipynb_checkpoints/*
 .idea/
+.vscode/
+.ipynb_checkpoints/
 *.gz
 *.DS_Store
 pyPPI/__pycache__/
