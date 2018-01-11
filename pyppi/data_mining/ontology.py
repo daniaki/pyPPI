@@ -1,15 +1,11 @@
 #!/usr/bin/python
 
-"""
-Created on 23-02-2016
-@author: Daniel Esposito
-@contact: desposito@student.unimelb.edu.au
-"""
 
-import numpy as np
+import gzip
 from functools import reduce
+from operator import itemgetter
 
-from ..data import load_go_dag
+from ..data import obo_file
 
 __GODAG__ = None
 
@@ -17,319 +13,264 @@ __GODAG__ = None
 def get_active_instance(**kwargs):
     global __GODAG__
     if __GODAG__ is None:
-        print("First time loading on GO-DAG instance. "
-              "Make take a few moments")
-        __GODAG__ = load_go_dag(**kwargs)
+        filename = kwargs.get("filename", obo_file)
+        __GODAG__ = parse_obo12_file(filename)
     return __GODAG__
 
-# ------------------------------------------------------ #
-#
-#                  UTILITY OPERATIONS
-#
-# ------------------------------------------------------ #
-
-
-def group_go_by_ontology(data, dag, sep=','):
-    if isinstance(data, str):
-        p_go = [t.upper() for t in data.split(sep) if 'GO' in t.upper()]
-    else:
-        p_go = [t.upper() for t in data if 'GO' in t.upper()]
-
-    # Separate the namespaces in the go terms.
-    p_go_cc = list(filter(
-        lambda x: id_to_node(x, dag).namespace == 'cellular_component', p_go))
-    p_go_bp = list(filter(
-        lambda x: id_to_node(x, dag).namespace == 'biological_process', p_go))
-    p_go_mf = list(filter(
-        lambda x: id_to_node(x, dag).namespace == 'molecular_function', p_go))
-
-    assert len(set(p_go_cc) & set(p_go_bp) & set(p_go_mf)) == 0
-    return {'cc': p_go_cc, 'bp': p_go_bp, 'mf': p_go_mf}
-
-
-def get_relationship_terms(dag, term, rs_type='part_of'):
-    part_of_terms = set()
-    try:
-        relationships = dag[term].relationship
-    except AttributeError:
-        relationships = []
-
-    for rs_item in relationships:
-        xs = rs_item.split(' ')
-        relationship = xs[0]
-        terms = set([x for x in xs if 'GO:' in x.upper()])
-        if relationship.lower() == rs_type:
-            part_of_terms |= terms
-    return part_of_terms
-
-
-def id_to_node(term, dag):
-    return dag[term]
-
-
-def frequency_distribution(corpus):
-    dist = {k: 0 for k in set(corpus)}
-    n = len(corpus)
-    for w in corpus:
-        dist[w] += 1.0
-    dist = {k: (v / n) for k, v in dist.items()}
-    return dist
-
-
-def entropy(word, distribution):
-    if word not in distribution.keys():
-        return 0.0
-    p = distribution[word]
-    return -p * np.log2(p)
-
-
-def sentence_entropy(terms, distribution):
-    return np.sum([entropy(t, distribution) for t in terms])
-
-
-def validate_term_sets(term_sets):
-    for ts in term_sets:
-        if isinstance(ts, set):
-            raise ValueError("term set is a set not a list.")
-    term_sets = [ts for ts in term_sets if len(ts) > 0]
-    return term_sets
-
-
-def term_count(t, ts):
-    return len([x for x in ts if x == t])
-
-
-def fill_out(terms, go_dag, corpus, verbose=0):
-    """For terms not seen in corpus but are in the terms list,
-    append the lowest parent that is in the corpus
-
-    :param terms: Term list to fillout
-    :param go_dag: go dag loaded from obo file.
-    :param corpus: corpus of go annotations appearing in the training set.
-    :param verbose: print intermediate output.
-
-    :return: List of original plus added terms.
-    """
-    terms = [x for x in terms if 'GO' in x.upper()]
-    present_terms = [x for x in terms if x in corpus]
-    absent_terms = [x for x in terms if x not in corpus]
-    extra_induced_terms = []
-    if len(terms) == 0:
-        return terms
-
-    for term in absent_terms:
-        ancestors = get_all_parents(go_dag, term)
-        ancestors = sorted(ancestors, key=lambda x: go_dag[x].depth,
-                           reverse=True)
-        leafiest_depth = -1  # value for when nothing is found
-        for a in ancestors:
-            if (a in corpus) and (a not in present_terms) and \
-                    (a not in extra_induced_terms):
-                leafiest_depth = go_dag[a].depth
-                break
-
-        # Add equally depthed ancestors if possible
-        ancestors = [a for a in ancestors if go_dag[a] == leafiest_depth]
-        for a in ancestors:
-            if (a in corpus) and (a not in present_terms) \
-                    and (a not in extra_induced_terms):
-                # multiply by how many times it would have been
-                # induced if it were originally preset.
-                extra_induced_terms += [a] * term_count(term, absent_terms)
-
-    new_terms = present_terms + absent_terms + extra_induced_terms
-    if verbose:
-        print("Terms already in corpus: {}/{}".format(
-            len(present_terms), len(new_terms)))
-        print("Additional terms: {}/{}".format(
-            len(extra_induced_terms), len(new_terms)))
-    return new_terms
-
-
-def get_all_parents(dag, term):
-    parents = set(dag[term].get_all_parents())
-
-    # Get all the 'part_of' terms
-    part_of_terms = get_relationship_terms(dag, term)
-    for p in parents:
-        part_ofs = get_relationship_terms(dag, p)
-        part_of_terms |= part_ofs
-
-    # Get all the parents of the 'part_of' terms.
-    part_of_terms_parents = set()
-    for pot in part_of_terms:
-        part_of_terms_parents |= get_all_parents(dag, pot)
-    part_of_terms |= part_of_terms_parents
-
-    parents |= part_of_terms
-    # print "All parents:"
-    # for t in sorted(parents, key=lambda t: dag[t].name):
-    #     print '\t {} --> {}'.format(t, dag[t].name)
-
-    return parents
-
 
 # ------------------------------------------------------ #
 #
-#                  GODAG METHODS
+#                         OBO PARSER
 #
 # ------------------------------------------------------ #
-def get_deepest_term(term_set, go_dag):
-    depths = [go_dag[t].depth for t in term_set]
-    depths = {t: d for (t, d) in zip(term_set, depths)}
-    try:
-        max_depth = max(depths.values())
-        deepest_terms = [k for (k, v) in depths.items() if v == max_depth]
-    except ValueError:
-        deepest_terms = []
-    return deepest_terms
+GODag = dict
 
 
-def get_all_ancestors_for_set(term_set, go_dag):
-    parents = set()  # add term_set?
-    for term in term_set:
-        parents |= get_all_parents(go_dag, term)
-    return parents
+class GOTerm(object):
 
+    def __init__(self, id, name, namespace, is_a, part_of, is_obsolete):
+        self.id = id
+        self.name = name
+        self.namespace = namespace
+        self.is_a = set(is_a)
+        self.part_of = set(part_of)
+        self.has_part = set()
+        self.has_a = set()
+        self.is_obsolete = is_obsolete
+        self._depth = None
 
-def get_all_common_ancestors_for_set(term_set, go_dag):
-    parents = set()  # add term_set?
-    for term in term_set:
-        if len(parents) < 1:
-            parents |= get_all_parents(go_dag, term)
+    def __str__(self):
+        return str({
+            "id": self.id,
+            "name": self.name,
+            "namespace": self.namespace,
+            "is_a": sorted([x.id for x in self.is_a]),
+            "part_of": sorted([x.id for x in self.part_of]),
+            "is_obsolete": self.is_obsolete
+        })
+
+    def __le__(self, other):
+        return self.id <= other.id
+
+    def __ge__(self, other):
+        return self.id >= other.id
+
+    def __lt__(self, other):
+        return self.id < other.id
+
+    def __gt__(self, other):
+        return self.id > other.id
+
+    def __repr__(self):
+        return str(self)
+
+    def __hash__(self):
+        return hash(self.id)
+
+    def has_parent(self, p):
+        return p in self.parents
+
+    def has_ancestor(self, a):
+        return a in self.all_parents
+
+    @property
+    def parents(self):
+        return self.is_a | self.part_of
+
+    @property
+    def all_parents(self):
+        all_parents = set()
+        queue = list(self.parents)
+        while queue:
+            node = queue.pop()
+            all_parents.add(node)
+            queue += list(node.parents)
+        return all_parents
+
+    @property
+    def depth(self):
+        if self._depth is not None:
+            return self._depth
         else:
-            parents &= get_all_parents(go_dag, term)
-    return parents
+            if not self.parents:
+                return 0
+            self._depth = max([t.depth for t in self.parents]) + 1
+            return self._depth
 
 
-def get_all_ancestors_for_sets(term_sets, go_dag):
-    a_ancestors = list(get_all_ancestors_for_set(term_sets[0], go_dag))
-    for ts in term_sets[1:]:
-        a_ancestors += list(get_all_ancestors_for_set(ts, go_dag))
-    return a_ancestors
+def process_go_term(fp):
+    id_ = None
+    term = None
+    part_of = []
+    is_a = []
+    line = "[Term]"
+    is_obsolete = False
+    alt_ids = []
+
+    while line.strip() != "":
+        line = fp.readline().strip()
+        if line.startswith("id:"):
+            _, id_ = [x.strip() for x in line.split('id: ')]
+
+        elif line.startswith("alt_id:"):
+            _, alt_id = [x.strip() for x in line.split('alt_id: ')]
+            alt_ids += [alt_id]
+
+        elif line.startswith("name:"):
+            _, name = [x.strip() for x in line.split('name: ')]
+
+        elif line.startswith("namespace:"):
+            _, namespace = [x.strip() for x in line.split('namespace: ')]
+
+        elif line.startswith("is_a:"):
+            _, is_a_term = [x.strip() for x in line.split('is_a: ')]
+            is_a_term, _ = [x.strip() for x in is_a_term.split(' ! ')]
+            is_a.append(is_a_term)
+
+        elif line.startswith("relationship: part_of"):
+            _, part_of_term = [
+                x.strip() for x in line.split('relationship: part_of ')
+            ]
+            part_of_term, _ = [x.strip() for x in part_of_term.split(' ! ')]
+            part_of.append(part_of_term)
+
+        elif line.startswith("is_obsolete"):
+            _, is_obsolete = [x.strip() for x in line.split('is_obsolete: ')]
+            is_obsolete = bool(is_obsolete)
+
+        else:
+            continue
+
+    term = GOTerm(id_, name, namespace, is_a, part_of, is_obsolete)
+    return id_, alt_ids, term
 
 
-def get_all_commmon_ancestors_for_sets(term_sets, go_dag):
-    c_ancestors = get_all_ancestors_for_set(term_sets[0], go_dag)
-    for ts in term_sets[1:]:
-        c_ancestors &= get_all_ancestors_for_set(ts, go_dag)
+def parse_obo12_file(filename):
+    """
+    Parses all Term objects into a dictionary of GOTerms. Each GOTerm
+    contains a small subset of the possible keys: id, name, namespace, is_a,
+    part_of and is_obsolete.
+    """
+    dag = GODag()
+    alt_id_map = {}
+    with gzip.open(filename, 'rt') as fp:
+        for line in fp:
+            line = line.strip()
+            if "format-version" in line:
+                _, version = [x.strip() for x in line.split(":")]
+                version = float(version)
+                if version != 1.2:
+                    raise ValueError("Parser only supports version 1.2.")
+            elif "[Term]" in line:
+                tid, alt, term = process_go_term(fp)
+                alt_id_map[tid] = alt
+                dag[tid] = term
+            else:
+                continue
 
-    # print "Common:"
-    # for t in set(c_ancestors):
-    #     print '\t {} --> {}'.format(t, go_dag[t].name)
+    # Turn the string ids into object references.
+    for _, item in dag.items():
+        is_a_term_ids = item.is_a
+        is_a_terms = []
+        part_of_term_ids = item.part_of
+        part_of_terms = []
 
-    return c_ancestors
+        for t_id in is_a_term_ids:
+            is_a_terms.append(dag[t_id])
+            dag[t_id].has_a.add(item)
 
+        for t_id in part_of_term_ids:
+            part_of_terms.append(dag[t_id])
+            dag[t_id].has_part.add(item)
+
+        item.is_a = set(is_a_terms)
+        item.part_of = set(part_of_terms)
+
+    for tid, alts in alt_id_map.items():
+        term = dag[tid]
+        for alt_tid in alts:
+            dag[alt_tid] = term
+
+    return dag
+
+
+def group_terms_by_ontology_type(term_ids, max_count=None):
+    dag = get_active_instance()
+    cc_terms = []
+    bp_terms = []
+    mf_terms = []
+
+    for t in term_ids:
+        if dag[t].namespace == "biological_process":
+            if max_count is not None and bp_terms.count(t) >= max_count:
+                continue
+            else:
+                bp_terms.append(t)
+        elif dag[t].namespace == "cellular_component":
+            if max_count is not None and cc_terms.count(t) >= max_count:
+                continue
+            else:
+                cc_terms.append(t)
+        elif dag[t].namespace == "molecular_function":
+            if max_count is not None and mf_terms.count(t) >= max_count:
+                continue
+            else:
+                mf_terms.append(t)
+        else:
+            raise ValueError("Term %s doesn't belong to any ontology." % t)
+
+    return {'mf': mf_terms, 'bp': bp_terms, 'cc': cc_terms}
+
+
+def filter_obsolete_terms(term_ids):
+    dag = get_active_instance()
+    return [tid for tid in term_ids if dag[tid].is_obsolete is False]
 
 # ------------------------------------------------------ #
 #
-#                 FILTER OPERATIONS
+#                  ULCA Inducer
 #
 # ------------------------------------------------------ #
-def keep_gt_than_depth(min_depth, term_set, go_dag):
-    filtered_terms = [t for t in term_set if go_dag[t].depth > min_depth]
-    # return set(filtered_terms)
-    return filtered_terms
 
 
-def has_parents(parents, term, go_dag):
-    term_parents = get_all_parents(go_dag, term)
-    # return sorted(term_parents & parents) == sorted(parents)
-    return len(term_parents & set(parents)) >= 1
+def get_lca_of_terms(terms):
+    if not terms:
+        return None
+
+    dag = get_active_instance()
+    parents = [t.all_parents for t in terms]
+    common_parents = reduce(lambda x, y: x & y, parents)
+    if not common_parents:
+        return None
+    depths = [(t, t.depth) for t in common_parents]
+    _, max_depth = max(depths, key=itemgetter(1))
+    lcas = set([t for t in common_parents if t.depth == max_depth])
+    return list(lcas)
 
 
-def filter_has_parents(parents, term_set, go_dag):
-    filtered_terms = [term for term in term_set if
-                      has_parents(parents, term, go_dag)]
-    return filtered_terms
+def get_up_to_lca(p1, p2):
+    if not p1 or not p2:
+        return p1 + p2
 
+    dag = get_active_instance()
+    p1 = [dag[t] for t in p1]
+    p2 = [dag[t] for t in p2]
+    lcas = get_lca_of_terms([t for ts in [p1, p2] for t in ts])
+    if lcas is None:
+        return [t.id for t in p1 + p2]
 
-# ------------------------------------------------------ #
-#
-#                  ALGORITHM IMPLMENTATIONS
-#
-# ------------------------------------------------------ #
-def get_only_lca(term_sets, go_dag):
-    """
-    Compute the LCAs for two sets of string GO accessions
-    """
-    term_sets = validate_term_sets(term_sets)
-    if len(term_sets) < 2:
-        return []
+    induced_terms = []
+    for term_set in [p1, p2]:
+        induced_terms_for_set = set()
+        for term in term_set:
+            induced = [
+                p for p in term.all_parents
+                if all([p.has_ancestor(lca) for lca in lcas])
+            ]
+            induced_terms_for_set |= set(induced)
+        induced_terms += list(induced_terms_for_set)
 
-    all_common_ancestors = get_all_commmon_ancestors_for_sets(term_sets,
-                                                              go_dag)
-    return get_deepest_term(all_common_ancestors, go_dag) * len(term_sets)
-
-
-def get_lca_and_friends(term_sets, go_dag):
-    """
-    Compute union of sets of string GO accessions and their LCA(s)
-    """
-    term_sets = validate_term_sets(term_sets)
-    if len(term_sets) == 0:
-        return []
-    if len(term_sets) == 1:
-        return term_sets[0]
-
-    leaf_terms = reduce(lambda x, y: x + y, term_sets)
-    return leaf_terms + get_only_lca(term_sets, go_dag)
-
-
-def get_up_to_lca(term_sets, go_dag):
-    """
-    Compute union of the two sets of string GO accessions, their LCAs \n
-    and all the terms along the path to the LCAs.
-    """
-    term_sets = validate_term_sets(term_sets)
-    if len(term_sets) == 0:
-        return []
-    if len(term_sets) == 1:
-        return term_sets[0]
-
-    # print 'Inducing on size: {}'.format(len(term_sets))
-
-    lcas = get_only_lca(term_sets, go_dag)
-    if len(lcas) == 0:
-        # If there's no LCA then no terms can be induced.
-        # This will happen if a protein is
-        # Not annotated with anything for a particular ontology namespace.
-        induced_terms = []
-    else:
-        lca_depth = go_dag[lcas[0]].depth
-        all_ancestors = get_all_ancestors_for_sets(term_sets, go_dag)
-        induced_terms = keep_gt_than_depth(lca_depth, all_ancestors, go_dag)
-        induced_terms = filter_has_parents(lcas, induced_terms, go_dag)
-
-    leaf_terms = reduce(lambda x, y: x + y, term_sets)
-    ulca = induced_terms + leaf_terms + lcas
-
-    # print "Lowest Common:"
-    # for t in lcas:
-    #     print '\t {} --> {}'.format(t, go_dag[t].name)
-    #
-    # print "Induced:"
-    # def count(t, ts):
-    #     return len([i for i in ts if i == t])
-    #
-    # induced_count = {k:count(k, ulca) for k in ulca}
-    # for t in sorted(set(ulca), key=lambda x: go_dag[x].name):
-    #     print '\t {}:{} --> {}'.format(t, induced_count[t], go_dag[t].name)
-
-    return ulca
-
-
-def get_without_lca(term_sets, go_dag):
-    """
-    Computes get_up_to_lca but removes the LCA terms.
-    """
-    term_sets = validate_term_sets(term_sets)
-    if len(term_sets) == 0:
-        return []
-    if len(term_sets) == 1:
-        return term_sets[0]
-
-    ulca = get_up_to_lca(term_sets, go_dag)
-    lca = get_only_lca(term_sets, go_dag)
-
-    return [t for t in ulca if t not in lca]
+    induced_terms += lcas * 2
+    induced_terms += p1
+    induced_terms += p2
+    return [t.id for t in induced_terms]

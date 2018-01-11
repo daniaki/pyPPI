@@ -80,7 +80,7 @@ class HPRDXrefEntry(object):
         return self.__repr__()
 
 
-def parse_ptm(header=False, col_sep='\t'):
+def parse_ptm(file_input=None, header=False, col_sep='\t'):
     """
     Parse HPRD post_translational_modifications file.
 
@@ -89,7 +89,11 @@ def parse_ptm(header=False, col_sep='\t'):
     :return: List of PTMEntry objects.
     """
     ptms = []
-    lines = hprd_ptms()
+    if file_input is None:
+        lines = hprd_ptms()
+    else:
+        lines = file_input
+
     if header:
         next(lines)
 
@@ -105,7 +109,7 @@ def parse_ptm(header=False, col_sep='\t'):
     return ptms
 
 
-def parse_hprd_mapping(header=False, col_sep='\t'):
+def parse_hprd_mapping(file_input=None, header=False, col_sep='\t'):
     """
     Parse a hprd mapping file into HPRDXref Objects.
 
@@ -114,7 +118,10 @@ def parse_hprd_mapping(header=False, col_sep='\t'):
     :return: Dict of HPRDXrefEntry objects indexed by hprd accession.
     """
     xrefs = {}
-    lines = hprd_id_map()
+    if file_input is None:
+        lines = hprd_id_map()
+    else:
+        lines = file_input
     if header:
         next(lines)
 
@@ -132,7 +139,8 @@ def parse_hprd_mapping(header=False, col_sep='\t'):
 
 def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
                       allow_duplicates=False, exclude_labels=None,
-                      min_label_count=None, merge=False):
+                      min_label_count=None, merge=False, ptm_input=None,
+                      mapping_input=None):
     """
     Parse the FLAT_FILES from HPRD into a dataframe.
 
@@ -145,12 +153,8 @@ def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
                   labels into the same entry.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    try:
-        ptms = parse_ptm()
-        xrefs = parse_hprd_mapping()
-    except IOError as e:
-        print(e)
-        return make_interaction_frame([], [], [])
+    ptms = parse_ptm(file_input=ptm_input)
+    xrefs = parse_hprd_mapping(file_input=mapping_input)
 
     sources = []
     targets = []
@@ -172,13 +176,15 @@ def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
         if source is not None:
             sources[i] = sorted(
                 xrefs[source].swissprot_id,
-                key=lambda x: UNIPROT_ORD_KEY.get(x, 4))[0]
+                key=lambda x: UNIPROT_ORD_KEY.get(x[0], 4)
+            )[0]
 
     for i, target in enumerate(targets):
         if target is not None:
             targets[i] = sorted(
                 xrefs[target].swissprot_id,
-                key=lambda x: UNIPROT_ORD_KEY.get(x, 4))[0]
+                key=lambda x: UNIPROT_ORD_KEY.get(x[0], 4)
+            )[0]
 
     interactions = make_interaction_frame(sources, targets, labels)
     interactions = process_interactions(

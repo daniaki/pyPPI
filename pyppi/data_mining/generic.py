@@ -96,30 +96,6 @@ def pina_func(fp):
     return sources, targets, labels
 
 
-def reactome_func(fp):
-    """
-    Parsing function for reactome interaction file format.
-
-    :param fp: Open file handle containing the file to parse.
-    :return: Tuple source, target and label lists.
-    """
-    source_idx = 0
-    target_idx = 3
-    label_idx = 6
-    sources = []
-    targets = []
-    labels = []
-    for line in fp:
-        xs = line.strip().split('\t')
-        source = validate_accession(xs[source_idx].strip().upper())
-        target = validate_accession(xs[target_idx].strip().upper())
-        label = xs[label_idx].strip().lower().replace(' ', '-')
-        sources.append(source)
-        targets.append(target)
-        labels.append(label)
-    return sources, targets, labels
-
-
 def mitab_func(fp):
     """
     Parsing function for psimitab format.

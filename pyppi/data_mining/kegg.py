@@ -1,14 +1,9 @@
-#!/usr/bin/env python
-
 """
-Author: Daniel Esposito
-Contact: danielce90@gmail.com
-
 This module provides functionality to query pathways by keyword, extract
 pathways and parse pathways into a :pd.DataFrame: of interactions
 with reaction labels.
 """
-
+import logging
 import pandas as pd
 from collections import defaultdict
 
@@ -16,16 +11,16 @@ from itertools import product
 from bioservices import KEGG
 from bioservices import UniProt as UniProtMapper
 
-from .uniprot import get_active_instance
+from ..database.managers import ProteinManager
+from ..data import load_kegg_to_up
 from .tools import make_interaction_frame, process_interactions
 
 kegg = KEGG(cache=True)
 uniprot_mapper = UniProtMapper(cache=True)
 kegg.organism = 'hsa'
-kegg.settings.TIMEOUT = 1000
-uniprot_mapper.settings.TIMEOUT = 1000
 links_to_include = ['PCrel', 'PPrel', 'ECrel', 'GGrel']
 types_to_include = ['group', 'gene', 'enzyme']
+logger = logging.getLogger("pyppi")
 
 motif_pathway_ids = [
     'path:hsa04010',
@@ -49,7 +44,7 @@ def reset_kegg():
 
     :return: None
     """
-    kegg.delete_cache()
+    kegg.clear_cache()
 
 
 def reset_uniprot():
@@ -58,7 +53,7 @@ def reset_uniprot():
 
     :return: None
     """
-    uniprot_mapper.delete_cache()
+    uniprot_mapper.clear_cache()
 
 
 def download_pathway_ids(organism):
@@ -73,10 +68,10 @@ def download_pathway_ids(organism):
     return pathways
 
 
-def pathways_to_dataframe(pathway_ids, drop_nan=False, allow_self_edges=False,
-                          allow_duplicates=False, min_label_count=None,
-                          map_to_uniprot=False, trembl=False, merge=False,
-                          verbose=False):
+def pathways_to_dataframe(session, pathway_ids, drop_nan=False,
+                          allow_self_edges=False, allow_duplicates=False,
+                          min_label_count=None, map_to_uniprot=False,
+                          trembl=False, merge=False, verbose=False):
     """
     Download and parse a list of pathway ids into a dataframe of interactions.
 
@@ -90,14 +85,14 @@ def pathways_to_dataframe(pathway_ids, drop_nan=False, allow_self_edges=False,
                    Otherwise, kegg_id is considered unmappable.
     :param merge: Merge entries with identical source and target
                   columns during filter.
-    :param verbose: True to print progress.
+    :param verbose: True to logger.info progress.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     interaction_frames = [pathway_to_dataframe(p_id, verbose)
                           for p_id in pathway_ids]
     interactions = pd.concat(interaction_frames, ignore_index=True)
     if map_to_uniprot:
-        interactions = keggid_to_uniprot(interactions, trembl=trembl)
+        interactions = keggid_to_uniprot(session, interactions, trembl=trembl)
     interactions = process_interactions(
         interactions=interactions,
         drop_nan=drop_nan,
@@ -124,7 +119,7 @@ def pathway_to_dataframe(pathway_id, verbose=False):
     labels = []
 
     if verbose:
-        print("# --- Parsing pathway {} --- #".format(pathway_id))
+        logger.info("# --- Parsing pathway {} --- #".format(pathway_id))
 
     for rel in res['relations']:
         id1 = rel['entry1']
@@ -160,7 +155,7 @@ def pathway_to_dataframe(pathway_id, verbose=False):
     return interactions
 
 
-def keggid_to_uniprot(interactions, trembl=False):
+def keggid_to_uniprot(session, interactions, trembl=False):
     """
     Map KEGG_ID accessions into uniprot. Takes the first if multiple accesssion
     are found, favoring SwissProt over TrEmbl
@@ -173,32 +168,42 @@ def keggid_to_uniprot(interactions, trembl=False):
     sources = [a for a in interactions.source.values]
     targets = [b for b in interactions.target.values]
     unique_ids = list(set(sources) | set(targets))
-    mapping = uniprot_mapper.mapping(fr='KEGG_ID', to='ACC', query=unique_ids)
-    ur = get_active_instance(verbose=True)
+
+    kegg_to_up = load_kegg_to_up()
+    mapping = {k: kegg_to_up[k] for k in unique_ids}
+    pm = ProteinManager(verbose=False, match_taxon_id=None)
 
     for kegg_id, uniprot_ls in mapping.items():
-        status_ls = [ur.review_status(a) for a in uniprot_ls]
+        status_ls = [
+            pm.get_by_uniprot_id(session, a).reviewed for a in uniprot_ls
+        ]
         status_ls = list(zip(uniprot_ls, status_ls))
-        reviewed = [a for (a, s) in status_ls if s.lower() == 'reviewed']
-        unreviewed = [a for (a, s) in status_ls if s.lower() == 'unreviewed']
+        reviewed = [a for (a, s) in status_ls if s is True]
+        unreviewed = [a for (a, s) in status_ls if s is False]
         if len(reviewed) > 0:
             if len(reviewed) > 1:
-                print('Warning: More that one reviewed '
-                      'acc found for {}: {}'.format(kegg_id, reviewed))
+                logger.info(
+                    'Warning: More that one reviewed '
+                    'acc found for {}: {}'.format(kegg_id, reviewed)
+                )
             filtered_map[kegg_id] = reviewed
         else:
-            print('Warning: No reviewed acc found for {}.'.format(kegg_id))
+            logger.info(
+                'Warning: No reviewed acc found for {}.'.format(kegg_id)
+            )
             if trembl and len(unreviewed) > 0:
                 if len(reviewed) > 1:
-                    print('Warning: More that one unreviewed '
-                          'acc found for {}: {}'.format(kegg_id, unreviewed))
+                    logger.info(
+                        'Warning: More that one unreviewed '
+                        'acc found for {}: {}'.format(kegg_id, unreviewed)
+                    )
                 filtered_map[kegg_id] = unreviewed
             else:
-                print('Warning: Could not map {}.'.format(kegg_id))
+                logger.info('Warning: Could not map {}.'.format(kegg_id))
 
     # Remaining kegg_ids that have not mapped to anything go to None
     zipped = list(zip(interactions.source.values,
-                 interactions.target.values, interactions.label.values))
+                      interactions.target.values, interactions.label.values))
     sources = []
     targets = []
     labels = []

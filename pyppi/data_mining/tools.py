@@ -7,8 +7,9 @@ Contact: danielce90@gmail.com
 This module provides functionality to perform filtering and processing on
 interaction dataframes.
 """
-
+import logging
 from collections import Counter
+from collections import OrderedDict
 from itertools import product
 
 import pandas as pd
@@ -16,6 +17,40 @@ from numpy import NaN
 
 from ..base import SOURCE, TARGET, LABEL
 from ..base import PPI
+
+logger = logging.getLogger("pyppi")
+
+
+def _format_label(label):
+    if label is None or str(label) == str(NaN):
+        return None
+    return label.strip().lower().replace(" ", "-")
+
+
+def _format_labels(labels, sort_after_split=True, rejoin_after_split=False,
+                   remove_duplicates_after_split=True, sep=','):
+    labels = [
+        [_format_label(l) for l in ls.strip().split(sep)]
+        for ls in labels
+    ]
+
+    if remove_duplicates_after_split:
+        labels_ = []
+        for ls in labels:
+            ls_ = []
+            for l in ls:
+                if l not in ls_:
+                    ls_.append(l)
+            labels_.append(ls_)
+        labels = labels_
+
+    if sort_after_split:
+        labels = [list(sorted(ls)) for ls in labels]
+
+    if rejoin_after_split:
+        labels = [sep.join(ls) for ls in labels]
+
+    return labels
 
 
 def xy_from_interaction_frame(interactions):
@@ -28,12 +63,12 @@ def xy_from_interaction_frame(interactions):
 
     :return: array-like, shape (n_samples, )
     """
-    X = ppis_from_interaction_frame(interactions, use_set=False)
-    y = labels_from_interaction_frame(interactions, use_set=False)
+    X = ppis_from_interaction_frame(interactions)
+    y = labels_from_interaction_frame(interactions)
     return X, y
 
 
-def labels_from_interaction_frame(interactions, use_set=False):
+def labels_from_interaction_frame(interactions):
     """
     Utility function to create an iterable of PPI objects from an interaction
     dataframe.
@@ -47,15 +82,15 @@ def labels_from_interaction_frame(interactions, use_set=False):
         List or Set of string objects.
     """
     df = interactions
-    labels = [l.lower().replace(" ", '-').split(',') for l in df[LABEL]]
-    if use_set:
-        return set(labels)
+    labels = _format_labels(
+        df[LABEL], sort_after_split=True, remove_duplicates_after_split=True
+    )
     return labels
 
 
-def ppis_from_interaction_frame(interactions, use_set=False):
+def ppis_from_interaction_frame(interactions):
     """
-    Utility function to create an iterable of PPI objects from an interaction
+    Utility function to create an iterable of tuples from an interaction
     dataframe.
 
     :param interactions: pd.DataFrame
@@ -67,15 +102,13 @@ def ppis_from_interaction_frame(interactions, use_set=False):
         List or Set of PPI objects.
     """
     df = interactions
-    ppis = [tuple(PPI(a, b)) for a, b in zip(df[SOURCE], df[TARGET])]
-    if use_set:
-        return set(ppis)
+    ppis = [(a, b) for a, b in zip(df[SOURCE], df[TARGET])]
     return ppis
 
 
 def make_interaction_frame(sources, targets, labels):
     """
-    Wrapper to construct a PPI dataframe.
+    Wrapper to construct a non-directional PPI dataframe.
 
     :param sources: Interactor ID that is the source node.
     :param targets: Interactor ID that is the target node.
@@ -85,12 +118,12 @@ def make_interaction_frame(sources, targets, labels):
     ppis = [tuple(PPI(a, b)) for a, b in zip(sources, targets)]
     sources = [a for a, _ in ppis]
     targets = [b for _, b in ppis]
-    labels = [l.lower().replace(" ", '-') for l in labels]
-    interactions = dict(
-        source=sources,
-        target=targets,
-        label=labels
-    )
+    labels = [_format_label(l) for l in labels]
+    interactions = {
+        SOURCE: sources,
+        TARGET: targets,
+        LABEL: labels
+    }
     return pd.DataFrame(data=interactions, columns=[SOURCE, TARGET, LABEL])
 
 
@@ -161,7 +194,7 @@ def remove_intersection(interactions, other):
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     selector = set()
-    ppis_in_other = {}
+    ppis_in_other = OrderedDict()
     other_ppis = list(zip(other[SOURCE], other[TARGET], other[LABEL]))
     for (source, target, label) in other_ppis:
         a, b = sorted([source, target])
@@ -189,8 +222,6 @@ def remove_labels(interactions, labels_to_exclude):
     :param labels_to_exclude: string list of subtypes to exclude.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    print('Warning: Removing labels should be done before merging labels '
-          'as the merge can result in new concatenated labels.')
     labels = interactions.label.values
     selector = [(l not in labels_to_exclude) for l in labels]
     df = interactions.loc[selector, ]
@@ -207,9 +238,6 @@ def remove_min_counts(interactions, min_count):
     :param min_count: Minimum count threshold to keep label.
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
-    print('Warning: Removing low count labels '
-          'should be done before merging labels '
-          'as the merge can result in many new low count labels.')
     counts = Counter(interactions.label.values)
     labels_to_exclude = set([k for k, v in counts.items() if v < min_count])
     df = remove_labels(interactions, labels_to_exclude)
@@ -241,20 +269,21 @@ def merge_labels(interactions):
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     df = interactions.reset_index(drop=True, inplace=False)
-    merged_ppis = {}
+    merged_ppis = OrderedDict()
     ppis = [tuple(PPI(s, t)) for (s, t) in zip(df.source, df.target)]
 
     for (s, t), label in zip(ppis, interactions.label):
         if (s, t) in merged_ppis:
-            labels = sorted(set(merged_ppis[(s, t)].split(',') + [label]))
-            merged_ppis[(s, t)] = ','.join(labels)
+            merged_ppis[(s, t)].append(_format_label(label))
         else:
-            merged_ppis[(s, t)] = label.lower().replace(" ", '-')
+            merged_ppis[(s, t)] = [_format_label(label)]
 
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
-    labels = [l.lower().replace(" ", '-') for l in merged_ppis.values()]
-
+    labels = [
+        ','.join(list(sorted(set(_format_label(l) for l in ls))))
+        for ls in list(merged_ppis.values())
+    ]
     interactions = make_interaction_frame(sources, targets, labels)
     return interactions
 
@@ -267,7 +296,7 @@ def remove_duplicates(interactions):
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     df = interactions
-    merged_ppis = {}
+    merged_ppis = OrderedDict()
     ppis = [tuple(PPI(s, t)) for (s, t) in zip(df.source, df.target)]
     merged = any([len(l.split(',')) > 1 for l in df[LABEL]])
 
@@ -317,7 +346,7 @@ def process_interactions(interactions, drop_nan, allow_self_edges,
         interactions = remove_duplicates(interactions)
     if exclude_labels:
         interactions = remove_labels(interactions, exclude_labels)
-    if min_counts:
+    if min_counts:  # This must come before merge.
         interactions = remove_min_counts(interactions, min_count=min_counts)
     if merge:
         interactions = merge_labels(interactions)
