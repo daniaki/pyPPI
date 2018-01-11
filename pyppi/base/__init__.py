@@ -10,7 +10,6 @@ from itertools import islice
 import math
 
 from ..data import load_ptm_labels
-from ..data_mining.uniprot import UniProt
 from ..models import supported_estimators
 
 P1 = 'protein_a'
@@ -158,6 +157,7 @@ def query_doctop_dict(docopt_dict, key):
 
 def parse_args(docopt_args):
     parsed = {}
+    from ..database.models import Interaction
 
     # String processing
     if query_doctop_dict(docopt_args, '--directory'):
@@ -167,14 +167,16 @@ def parse_args(docopt_args):
             parsed['directory'] = './'
     if query_doctop_dict(docopt_args, '--label'):
         if docopt_args['--label'] not in load_ptm_labels():
-            print("Invalid label selection. Select one of: ".format(
+            sys.stdout.write("Invalid label selection. Select one of: ".format(
                 ' ,'.join(load_ptm_labels())
             ))
             sys.exit(0)
         parsed['label'] = docopt_args['--label']
     backend = query_doctop_dict(docopt_args, '--backend')
     if backend and backend not in ['threading', 'multiprocessing']:
-        print("Backend must be one of 'threading' or 'multiprocessing'.")
+        sys.stdout.write(
+            "Backend must be one of 'threading' or 'multiprocessing'."
+        )
         sys.exit(0)
     else:
         parsed['backend'] = backend or 'multiprocessing'
@@ -182,27 +184,39 @@ def parse_args(docopt_args):
     # Selection parsing
     selection = []
     if query_doctop_dict(docopt_args, '--interpro'):
-        selection.append(UniProt.data_types().INTERPRO.value)
+        selection.append(Interaction.columns().INTERPRO.value)
     if query_doctop_dict(docopt_args, '--pfam'):
-        selection.append(UniProt.data_types().PFAM.value)
+        selection.append(Interaction.columns().PFAM.value)
     if query_doctop_dict(docopt_args, '--mf'):
-        selection.append(UniProt.data_types().GO_MF.value)
+        if query_doctop_dict(docopt_args, '--induce'):
+            selection.append(Interaction.columns().ULCA_GO_MF.value)
+        else:
+            selection.append(Interaction.columns().GO_MF.value)
     if query_doctop_dict(docopt_args, '--cc'):
-        selection.append(UniProt.data_types().GO_CC.value)
+        if query_doctop_dict(docopt_args, '--induce'):
+            selection.append(Interaction.columns().ULCA_GO_CC.value)
+        else:
+            selection.append(Interaction.columns().GO_CC.value)
     if query_doctop_dict(docopt_args, '--bp'):
-        selection.append(UniProt.data_types().GO_BP.value)
+        if query_doctop_dict(docopt_args, '--induce'):
+            selection.append(Interaction.columns().ULCA_GO_BP.value)
+        else:
+            selection.append(Interaction.columns().GO_BP.value)
     if len(selection) == 0:
-        print("Must have at least one feature.")
+        sys.stdout.write("Must have at least one feature.")
         sys.exit(0)
     parsed['selection'] = selection
 
     # bool parsing
     parsed['abs'] = query_doctop_dict(docopt_args, '--abs')
-    parsed['induce'] = query_doctop_dict(docopt_args, '--interpro')
+    parsed['induce'] = query_doctop_dict(docopt_args, '--induce')
     parsed['verbose'] = query_doctop_dict(docopt_args, '--verbose')
     parsed['use_cache'] = query_doctop_dict(docopt_args, '--use_cache')
     parsed['retrain'] = query_doctop_dict(docopt_args, '--retrain')
     parsed['binary'] = query_doctop_dict(docopt_args, '--binary')
+    parsed['clear_cache'] = query_doctop_dict(docopt_args, '--clear_cache')
+    parsed['init_database'] = query_doctop_dict(docopt_args, '--init_database')
+    parsed['abs'] = query_doctop_dict(docopt_args, '--abs')
     parsed['cost_sensitive'] = query_doctop_dict(
         docopt_args, '--cost_sensitive'
     )
@@ -238,32 +252,52 @@ def parse_args(docopt_args):
             fp.close()
             parsed['output'] = docopt_args['--output']
         except IOError as e:
-            print(e)
+            sys.stdout.write(e)
             sys.exit(0)
 
-    if query_doctop_dict(docopt_args, '--input') == 'None':
-        parsed['input'] = docopt_args['--input']
+    if query_doctop_dict(docopt_args, '--input') in (None, 'None'):
+        parsed['input'] = None
     elif query_doctop_dict(docopt_args, '--input'):
         try:
-            if query_doctop_dict(docopt_args, '--directory'):
-                fp = open(
-                    docopt_args['--directory'] + docopt_args['--input'], 'r')
-            else:
-                fp = open(docopt_args['--input'], 'r')
+            # if query_doctop_dict(docopt_args, '--directory'):
+            #     fp = open(
+            #         docopt_args['--directory'] + docopt_args['--input'], 'r')
+            # else:
+            fp = open(docopt_args['--input'], 'r')
             fp.close()
             parsed['input'] = docopt_args['--input']
         except IOError as e:
-            print(e)
+            sys.stdout.write(e)
             sys.exit(0)
 
     # Model parsing
     model = query_doctop_dict(docopt_args, '--model')
     if model and (model not in supported_estimators()):
-        print('Classifier not supported. Please choose one of:'.format(
-            '\t\n'.join(supported_estimators().keys())
-        ))
+        sys.stdout.write(
+            'Classifier not supported. Please choose one of: {}'.format(
+                '\t\n'.join(supported_estimators().keys())
+            ))
         sys.exit(0)
     else:
         parsed['model'] = model
-
     return parsed
+
+
+def delete_cache():
+    from ..data_mining.kegg import reset_kegg, reset_uniprot
+    reset_kegg()
+    reset_uniprot()
+
+
+def delete_database():
+    from ..database.models import Protein, Interaction
+    from ..database import begin_transaction, Base, ENGINE
+    from ..data import default_db_path
+    with begin_transaction() as session:
+        session.query(Protein).delete()
+        session.query(Interaction).delete()
+        try:
+            session.commit()
+        except:
+            session.rollback()
+            raise
