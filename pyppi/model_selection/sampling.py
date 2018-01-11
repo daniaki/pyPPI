@@ -10,7 +10,6 @@ import numpy as np
 from ..base import chunk_list
 
 from sklearn.utils import check_random_state
-from sklearn.utils.fixes import bincount
 from sklearn.model_selection._split import _BaseKFold, check_array
 
 
@@ -158,7 +157,7 @@ class IterativeStratifiedKFold(_BaseKFold):
             y = np.array([xy[1] for xy in Xy])
 
         unique_y, y_inversed = np.unique(y, return_inverse=True)
-        y_counts = bincount(y_inversed)
+        y_counts = np.bincount(y_inversed)
         min_groups = np.min(y_counts)
         if np.all(self.n_splits > y_counts):
             raise ValueError("All the n_groups for individual classes"
