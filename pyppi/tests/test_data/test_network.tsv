@@ -1,0 +1,11 @@
+source,target,label
+O95398,P51828,activation
+O95398,P51828,binding/association
+O43749,O60262,activation
+Q8NHA4,Q13131,activation
+Q8NHA4,Q13131,binding/association
+P35626,Q8NHA4,phosphorylation
+Q8NHA4,P35626,phosphorylation
+P54840,Q13131,inhibition
+P54840,P54840,inhibition
+P35626,O95398,None
