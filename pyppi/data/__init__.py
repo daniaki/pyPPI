@@ -17,8 +17,9 @@ hprd_ptms_txt = os.path.join(PATH, 'hprd/POST_TRANSLATIONAL_MODIFICATIONS.txt')
 uniprot_trembl_dat = os.path.join(PATH, 'uniprot_trembl_human.dat.gz')
 uniprot_sprot_dat = os.path.join(PATH, 'uniprot_sprot_human.dat.gz')
 swissprot_hsa_path = os.path.join(PATH, 'hsa_swiss-prot.list')
-uniprot_hsa_path = os.path.join(PATH, 'uniprot_hsa.list')
-obo_file = os.path.join(PATH, 'go.obo')
+uniprot_hsa_path = os.path.join(PATH, 'hsa_uniprot.list')
+default_db_path = os.path.join(PATH, 'pyppi.db')
+obo_file = os.path.join(PATH, 'go.obo.gz')
 ipr_snames_path = os.path.join(PATH, 'ipr_short_names.dat')
 ipr_lnames_path = os.path.join(PATH, 'ipr_names.dat')
 pfam_names_path = os.path.join(PATH, 'Pfam-A.clans.tsv.gz')
@@ -142,12 +143,6 @@ def hsa_uniprot_map():
     return hsa_sp
 
 
-def load_go_dag(optional_attrs=None):
-    """Load an obo file into a goatools GODag object"""
-    default = optional_attrs or ['defn', 'is_a', 'relationship', 'part_of']
-    return obo_parser.GODag(obo_file, optional_attrs=default)
-
-
 def ipr_name_map(short_names=True):
     """
     Parse the interpro list into a dictionary. Expects uppercase accessions.
@@ -238,3 +233,15 @@ def read_pd_pickle(path):
 
 def pickle_pd_object(obj, path):
     return obj.to_pickle(path)
+
+
+def load_kegg_to_up():
+    mapping = {}
+    with open(uniprot_hsa_path, 'rt') as fp:
+        for line in fp:
+            hsa, up, _ = line.strip().split('\t')
+            if mapping.get(hsa.strip()):
+                mapping[hsa.strip()] += [up.strip()[3:]]
+            else:
+                mapping[hsa.strip()] = [up.strip()[3:]]
+    return mapping
