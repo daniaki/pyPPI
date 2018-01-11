@@ -99,7 +99,7 @@ class InteractionNetwork(object):
         Filter the interactions to contain those with predicted `label` at or
         over the `threshold`.
 
-        :param label: sting
+        :param label: string
             A ptm label.
         :param threshold: float, optional
             Minimum prediction probability.
@@ -133,8 +133,9 @@ class InteractionNetwork(object):
         accessions in `accesion_list` and with predictions at or
         over the `threshold`.
 
-        :param accesion_list: sting
-            A ptm label.
+        :param accesion_list: string
+            A list of uniprot/gene accessions to induce a network from.
+            Network will induce all edges incident upon these accessions.
         :param threshold: float, optional
             Minimum prediction probability.
         :param genes: boolean, optional
@@ -153,7 +154,7 @@ class InteractionNetwork(object):
         edges = [sorted([p1, p2]) for (p1, p2) in zip(df[a], df[b])]
         edge_idx = np.asarray(
             [i for i, (p1, p2) in enumerate(edges)
-             if p1 in accesion_list and p2 in accesion_list] # or?
+             if p1 in accesion_list and p2 in accesion_list]  # or?
         )
         if len(edge_idx) == 0:
             ValueError("No subnetwork could be induced with the given"
@@ -203,7 +204,7 @@ class InteractionNetwork(object):
         accessions = [vid_name_loopup[vid] for vid in vids]
         gene_names = [self.gene_names_[a] for a in accessions]
         n_nodes = len(nodes)
-        betweenness = [(2 * betwn)/(n_nodes*n_nodes - 3*n_nodes + 2)
+        betweenness = [(2 * betwn) / (n_nodes * n_nodes - 3 * n_nodes + 2)
                        for betwn in graph.betweenness()]
         cyto_n_attrs = pd.DataFrame(Od([
             ('Name', accessions),
