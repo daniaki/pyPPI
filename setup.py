@@ -1,12 +1,15 @@
 from setuptools import setup
 
+import sys
 import os
 import glob
 import shutil
 
+
 # Copy script files
-home_folder = os.path.normpath(os.path.join(os.path.expanduser('~'), '.pyppi/'))
-print("Copying data files to '{}'".format(home_folder))
+home_folder = os.path.normpath(
+    os.path.join(os.path.expanduser('~'), '.pyppi/'))
+sys.stdout.write("Copying data files to '{}'".format(home_folder))
 os.makedirs(home_folder, exist_ok=True)
 for file in glob.glob("data/*.*"):
     shutil.copy(file, home_folder)
@@ -34,9 +37,11 @@ setup(
         'pyppi.base',
         'pyppi.data',
         'pyppi.data_mining',
+        'pyppi.database',
         'pyppi.model_selection',
         'pyppi.models',
         'pyppi.network_analysis',
+        'pyppi.tests',
     ],
     install_requires=[
         'scikit-learn>=0.18.1',
@@ -44,10 +49,8 @@ setup(
         'numpy>=1.11.2',
         'scipy>=0.18.1',
         'bioservices>=1.4.14',
-        'goatools>=0.6.10',
         'biopython>=1.68',
         'python-igraph>=0.7.1.post6',
-        'scikit-multilearn>=0.0.5',
         'docopt>=0.6.2'
     ]
 )
