@@ -18,6 +18,7 @@ __pycache__/*
 build/
 dist/
 pyPPI.egg-info/
+pyppi.egg-info/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
