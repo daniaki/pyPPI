@@ -161,7 +161,7 @@ class InteractionManager(object):
         if query_set.count() > 1:
             raise ValueError(
                 "More than one Interaction found Database integrity "
-                "has been compromised."
+                "has been compromised. Abandon ship! Abandon ship!"
             )
         if self.match_taxon_id is not None:
             query_set = query_set.filter_by(taxon_id=self.match_taxon_id)

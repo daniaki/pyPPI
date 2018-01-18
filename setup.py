@@ -50,7 +50,6 @@ setup(
         'scipy>=0.18.1',
         'bioservices>=1.4.14',
         'biopython>=1.68',
-        'python-igraph>=0.7.1.post6',
         'docopt',
         'sqlalchemy'
     ]
