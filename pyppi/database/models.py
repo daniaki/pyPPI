@@ -305,15 +305,20 @@ class Interaction(Base):
         self.pfam = pfam
 
     def __repr__(self):
+        from ..database import begin_transaction
+        with begin_transaction() as session:
+            source_uid = session.query(Protein).get(self.source)
+            target_uid = session.query(Protein).get(self.target)
         string = (
             "<Interaction("
-            "id={}, source={}, target={}, training={}, holdout={}, "
+            "id={}, source={} ({}), target={} ({}), training={}, holdout={}, "
             "interactome={}, label={}"
             ")"
             ">"
         )
         return string.format(
-            self.id, self.source, self.target,
+            self.id, self.source, None or source_uid.uniprot_id,
+            self.target, None or target_uid.uniprot_id,
             self.is_training, self.is_holdout,
             self.is_interactome, self.label
         )
