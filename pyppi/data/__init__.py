@@ -8,7 +8,6 @@ import json
 import os
 import gzip
 import pandas as pd
-from goatools import obo_parser
 
 PATH = os.path.normpath(os.path.join(os.path.expanduser('~'), '.pyppi/'))
 
