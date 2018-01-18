@@ -51,6 +51,7 @@ setup(
         'bioservices>=1.4.14',
         'biopython>=1.68',
         'docopt',
-        'sqlalchemy'
+        'sqlalchemy',
+        'joblib'
     ]
 )
