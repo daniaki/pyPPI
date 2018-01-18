@@ -32,6 +32,7 @@ Options:
   --directory=DIR   Output directory [default: ./results/]
 """
 
+import sys
 import json
 import logging
 import pandas as pd
@@ -42,9 +43,7 @@ from operator import itemgetter
 from collections import Counter
 from datetime import datetime
 from docopt import docopt
-from joblib import Parallel, delayed
 import warnings
-import gc
 
 from pyppi.base import parse_args, su_make_dir
 from pyppi.data import load_network_from_path, load_ptm_labels
@@ -69,6 +68,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.metrics import (
@@ -89,7 +89,8 @@ logger.setLevel(logging.INFO)
 logger.propagate = False
 
 
-def train_fold(X, y, labels, fold_iter, use_binary, model, hyperparam_iter, params):
+def train_fold(X, y, labels, fold_iter, use_binary, model,
+               hyperparam_iter, rng, params):
     logger.info("Fitting fold {}.".format(fold_iter + 1))
 
     # Prepare all training and testing data
@@ -105,17 +106,21 @@ def train_fold(X, y, labels, fold_iter, use_binary, model, hyperparam_iter, para
         logger.info("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
-            random_state=400
+            random_state=rng.randint(sys.maxsize)
         )
         clf = RandomizedSearchCV(
             estimator=model_to_tune,
             scoring='f1',
             error_score=0,
-            cv=2,
+            cv=StratifiedKFold(
+                n_splits=3,
+                shuffle=True,
+                random_state=rng.randint(sys.maxsize)
+            ),
             n_iter=hyperparam_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=401,
+            random_state=rng.randint(sys.maxsize),
             param_distributions=params,
         )
         with warnings.catch_warnings():
@@ -204,7 +209,7 @@ if __name__ == "__main__":
     logger.info("Setting up preliminaries and the statistics arrays")
     logger.info("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
-    seeds = range(42, 42 + n_iter, 1)
+    rng = np.random.RandomState(seed=42)
     top_features = {
         l: {
             i: {
@@ -240,7 +245,7 @@ if __name__ == "__main__":
     for bs_iter in range(n_iter):
         logger.info("Fitting bootstrap iteration {}.".format(bs_iter + 1))
         cv = IterativeStratifiedKFold(
-            n_splits=n_splits, random_state=seeds[bs_iter]
+            n_splits=n_splits, random_state=rng.randint(sys.maxsize)
         )
         cv = list(cv.split(X_train, y_train))
 
@@ -254,6 +259,7 @@ if __name__ == "__main__":
                 use_binary=use_binary,
                 model=model,
                 hyperparam_iter=hyperparam_iter,
+                rng=rng,
                 params=params
             )
             fit_results.append(clf_tuple)
