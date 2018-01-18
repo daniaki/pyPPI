@@ -119,14 +119,14 @@ def train_fold(X, y, labels, fold_iter, use_binary, model, hyperparam_iter, para
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             try:
-                clf.fit(X, y)
+                clf.fit(X, y[:, i])
                 requires_dense = False
             except TypeError:
                 logger.info(
                     "Error fitting sparse input. Converting to dense input."
                 )
                 X = X.todense()
-                clf.fit(X, y)
+                clf.fit(X, y[:, i])
                 requires_dense = True
         estimators.append(clf)
     return estimators, vectorizer, requires_dense
@@ -201,15 +201,15 @@ if __name__ == "__main__":
     # Set up the numpy arrays and dictionarys for statistics etc
     # -------------------------------------------------------------------- #
     logger.info("Setting up preliminaries and the statistics arrays")
-    logger.info("Found classes {}".format(', '.join(mlb.classes)))
-    n_classes = len(mlb.classes)
+    logger.info("Found classes {}".format(', '.join(mlb.classes_)))
+    n_classes = len(mlb.classes_)
     seeds = range(42, 42 + n_iter, 1)
     top_features = {
         l: {
             i: {
                 j: [] for j in range(n_splits)
             } for i in range(n_iter)
-        } for l in mlb.classes
+        } for l in mlb.classes_
     }
     params = get_parameter_distribution_for_model(model)
 
@@ -249,7 +249,7 @@ if __name__ == "__main__":
             clf_tuple = train_fold(
                 X=X_train[train_idx], 
                 y=y_train[train_idx],
-                labels=labels,
+                labels=mlb.classes_,
                 fold_iter=fold_iter,
                 use_binary=use_binary, 
                 model=model, 
@@ -265,7 +265,7 @@ if __name__ == "__main__":
             y_valid_f_proba = []
             y_test_f_proba = []
 
-            for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes)):
+            for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes_)):
                 logger.info("\tComputing binary performance for label {}.".format(label))
 
                 X_valid_l = vectorizer.transform(X_train[validation_idx])
@@ -357,11 +357,11 @@ if __name__ == "__main__":
 
     # Binary Statistics
     # -------------------------------------------------------------------- #
-    dim_a_size = len(mlb.classes) * 2 * len(binary_scoring_funcs)
+    dim_a_size = len(mlb.classes_) * 2 * len(binary_scoring_funcs)
     dim_b_size = n_iter * n_splits
 
     func_names = [n for n, _ in binary_scoring_funcs]
-    iterables = [mlb.classes, ["validation", "holdout"], func_names]
+    iterables = [mlb.classes_, ["validation", "holdout"], func_names]
     names = ['Labels', 'Condition', 'Metric']
     tuples = list(product(*iterables))
     index = pd.MultiIndex.from_tuples(tuples, names=names)
@@ -411,7 +411,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------- #
     logger.info("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
-        fp.write(",".join(mlb.classes))
+        fp.write(",".join(mlb.classes_))
 
     logging.info("Writing top features to file.")
     with open('{}/{}'.format(direc, 'top_features.json'), 'wt') as fp:
@@ -420,18 +420,18 @@ if __name__ == "__main__":
 
     # Compute label similarity heatmaps and label correlation heatmap
     # -------------------------------------------------------------------- #
-    label_features = {l: set() for l in mlb.classes}
-    for idx, label in enumerate(mlb.classes):
+    label_features = {l: set() for l in mlb.classes_}
+    for idx, label in enumerate(mlb.classes_):
         selector = y_train[:, idx] == 1
         positive_cases = X_train[selector]
         for feature_string in positive_cases:
             unique = set(feature_string.split(','))
             label_features[label] |= unique
             
-    j_v_similarity_matrix = np.zeros((len(mlb.classes), len(mlb.classes)))
-    d_v_similarity_matrix = np.zeros((len(mlb.classes), len(mlb.classes)))
-    for i, class_1 in enumerate(sorted(mlb.classes)):
-        for j, class_2 in enumerate(sorted(mlb.classes)):
+    j_v_similarity_matrix = np.zeros((len(mlb.classes_), len(mlb.classes_)))
+    d_v_similarity_matrix = np.zeros((len(mlb.classes_), len(mlb.classes_)))
+    for i, class_1 in enumerate(sorted(mlb.classes_)):
+        for j, class_2 in enumerate(sorted(mlb.classes_)):
             set_1 = label_features[class_1]
             set_2 = label_features[class_2]
             jaccard = len(set_1 & set_2) / len(set_1 | set_2)
@@ -444,15 +444,15 @@ if __name__ == "__main__":
     # Where the columns and rows are in alphabetical order.
     label_correlation, _ = sp.stats.spearmanr(y_train)
     s_label_correlation = np.zeros_like(label_correlation)
-    for i, class_1 in enumerate(sorted(mlb.classes)):
-        for j, class_2 in enumerate(sorted(mlb.classes)):
-            index_1 = mlb.classes.index(class_1)
-            index_2 = mlb.classes.index(class_2)
+    for i, class_1 in enumerate(sorted(mlb.classes_)):
+        for j, class_2 in enumerate(sorted(mlb.classes_)):
+            index_1 = mlb.classes_.index(class_1)
+            index_2 = mlb.classes_.index(class_2)
             s_label_correlation[i, j] = label_correlation[index_1, index_2]
 
 
     header = "Columns: {}\nRows: {}".format(
-        ','.join(sorted(mlb.classes)), ','.join(sorted(mlb.classes))
+        ','.join(sorted(mlb.classes_)), ','.join(sorted(mlb.classes_))
     )
     np.savetxt(
         X=j_v_similarity_matrix,
@@ -474,7 +474,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------- #
     holdout_labels = ('dephosphorylation', 'phosphorylation')
     holdout_label_features = {l: set() for l in holdout_labels}
-    for idx, label in enumerate(mlb.classes):
+    for idx, label in enumerate(mlb.classes_):
         if label in holdout_labels:
             selector = y_test[:, idx] == 1
             positive_cases = X_test[selector]
@@ -482,10 +482,10 @@ if __name__ == "__main__":
                 unique = set(feature_string.split(','))
                 holdout_label_features[label] |= unique
             
-    j_t_similarity_matrix = np.zeros((2, len(mlb.classes)))
-    d_t_similarity_matrix = np.zeros((2, len(mlb.classes)))
+    j_t_similarity_matrix = np.zeros((2, len(mlb.classes_)))
+    d_t_similarity_matrix = np.zeros((2, len(mlb.classes_)))
     for i, class_1 in enumerate(sorted(holdout_labels)):
-        for j, class_2 in enumerate(sorted(mlb.classes)):
+        for j, class_2 in enumerate(sorted(mlb.classes_)):
             set_1 = holdout_label_features[class_1]
             set_2 = label_features[class_2]
             jaccard = len(set_1 & set_2) / len(set_1 | set_2)
@@ -494,7 +494,7 @@ if __name__ == "__main__":
             d_t_similarity_matrix[i, j] = dice
             
     header = "Columns: {}\nRows: {}".format(
-        ','.join(sorted(mlb.classes)), ','.join(sorted(holdout_labels))
+        ','.join(sorted(mlb.classes_)), ','.join(sorted(holdout_labels))
     )
     np.savetxt(
         X=j_t_similarity_matrix, 
