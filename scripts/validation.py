@@ -88,7 +88,7 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
-def train_fold(X, y, label, fold_iter, use_binary, model, hyperparam_iter, params):
+def train_fold(X, y, labels, fold_iter, use_binary, model, hyperparam_iter, params):
     logger.info("Fitting fold {}.".format(fold_iter + 1))
 
     # Prepare all training and testing data
