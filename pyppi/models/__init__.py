@@ -41,7 +41,11 @@ def get_parameter_distribution_for_model(model):
 
     params = {}
     if model == 'SVC':
-        params['C'] = np.arange(0.01, 20, step=0.01)
+        params['C'] = list(np.arange(0.0001, 0.001, step=0.0001)) + \
+            list(np.arange(0.001, 0.01, step=0.001)) + \
+            list(np.arange(0.01, 0.1, step=0.01)) + \
+            list(np.arange(0.1, 1.0, step=0.1)) + \
+            list(np.arange(1.0, 10.5, step=0.5))
         params['shrinking'] = [False, True]
         params['kernel'] = ['linear', 'poly', 'rbf', 'sigmoid']
         params['degree'] = np.arange(1, 10, step=1)
@@ -49,22 +53,33 @@ def get_parameter_distribution_for_model(model):
         params['coef0'] = np.arange(0.01, 1, step=0.01)
 
     elif model == 'LogisticRegression':
-        params['C'] = np.arange(0.01, 20, step=0.01)
+        params['C'] = list(np.arange(0.0001, 0.001, step=0.0001)) + \
+            list(np.arange(0.001, 0.01, step=0.001)) + \
+            list(np.arange(0.01, 0.1, step=0.01)) + \
+            list(np.arange(0.1, 1.0, step=0.1)) + \
+            list(np.arange(1.0, 10.5, step=0.5))
         params['penalty'] = ['l1', 'l2']
 
     elif model == 'ElasticNet':
-        params['alpha'] = np.arange(0.01, 20, step=0.01)
-        params['l1_ratio'] = np.arange(0, 1.01, step=0.01)
+        params['alpha'] = list(np.arange(0.0001, 0.001, step=0.0001)) + \
+            list(np.arange(0.001, 0.01, step=0.001)) + \
+            list(np.arange(0.01, 0.1, step=0.01)) + \
+            list(np.arange(0.1, 1.0, step=0.1)) + \
+            list(np.arange(1.0, 10.5, step=0.5))
+        params['l1_ratio'] = list(np.arange(0.0001, 0.001, step=0.0001)) + \
+            list(np.arange(0.001, 0.01, step=0.001)) + \
+            list(np.arange(0.01, 0.1, step=0.01)) + \
+            list(np.arange(0.1, 1.0, step=0.1))
         params['normalize'] = [False, True]
 
     elif model == 'RandomForestClassifier':
-        params["max_features"] = np.arange(0.01, 1.01, step=0.01)
-        params["n_estimators"] = np.arange(32, 257, step=1)
-        params["bootstrap"] = [True, False]
+        params["n_estimators"] = np.arange(32, 528, step=16)
         params["criterion"] = ["gini", "entropy"]
-        params["min_samples_split"] = np.arange(2, 11, step=1)
-        params["min_samples_leaf"] = np.arange(2, 11, step=1)
-        params["min_weight_fraction_leaf"] = np.arange(0, 0.5, step=0.01)
+        params['max_features'] = list(np.arange(0.0001, 0.001, step=0.0001)) + \
+            list(np.arange(0.001, 0.01, step=0.001)) + \
+            list(np.arange(0.01, 0.1, step=0.01)) + \
+            list(np.arange(0.1, 1.05, step=0.05))
+        params["min_samples_leaf"] = np.arange(2, 21, step=1)
         params["class_weight"] = ['balanced', 'balanced_subsample']
 
     elif model == 'OneClassSVM':
@@ -82,7 +97,7 @@ def get_parameter_distribution_for_model(model):
         )
         for key, value in base_params.items():
             params["base_estimator__" + key] = value
-        params["n_estimators"] = np.arange(32, 257, step=1)
+        params["n_estimators"] = np.arange(32, 272, step=16)
         params["learning_rate"] = np.arange(0.01, 3, step=0.01)
         params["algorithm"] = ['SAMME', 'SAMME.R']
 
@@ -139,13 +154,19 @@ def get_parameter_distribution_for_model(model):
     return params
 
 
-def make_classifier(algorithm, class_weight='balanced', random_state=None):
+def make_classifier(algorithm, class_weight='balanced', random_state=None, n_jobs=1):
     supported = supported_estimators()
     estimator = supported.get(algorithm, LogisticRegression)()
+    if isinstance(estimator, LogisticRegression):
+        estimator.set_params(**{'solver': "saga"})
     if hasattr(estimator, 'n_jobs'):
-        estimator.set_params(**{'n_jobs': 1})
+        estimator.set_params(**{'n_jobs': n_jobs})
+    if hasattr(estimator, 'max_iter'):
+        estimator.set_params(**{'max_iter': 2500})
     if hasattr(estimator, 'class_weight'):
         estimator.set_params(**{'class_weight': class_weight})
+    if hasattr(estimator, 'bootstrap'):
+        estimator.set_params(**{'bootstrap': True})
     if hasattr(estimator, 'random_state'):
         estimator.set_params(**{'random_state': random_state})
     if hasattr(estimator, 'probability'):

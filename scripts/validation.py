@@ -88,7 +88,7 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
-def train_fold(X, y, fold_iter, use_binary, model, hyperparam_iter, params):
+def train_fold(X, y, label, fold_iter, use_binary, model, hyperparam_iter, params):
     logger.info("Fitting fold {}.".format(fold_iter + 1))
 
     # Prepare all training and testing data
@@ -97,39 +97,39 @@ def train_fold(X, y, fold_iter, use_binary, model, hyperparam_iter, params):
         lowercase=False, stop_words=[':', 'GO']
     )
     X = vectorizer.fit_transform(X)
-
-    # Build and fit classifier
-    model_to_tune = make_classifier(
-        algorithm=model, 
-        random_state=400
-    )
-    base_est = RandomizedSearchCV(
-        estimator=model_to_tune,
-        scoring='f1', 
-        error_score=0,
-        cv=3,
-        n_iter=hyperparam_iter, 
-        n_jobs=1, 
-        refit=True, 
-        random_state=401, 
-        param_distributions=params,
-    )
-    clf = OneVsRestClassifier(
-        estimator=base_est,
-        n_jobs=1,
-    )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            clf.fit(X, y)
-            return clf, vectorizer, False
-        except TypeError:
-            logger.info(
-                "Error fitting sparse input. Converting to dense input."
-            )
-            X = X.todense()
-            clf.fit(X, y)
-            return clf, vectorizer, True
+   
+    requires_dense = False
+    estimators = []
+    for i, label in enumerate(labels):
+        model_to_tune = make_classifier(
+            algorithm=model, 
+            random_state=400
+        )
+        clf = RandomizedSearchCV(
+            estimator=model_to_tune,
+            scoring='f1', 
+            error_score=0,
+            cv=2,
+            n_iter=hyperparam_iter, 
+            n_jobs=n_jobs, 
+            refit=True, 
+            random_state=401, 
+            param_distributions=params,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                clf.fit(X, y)
+                requires_dense = False
+            except TypeError:
+                logger.info(
+                    "Error fitting sparse input. Converting to dense input."
+                )
+                X = X.todense()
+                clf.fit(X, y)
+                requires_dense = True
+        estimators.append(clf)
+    return estimators, vectorizer, requires_dense
 
 
 if __name__ == "__main__":
@@ -244,27 +244,28 @@ if __name__ == "__main__":
         )
         cv = list(cv.split(X_train, y_train))
 
-        clfs = Parallel(n_jobs=n_jobs, backend="multiprocessing")(
-            delayed(train_fold)(
+        fit_results = []
+        for fold_iter, (train_idx, _) in enumerate(cv):
+            clf_tuple = train_fold(
                 X=X_train[train_idx], 
                 y=y_train[train_idx],
+                labels=labels,
                 fold_iter=fold_iter,
                 use_binary=use_binary, 
                 model=model, 
                 hyperparam_iter=hyperparam_iter,
                 params=params
             ) 
-            for fold_iter, (train_idx, _) in enumerate(cv)
-        )
-
-        for fold_iter, ((_, validation_idx), (clf, vectorizer, requires_dense)) in enumerate(zip(cv, clfs)):
+            fit_results.append(clf_tuple)
+               
+        for fold_iter, ((_, validation_idx), (estimators, vectorizer, requires_dense)) in enumerate(zip(cv, fit_results)):
             logger.info("Computing binary performance for fold {}.".format(fold_iter + 1))
             y_valid_f_pred = []
             y_test_f_pred = []
             y_valid_f_proba = []
             y_test_f_proba = []
 
-            for clf, (label_idx, label) in zip(clf.estimators_, enumerate(mlb.classes)):
+            for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes)):
                 logger.info("\tComputing binary performance for label {}.".format(label))
 
                 X_valid_l = vectorizer.transform(X_train[validation_idx])
