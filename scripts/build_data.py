@@ -19,6 +19,7 @@ import pandas as pd
 import logging
 from Bio import SwissProt
 from joblib import Parallel, delayed
+from docopt import docopt
 
 from pyppi.base import delete_cache, delete_database
 from pyppi.base import parse_args, SOURCE, TARGET, LABEL
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     verbose = args['verbose']
     clear_cache = args['clear_cache']
     init_database = args['init_database']
-    
+
     i_manager = InteractionManager(verbose=verbose, match_taxon_id=9606)
     p_manager = ProteinManager(verbose=verbose, match_taxon_id=9606)
 
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     if clear_cache:
         logger.info("Clearing Biopython/Bioservices cache.")
         delete_cache()
-        
+
     if init_database:
         logger.info("Clearing database.")
         delete_database()
@@ -186,7 +187,7 @@ if __name__ == "__main__":
         drop_nan=True, allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=False
     )
- 
+
     bioplex = map_network_accessions(
         interactions=bioplex, accession_map=accession_mapping,
         drop_nan=True, allow_self_edges=True,
@@ -325,7 +326,7 @@ if __name__ == "__main__":
         else:
             # If this raises, then the training/testing are not disjoint as expected.
             raise ValueError("Interaction already exists.")
-            
+
     # Interactome
     for (uniprot_a, uniprot_b) in zip(interactome[SOURCE], interactome[TARGET]):
         entry = interactions.get((uniprot_a, uniprot_b), None)
