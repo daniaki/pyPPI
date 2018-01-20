@@ -30,7 +30,6 @@ Options:
   --directory=DIR   Output directory [default: ./results/]
 """
 
-import sys
 import json
 import logging
 import pandas as pd
@@ -76,6 +75,7 @@ from sklearn.metrics import (
     confusion_matrix
 )
 
+MAX_SEED = 1000000
 logger = logging.getLogger("scripts")
 handler = logging.StreamHandler()
 formatter = logging.Formatter(
@@ -104,7 +104,7 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
         logger.info("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
-            random_state=rng.randint(sys.maxsize)
+            random_state=rng.randint(MAX_SEED)
         )
         clf = RandomizedSearchCV(
             estimator=model_to_tune,
@@ -113,12 +113,12 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
             cv=StratifiedKFold(
                 n_splits=3,
                 shuffle=True,
-                random_state=rng.randint(sys.maxsize)
+                random_state=rng.randint(MAX_SEED)
             ),
             n_iter=hyperparam_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=rng.randint(sys.maxsize),
+            random_state=rng.randint(MAX_SEED),
             param_distributions=params,
         )
         with warnings.catch_warnings():
@@ -207,6 +207,7 @@ if __name__ == "__main__":
     logger.info("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
     rng = np.random.RandomState(seed=42)
+    max_seed = 1000000
     top_features = {
         "absolute": {
             l: {
@@ -251,7 +252,7 @@ if __name__ == "__main__":
     for bs_iter in range(n_iter):
         logger.info("Fitting bootstrap iteration {}.".format(bs_iter + 1))
         cv = IterativeStratifiedKFold(
-            n_splits=n_splits, random_state=rng.randint(sys.maxsize)
+            n_splits=n_splits, random_state=rng.randint(MAX_SEED)
         )
         cv = list(cv.split(X_train, y_train))
 
