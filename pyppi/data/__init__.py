@@ -19,8 +19,7 @@ swissprot_hsa_path = os.path.join(PATH, 'hsa_swiss-prot.list')
 uniprot_hsa_path = os.path.join(PATH, 'hsa_uniprot.list')
 default_db_path = os.path.join(PATH, 'pyppi.db')
 obo_file = os.path.join(PATH, 'go.obo.gz')
-ipr_snames_path = os.path.join(PATH, 'ipr_short_names.dat')
-ipr_lnames_path = os.path.join(PATH, 'ipr_names.dat')
+ipr_names_path = os.path.join(PATH, 'ipr_names.dat')
 pfam_names_path = os.path.join(PATH, 'Pfam-A.clans.tsv.gz')
 
 ptm_labels_path = os.path.join(PATH, 'labels.tsv')
@@ -142,17 +141,16 @@ def hsa_uniprot_map():
     return hsa_sp
 
 
-def ipr_name_map(short_names=True):
+def ipr_name_map():
     """
     Parse the interpro list into a dictionary. Expects uppercase accessions.
     """
-    file = ipr_snames_path if short_names else ipr_lnames_path
-    fp = open(file, 'r')
+    fp = open(ipr_names_path, 'r')
     ipr_map = {}
     for line in fp:
         xs = line.strip().split("\t")
         term = xs[0].upper()
-        descrip = xs[1].strip()
+        descrip = xs[-1].strip()
         ipr_map[term] = descrip
     fp.close()
     return ipr_map

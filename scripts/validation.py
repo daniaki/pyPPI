@@ -4,7 +4,7 @@ the publication.
 
 Usage:
   validation.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-             [--use_cache] [--induce] [--verbose] [--abs] [--top=T]
+             [--induce] [--verbose] [--top=T]
              [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
              [--h_iterations=H] [--directory=DIR]
   validation.py -h | --help
@@ -19,8 +19,6 @@ Options:
   --binary      Use binary feature encoding instead of ternary.
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
-  --abs         Take the absolute value of feature weights when computing top
-                features.
   --top=T       Top T features for each label to log [default: 25]
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression]
@@ -153,7 +151,6 @@ if __name__ == "__main__":
     direc = args['directory']
     hyperparam_iter = args['h_iterations']
     get_top_n = args['top']
-    abs_weights = args['abs']
     use_binary = args['binary']
 
     # Set up the folder for each experiment run named after the current time
@@ -170,7 +167,7 @@ if __name__ == "__main__":
     # Load all the training data, features etc.
     # ------------------------------------------------------------------- #
     logger.info("Loading training and testing data.")
-    ipr_map = ipr_name_map(short_names=False)
+    ipr_map = ipr_name_map()
     pfam_map = pfam_name_map()
     go_dag = get_active_instance()
     i_manager = InteractionManager(verbose=verbose, match_taxon_id=9606)
@@ -211,11 +208,20 @@ if __name__ == "__main__":
     n_classes = len(mlb.classes_)
     rng = np.random.RandomState(seed=42)
     top_features = {
-        l: {
-            i: {
-                j: [] for j in range(n_splits)
-            } for i in range(n_iter)
-        } for l in mlb.classes_
+        "absolute": {
+            l: {
+                i: {
+                    j: [] for j in range(n_splits)
+                } for i in range(n_iter)
+            } for l in mlb.classes_
+        },
+        "not_absolute": {
+            l: {
+                i: {
+                    j: [] for j in range(n_splits)
+                } for i in range(n_iter)
+            } for l in mlb.classes_
+        }
     }
     params = get_parameter_distribution_for_model(model)
 
@@ -327,10 +333,22 @@ if __name__ == "__main__":
                     ipr_map=ipr_map,
                     pfam_map=pfam_map,
                     n=get_top_n,
-                    absolute=abs_weights,
+                    absolute=False,
                     vectorizer=vectorizer
                 )
-                top_features[label][bs_iter][fold_iter].extend(top_n)
+                top_n_abs = top_n_features(
+                    clf=clf,
+                    go_dag=go_dag,
+                    ipr_map=ipr_map,
+                    pfam_map=pfam_map,
+                    n=get_top_n,
+                    absolute=True,
+                    vectorizer=vectorizer
+                )
+                top_features["not_absolute"][label][bs_iter][fold_iter].extend(
+                    top_n)
+                top_features["absolute"][label][bs_iter][fold_iter].extend(
+                    top_n_abs)
 
             logger.info("Computing fold mult-label performance.")
             # True scores in multi-label indicator format
