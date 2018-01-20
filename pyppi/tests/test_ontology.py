@@ -6,18 +6,18 @@ from ..data_mining.ontology import (
     get_up_to_lca,
     get_lca_of_terms,
     group_terms_by_ontology_type,
-    filter_obsolete_terms
+    filter_obsolete_terms,
+    parse_obo12_file
 )
 
 base_path = os.path.dirname(__file__)
 test_obo_file = '{}/{}'.format(base_path, "test_data/test_go.obo.gz")
-dag = get_active_instance(filename=test_obo_file)
 
 
 class TestULCAInducer(TestCase):
 
     def setUp(self):
-        self.dag = dag
+        self.dag = parse_obo12_file(test_obo_file)
 
     def test_ulca_inducer_case_1(self):
         expected = [

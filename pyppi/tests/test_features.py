@@ -5,13 +5,13 @@ from Bio import SwissProt
 from ..database import begin_transaction
 from ..database.models import Protein
 from ..data_mining.features import compute_interaction_features
-from ..data_mining.ontology import get_active_instance
+from ..data_mining.ontology import parse_obo12_file
 from ..data_mining.uniprot import parse_record_into_protein
 
 
 base_path = os.path.dirname(__file__)
 test_obo_file = '{}/{}'.format(base_path, "test_data/test_go.obo.gz")
-dag = get_active_instance(filename=test_obo_file)
+dag = parse_obo12_file(test_obo_file)
 
 
 class TestComputeInteractionFeatures(TestCase):
