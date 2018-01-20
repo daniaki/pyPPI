@@ -183,26 +183,32 @@ def parse_args(docopt_args):
 
     # Selection parsing
     selection = []
+    has_features = False
     if query_doctop_dict(docopt_args, '--interpro'):
         selection.append(Interaction.columns().INTERPRO.value)
+        has_features = True
     if query_doctop_dict(docopt_args, '--pfam'):
         selection.append(Interaction.columns().PFAM.value)
+        has_features = True
     if query_doctop_dict(docopt_args, '--mf'):
+        has_features = True
         if query_doctop_dict(docopt_args, '--induce'):
             selection.append(Interaction.columns().ULCA_GO_MF.value)
         else:
             selection.append(Interaction.columns().GO_MF.value)
     if query_doctop_dict(docopt_args, '--cc'):
+        has_features = True
         if query_doctop_dict(docopt_args, '--induce'):
             selection.append(Interaction.columns().ULCA_GO_CC.value)
         else:
             selection.append(Interaction.columns().GO_CC.value)
     if query_doctop_dict(docopt_args, '--bp'):
+        has_features = True
         if query_doctop_dict(docopt_args, '--induce'):
             selection.append(Interaction.columns().ULCA_GO_BP.value)
         else:
             selection.append(Interaction.columns().GO_BP.value)
-    if len(selection) == 0:
+    if has_features and len(selection) == 0:
         sys.stdout.write("Must have at least one feature.")
         sys.exit(0)
     parsed['selection'] = selection
