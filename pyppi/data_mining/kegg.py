@@ -117,6 +117,7 @@ def pathway_to_dataframe(pathway_id, verbose=False):
     sources = []
     targets = []
     labels = []
+    kegg_to_up = load_kegg_to_up()
 
     if verbose:
         logger.info("# --- Parsing pathway {} --- #".format(pathway_id))
@@ -143,8 +144,10 @@ def pathway_to_dataframe(pathway_id, verbose=False):
 
         for a in name1.strip().split(' '):
             for b in name2.strip().split(' '):
-                valid_db_a = (kegg.organism in a or 'ec' in a)
-                valid_db_b = (kegg.organism in b or 'ec' in b)
+                valid_db_a = \
+                    (kegg.organism in a or 'ec' in a) and (a in kegg_to_up)
+                valid_db_b = \
+                    (kegg.organism in b or 'ec' in b) and (b in kegg_to_up)
 
                 if valid_db_a and valid_db_b:
                     sources.append(a)
