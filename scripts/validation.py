@@ -258,7 +258,7 @@ if __name__ == "__main__":
 
         fit_results = []
         for fold_iter, (train_idx, _) in enumerate(cv):
-            clf_tuple = train_fold(
+            estimators, vectorizer, requires_dense = train_fold(
                 X=X_train[train_idx],
                 y=y_train[train_idx],
                 labels=mlb.classes_,
@@ -269,11 +269,14 @@ if __name__ == "__main__":
                 rng=rng,
                 params=params
             )
-            fit_results.append(clf_tuple)
+            fit_results.append((estimators, vectorizer, requires_dense))
 
-        for fold_iter, ((_, validation_idx), (estimators, vectorizer, requires_dense)) in enumerate(zip(cv, fit_results)):
+        for fold_iter, (
+                (_, validation_idx), (estimators, vectorizer, requires_dense)
+            ) in enumerate(zip(cv, fit_results)):
             logger.info(
-                "Computing binary performance for fold {}.".format(fold_iter + 1))
+                "Computing binary performance for fold {}.".format(fold_iter+1)
+            )
             y_valid_f_pred = []
             y_test_f_pred = []
             y_valid_f_proba = []
@@ -281,7 +284,8 @@ if __name__ == "__main__":
 
             for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes_)):
                 logger.info(
-                    "\tComputing binary performance for label {}.".format(label))
+                    "\tComputing binary performance for label {}.".format(label)
+                )
 
                 X_valid_l = vectorizer.transform(X_train[validation_idx])
                 y_valid_l = y_train[validation_idx, label_idx]
@@ -312,7 +316,6 @@ if __name__ == "__main__":
                 y_test_f_proba.append([[x[1]] for x in y_test_l_proba])
 
                 # Perform scoring on the validation set and the external testing set.
-
                 for func_idx, (func_name, func) in enumerate(binary_scoring_funcs):
                     if func_name in ['Specificity', 'FDR']:
                         scores_v = func(y_valid_l, y_valid_l_pred)
