@@ -5,7 +5,7 @@ functions to access and update the database files.
 """
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Table
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -61,6 +61,18 @@ def _check_annotations(values, dbtype=None):
                 dbtype
             )
         )
+
+
+pmid_interactions = Table('pmid_interactions', Base.metadata,
+    Column('interaction_id', Integer, ForeignKey('interaction.id')),
+    Column('pubmed_id', Integer, ForeignKey('pubmed.id'))
+)
+
+
+psimi_interactions = Table('psimi_interactions', Base.metadata,
+    Column('interaction_id', Integer, ForeignKey('interaction.id')),
+    Column('psimi_id', Integer, ForeignKey('psimi.id'))
+)
 
 
 class Protein(Base):
@@ -269,6 +281,16 @@ class Interaction(Base):
     _ulca_go_bp = Column('ulca_go_bp', String)
     _interpro = Column('interpro', String)
     _pfam = Column('pfam', String)
+
+    # M-2-O relationships
+    pmid = relationship(
+        "Pubmed", backref="pmid_interactions", 
+        uselist=True, secondary=pmid_interactions, lazy='joined'
+    )
+    psimi = relationship(
+        "Psimi", backref="psimi_interactions", 
+        uselist=True, secondary=psimi_interactions, lazy='joined'
+    )
 
     def __init__(self, source=None, target=None, is_interactome=None,
                  is_training=None, is_holdout=None, label=None,
@@ -590,3 +612,76 @@ class Interaction(Base):
             not bool(self.interpro),
             not bool(self.pfam)
         ])
+
+
+class Pubmed(Base):
+    """
+    Pubmed schema definition. This is a basic table containing fields
+    relating to a pubmed id. It simple has an integer column, auto-generated
+    and auto-incremented, and an `accession` column representing the pubmed
+    accession number.
+    """
+    __tablename__ = "pubmed"
+
+    id = Column(Integer, primary_key=True)
+    accession = Column(String, unique=True, nullable=False)
+
+    def __init__(self, accession):
+        self.accession = accession
+
+    def __repr__(self):
+        string = "<Pubmed(id={}, accession={})>"
+        return string.format(
+            self.id, self.accession
+        )
+
+    def save(self, session, commit=False):
+        try:
+            session.add(self)
+            if commit:
+                session.commit()
+        except:
+            session.rollback()
+            raise
+
+    @property
+    def interactions(self):
+        return self.pmid_interactions
+
+
+class Psimi(Base):
+    """
+    PSIMI ontology schema definition. This is a basic table containing fields
+    relating to a psi-mi experiment type term. It simple has an integer column, 
+    auto-generated and auto-incremented, an `accession` column representing 
+    the psi-mi accession number and `description` column, which is a plain
+    text description.
+    """
+    __tablename__ = "psimi"
+
+    id = Column(Integer, primary_key=True)
+    accession = Column(String, unique=True, nullable=False)
+    description = Column(String, nullable=False)
+
+    def __init__(self, accession, description):
+        self.accession = accession
+        self.description = description
+
+    def __repr__(self):
+        string = "<Psimi(id={}, accession={}, desc={})>"
+        return string.format(
+            self.id, self.accession, self.description
+        )
+
+    def save(self, session, commit=False):
+        try:
+            session.add(self)
+            if commit:
+                session.commit()
+        except:
+            session.rollback()
+            raise
+
+    @property
+    def interactions(self):
+        return self.psimi_interactions
