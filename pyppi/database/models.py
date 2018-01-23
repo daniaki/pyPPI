@@ -7,6 +7,7 @@ from enum import Enum
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Table
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import and_
 
 from ..database import Base
 from ..database.exceptions import ObjectNotFound, ObjectAlreadyExists
@@ -63,13 +64,17 @@ def _check_annotations(values, dbtype=None):
         )
 
 
-pmid_interactions = Table('pmid_interactions', Base.metadata,
+pmid_interactions = Table(
+    'pmid_interactions',
+    Base.metadata,
     Column('interaction_id', Integer, ForeignKey('interaction.id')),
     Column('pubmed_id', Integer, ForeignKey('pubmed.id'))
 )
 
 
-psimi_interactions = Table('psimi_interactions', Base.metadata,
+psimi_interactions = Table(
+    'psimi_interactions',
+    Base.metadata,
     Column('interaction_id', Integer, ForeignKey('interaction.id')),
     Column('psimi_id', Integer, ForeignKey('psimi.id'))
 )
@@ -165,6 +170,7 @@ class Protein(Base):
             session.add(self)
             if commit:
                 session.commit()
+                return session.query(Protein).get(self.id)
         except:
             session.rollback()
             raise
@@ -267,10 +273,10 @@ class Interaction(Base):
     is_training = Column(Boolean, nullable=False)
     is_holdout = Column(Boolean, nullable=False)
     is_interactome = Column(Boolean, nullable=False)
-    source = Column(ForeignKey("protein.id"), nullable=False)
-    target = Column(ForeignKey("protein.id"), nullable=False)
-    combined = Column(String, unique=True, nullable=False)
     taxon_id = Column('taxon_id', Integer, nullable=False)
+    source = Column('source', ForeignKey("protein.id"), nullable=False)
+    target = Column('target', ForeignKey("protein.id"), nullable=False)
+    combined = Column('combined', String, unique=True, nullable=False)
     _label = Column('label', String)
     _keywords = Column('keywords', String)
     _go_mf = Column('go_mf', String)
@@ -283,12 +289,14 @@ class Interaction(Base):
     _pfam = Column('pfam', String)
 
     # M-2-O relationships
+    # Modifying these will cause an auto-flush, hence the object must
+    # be saved first or Integrity errors may be raised.
     pmid = relationship(
-        "Pubmed", backref="pmid_interactions", 
+        "Pubmed", backref="pmid_interactions",
         uselist=True, secondary=pmid_interactions, lazy='joined'
     )
     psimi = relationship(
-        "Psimi", backref="psimi_interactions", 
+        "Psimi", backref="psimi_interactions",
         uselist=True, secondary=psimi_interactions, lazy='joined'
     )
 
@@ -298,8 +306,16 @@ class Interaction(Base):
                  ulca_go_mf=None, ulca_go_cc=None, ulca_go_bp=None,
                  interpro=None, pfam=None, keywords=None):
 
-        self.source = source
-        self.target = target
+        if isinstance(source, Protein):
+            self.source = source.id
+        else:
+            self.source = source
+
+        if isinstance(target, Protein):
+            self.target = target.id
+        else:
+            self.target = target
+
         self.label = label
         self.is_training = is_training
         self.is_holdout = is_holdout
@@ -308,13 +324,9 @@ class Interaction(Base):
         # Create a unique identifier using the uniprot ids combined
         # into a string. This column is unique causing a contraint
         # failure if an (B, A) is added when (A, B) already exists.
-        self.combined = ','.join(
-            _format_annotations(
-                [source, target],
-                allow_duplicates=True,
-                upper=True
-            )
-        )
+        self.combined = ','.join(sorted(
+            [str(self.source), str(self.target)]
+        ))
 
         self.keywords = keywords
         self.go_mf = go_mf
@@ -405,15 +417,10 @@ class Interaction(Base):
                     "is_interactome must be a boolean value."
                 )
 
-            invalid_source = session.query(Protein).filter_by(
-                id=self.source
-            ).count() == 0
-            invalid_target = session.query(Protein).filter_by(
-                id=self.target
-            ).count() == 0
-            already_exists = session.query(Interaction).filter_by(
-                combined=self.combined
-            ).count() != 0
+            invalid_source = self.source is None or session.query(
+                Protein).get(self.source) is None
+            invalid_target = self.target is None or session.query(
+                Protein).get(self.target) is None
 
             if self.source and invalid_source:
                 raise ObjectNotFound(
@@ -428,10 +435,22 @@ class Interaction(Base):
                     )
                 )
 
-            if self.source and self.target:
+            if (self.source is not None) and (self.target is not None):
                 source = session.query(Protein).get(self.source)
                 target = session.query(Protein).get(self.target)
-                if already_exists:
+                query_set = session.query(Interaction).filter(
+                    Interaction.combined == ','.join(sorted(
+                        [str(self.source), str(self.target)]
+                    ))
+                )
+                already_exists = query_set.count() != 0
+
+                existing_interaction = None
+                if query_set.count() > 0:
+                    existing_interaction = query_set[0]
+
+                if already_exists and \
+                        existing_interaction.id != self.id:
                     raise ObjectAlreadyExists(
                         "Interaction ({}, {}) already exists.".format(
                             source.uniprot_id, target.uniprot_id)
@@ -444,9 +463,16 @@ class Interaction(Base):
                 else:
                     self.taxon_id = source.taxon_id
 
+            # Re-compute combined incase source/target changes
+            self.combined = ','.join(sorted(
+                [str(self.source), str(self.target)]
+            ))
+
             session.add(self)
             if commit:
                 session.commit()
+                return session.query(Interaction).get(self.id)
+
         except:
             session.rollback()
             raise
