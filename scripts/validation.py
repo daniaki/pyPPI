@@ -4,7 +4,7 @@ the publication.
 
 Usage:
   validation.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-             [--induce] [--verbose] [--top=T]
+             [--induce] [--verbose] [--binary] [--top=T]
              [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
              [--h_iterations=H] [--directory=DIR]
   validation.py -h | --help
@@ -481,8 +481,8 @@ if __name__ == "__main__":
     s_label_correlation = np.zeros_like(label_correlation)
     for i, class_1 in enumerate(sorted(mlb.classes_)):
         for j, class_2 in enumerate(sorted(mlb.classes_)):
-            index_1 = mlb.classes_.index(class_1)
-            index_2 = mlb.classes_.index(class_2)
+            index_1 = list(mlb.classes_).index(class_1)
+            index_2 = list(mlb.classes_).index(class_2)
             s_label_correlation[i, j] = label_correlation[index_1, index_2]
 
     header = "Columns: {}\nRows: {}".format(
