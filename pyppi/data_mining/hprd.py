@@ -8,15 +8,19 @@ This module provides functionality to mine interactions with labels from
 HPRD flat files
 """
 
-from collections import OrderedDict as Od
+from itertools import product
+from collections import OrderedDict
 
+from ..base import SOURCE, TARGET, LABEL
 from .uniprot import UNIPROT_ORD_KEY
 from ..data_mining.tools import make_interaction_frame, process_interactions
 from ..data import hprd_id_map, hprd_ptms
+from ..database import begin_transaction
+from ..database.managers import ProteinManager
 
 SUBTYPES_TO_EXCLUDE = []
 
-__PTM_FIELDS = Od()
+__PTM_FIELDS = OrderedDict()
 __PTM_FIELDS['substrate_hprd_id'] = 'na'
 __PTM_FIELDS['substrate_gene_symbol'] = 'na'
 __PTM_FIELDS['substrate_isoform_id'] = 'na'
@@ -30,7 +34,7 @@ __PTM_FIELDS['experiment_type'] = 'na'
 __PTM_FIELDS['reference_id'] = 'na'
 __PTM_INDEX = {k: i for (i, k) in enumerate(__PTM_FIELDS.keys())}
 
-__HPRD_XREF_FIELDS = Od()
+__HPRD_XREF_FIELDS = OrderedDict()
 __HPRD_XREF_FIELDS['hprd_id'] = 'na'
 __HPRD_XREF_FIELDS['gene_symbol'] = 'na'
 __HPRD_XREF_FIELDS['nucleotide_accession'] = 'na'
@@ -40,6 +44,15 @@ __HPRD_XREF_FIELDS['omim_id'] = 'na'
 __HPRD_XREF_FIELDS['swissprot_id'] = 'na'
 __HPRD_XREF_FIELDS['main_name'] = 'na'
 __HPRD_XREF_INDEX = {k: i for (i, k) in enumerate(__HPRD_XREF_FIELDS.keys())}
+
+
+psimi_mapping = {
+    "in vitro": 'MI:0492',
+    "invitro": 'MI:0492',
+    "in vivo": 'MI:0493',
+    "invivo": 'MI:0493',
+    'yeast 2-hybrid': 'MI:0018'
+}
 
 
 class PTMEntry(object):
@@ -103,7 +116,13 @@ def parse_ptm(file_input=None, header=False, col_sep='\t'):
         for k in __PTM_FIELDS.keys():
             data = xs[__PTM_INDEX[k]]
             if k == 'reference_id':
-                data = data.split(',')
+                data = [x.strip() for x in data.split(',')]
+                # od = OrderedDict()
+                # for pmid in data.split(','):
+                #     od[pmid.strip()] = True
+                # data = ','.join(od.keys())
+            if k == "experiment_type":
+                data = [x.strip() for x in data.split(';')]
             class_fields[k] = data
         ptms.append(PTMEntry(class_fields))
     return ptms
@@ -131,13 +150,13 @@ def parse_hprd_mapping(file_input=None, header=False, col_sep='\t'):
         for k in __HPRD_XREF_FIELDS.keys():
             data = xs[__HPRD_XREF_INDEX[k]]
             if k == 'swissprot_id':
-                data = data.split(',')
+                data = [x.strip() for x in data.split(',')]
             class_fields[k] = data
         xrefs[xs[0]] = HPRDXrefEntry(class_fields)
     return xrefs
 
 
-def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
+def hprd_to_dataframe(session, allow_self_edges=False, drop_nan='default',
                       allow_duplicates=False, exclude_labels=None,
                       min_label_count=None, merge=False, ptm_input=None,
                       mapping_input=None):
@@ -159,6 +178,9 @@ def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
     sources = []
     targets = []
     labels = []
+    pmids = []
+    experiment_types = []
+
     for ptm in ptms:
         label = ptm.modification_type.lower().replace(' ', '-')
         if ptm.enzyme_hprd_id == '-':
@@ -167,26 +189,67 @@ def hprd_to_dataframe(drop_nan=False, allow_self_edges=False,
             ptm.substrate_hprd_id = None
         if label == '-':
             ptm.modification_type = None
-        sources.append(ptm.enzyme_hprd_id)
-        targets.append(ptm.substrate_hprd_id)
-        labels.append(label)
+            label = None
 
-    # Since there's a many swissprot to hprd_id mapping, priortise P, Q and O.
-    for i, source in enumerate(sources):
-        if source is not None:
-            sources[i] = sorted(
-                xrefs[source].swissprot_id,
-                key=lambda x: UNIPROT_ORD_KEY.get(x[0], 4)
-            )[0]
+        has_nan = (ptm.enzyme_hprd_id is None) or \
+            (ptm.substrate_hprd_id is None) or \
+            (label is None)
+        if has_nan and drop_nan:
+            continue
 
-    for i, target in enumerate(targets):
-        if target is not None:
-            targets[i] = sorted(
-                xrefs[target].swissprot_id,
-                key=lambda x: UNIPROT_ORD_KEY.get(x[0], 4)
-            )[0]
+        invalid = ('-', '', 'na', 'None', None)
+        e_types = [x for x in ptm.experiment_type if x not in invalid]
+        unique = OrderedDict()
+        for e in e_types:
+            unique[psimi_mapping[e]] = True
+        e_types = ','.join(unique.keys())
+        if not e_types:
+            e_types = None
 
-    interactions = make_interaction_frame(sources, targets, labels)
+        reference_ids = [x for x in ptm.reference_id if x not in invalid]
+        unique = OrderedDict()
+        for r in reference_ids:
+            unique[r] = True
+        reference_ids = ','.join(unique.keys())
+        if not reference_ids:
+            reference_ids = None
+
+        # Comment to break up colour monotony. Mmmmmm feel the Feng Shui...
+        if ptm.enzyme_hprd_id is None:
+            uniprot_sources = [None]
+        else:
+            uniprot_sources = xrefs[ptm.enzyme_hprd_id].swissprot_id
+        if ptm.substrate_hprd_id is None:
+            uniprot_targets = [None]
+        else:
+            uniprot_targets = xrefs[ptm.substrate_hprd_id].swissprot_id
+
+        pm = ProteinManager(verbose=False, match_taxon_id=9606)
+        for (s, t) in product(uniprot_sources, uniprot_targets):
+            s_entry = pm.get_by_uniprot_id(session, s)
+            if s_entry is None:
+                s = None
+            elif not s_entry.reviewed:
+                s = None
+
+            t_entry = pm.get_by_uniprot_id(session, t)
+            if t_entry is None:
+                t = None
+            elif not t_entry.reviewed:
+                t = None
+
+            sources.append(s)
+            targets.append(t)
+            labels.append(label)
+            pmids.append(reference_ids)
+            experiment_types.append(e_types)
+
+    meta_columns = OrderedDict()
+    meta_columns['pubmed'] = pmids
+    meta_columns['experiment_type'] = experiment_types
+    interactions = make_interaction_frame(
+        sources, targets, labels, **meta_columns
+    )
     interactions = process_interactions(
         interactions=interactions,
         drop_nan=drop_nan,
