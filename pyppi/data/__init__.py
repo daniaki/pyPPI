@@ -19,6 +19,7 @@ swissprot_hsa_path = os.path.join(PATH, 'hsa_swiss-prot.list')
 uniprot_hsa_path = os.path.join(PATH, 'hsa_uniprot.list')
 default_db_path = os.path.join(PATH, 'pyppi.db')
 obo_file = os.path.join(PATH, 'go.obo.gz')
+psimi_obo_file = os.path.join(PATH, 'mi.obo.gz')
 ipr_names_path = os.path.join(PATH, 'ipr_names.list')
 pfam_names_path = os.path.join(PATH, 'Pfam-A.clans.tsv.gz')
 
@@ -217,11 +218,13 @@ def save_ptm_labels(labels):
 
 
 def load_network_from_path(path):
-    return pd.read_csv(path, sep='\t')
+    from ..base import NULL_VALUES
+    return pd.read_csv(path, sep='\t', na_values=NULL_VALUES)
 
 
 def save_network_to_path(interactions, path):
-    return interactions.to_csv(path, sep='\t', index=False)
+    import numpy as np
+    return interactions.to_csv(path, sep='\t', index=False, na_rep=str(np.NaN))
 
 
 def read_pd_pickle(path):
