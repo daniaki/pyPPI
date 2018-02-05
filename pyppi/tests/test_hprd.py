@@ -1,9 +1,13 @@
 
 import os
 import pandas as pd
+import numpy as np
 from unittest import TestCase
 
-from ..base import LABEL, SOURCE, TARGET
+from ..base import LABEL, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
+from ..database.models import Protein
+from ..database import begin_transaction
+from ..data_mining.tools import make_interaction_frame
 from ..data_mining.hprd import (
     parse_ptm,
     parse_hprd_mapping,
@@ -20,12 +24,28 @@ class TestHPRDModule(TestCase):
             "{}/test_data/{}".format(base_path, 'hprd_mapping.tsv'),
             'rt'
         )
+        self.db_path = os.path.normpath(
+            "{}/databases/test.db".format(base_path)
+        )
+
+        with begin_transaction(db_path=self.db_path) as session:
+            p1 = Protein(uniprot_id='P48595', taxon_id=9606, reviewed=True)
+            p2 = Protein(uniprot_id='B3KRC2', taxon_id=9606, reviewed=False)
+            p3 = Protein(uniprot_id='Q99685', taxon_id=9606, reviewed=True)
+            p4 = Protein(uniprot_id='O15393', taxon_id=9606, reviewed=True)
+            for p in [p1, p2, p3, p4]:
+                p.save(session, commit=True)
+
         self.handles = []
 
     def tearDown(self):
         self.hprd_mapping.close()
         for h in self.handles:
             h.close()
+        with begin_transaction(db_path=self.db_path) as session:
+            session.rollback()
+            session.execute("DROP TABLE {}".format(Protein.__tablename__))
+            session.commit()
 
     def test_can_parse_hprd_line_into_ptm_entry(self):
         file_input = open(
@@ -51,7 +71,7 @@ class TestHPRDModule(TestCase):
         self.assertEqual(ptm1.enzyme_name, '-')
         self.assertEqual(ptm1.enzyme_hprd_id, '-')
         self.assertEqual(ptm1.modification_type, 'Phosphorylation')
-        self.assertEqual(ptm1.experiment_type, 'in vivo')
+        self.assertEqual(ptm1.experiment_type, ['in vivo', 'in vitro'])
         self.assertEqual(ptm1.reference_id, ['17287340'])
 
         ptm2 = ptms[1]
@@ -64,7 +84,7 @@ class TestHPRDModule(TestCase):
         self.assertEqual(ptm2.enzyme_name, 'TMPRSS2')
         self.assertEqual(ptm2.enzyme_hprd_id, '03637')
         self.assertEqual(ptm2.modification_type, 'Proteolytic Cleavage')
-        self.assertEqual(ptm2.experiment_type, 'in vitro')
+        self.assertEqual(ptm2.experiment_type, ['in vitro'])
         self.assertEqual(ptm2.reference_id, ['11245484'])
 
     def test_can_parse_mapping_into_mapping_entry(self):
@@ -111,23 +131,54 @@ class TestHPRDModule(TestCase):
             'Transmembrane serine protease 2'
         )
 
+    def test_hprd_replaces_unreviewed_not_existing_uniprot_with_None(self):
+        file_input = open(
+            "{}/test_data/{}".format(base_path, 'hprd_unreviewed.tsv'),
+            'rt'
+        )
+        self.handles.append(file_input)
+
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan=None,
+                mapping_input=self.hprd_mapping,
+                allow_duplicates=True
+            )
+        expected = make_interaction_frame(
+            [None, 'O15393', None], ['O15393', 'Q99685', 'O15393'],
+            ['phosphorylation'] * 3,
+            **{
+                EXPERIMENT_TYPE: ['MI:0493'] * 3,
+                PUBMED: ['19608861'] * 3
+            }
+        )
+        self.assertTrue(expected.equals(iframe))
+
     def test_hprd_to_dataframe_keeps_duplicates_if_allow_is_true(self):
         file_input = open(
             "{}/test_data/{}".format(base_path, 'hprd_duplicate.tsv'),
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            allow_duplicates=True
-        )
+
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan='default',
+                mapping_input=self.hprd_mapping,
+                allow_duplicates=True
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393', 'O15393'], TARGET: ['Q99685', 'Q99685'],
-                LABEL: ['acetylation', 'acetylation']
+                LABEL: ['acetylation', 'acetylation'],
+                EXPERIMENT_TYPE: ['MI:0493', 'MI:0493'],
+                PUBMED: ['19608861', '19608861']
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
 
@@ -137,17 +188,22 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            allow_duplicates=False
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan='default',
+                mapping_input=self.hprd_mapping,
+                allow_duplicates=False
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393'], TARGET: ['Q99685'],
-                LABEL: ['acetylation']
+                LABEL: ['acetylation'],
+                EXPERIMENT_TYPE: ['MI:0493'],
+                PUBMED: ['19608861']
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
 
@@ -157,19 +213,86 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            allow_self_edges=True
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan='default',
+                mapping_input=self.hprd_mapping,
+                allow_self_edges=True
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393'], TARGET: ['O15393'],
-                LABEL: ['acetylation']
+                LABEL: ['acetylation'],
+                EXPERIMENT_TYPE: ['MI:0493'],
+                PUBMED: ['19608861']
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
+
+    def test_hprd_will_drop_nan_if_drop_nan_supplied(self):
+        file_input = open(
+            "{}/test_data/{}".format(base_path, 'hprd_drop_nan.tsv'),
+            'rt'
+        )
+        self.handles.append(file_input)
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan='default',
+                mapping_input=self.hprd_mapping,
+                allow_self_edges=True
+            )
+        self.assertTrue(iframe.empty)
+
+    def test_hprd_will_ignore_nan_if_drop_nan_is_none(self):
+        file_input = open(
+            "{}/test_data/{}".format(base_path, 'hprd_drop_nan.tsv'),
+            'rt'
+        )
+        self.handles.append(file_input)
+        expected = make_interaction_frame(
+            [None, 'O15393'], ['O15393', 'O15393'], ['acetylation', None],
+            **{
+                EXPERIMENT_TYPE: ['MI:0493', 'MI:0493'],
+                PUBMED: ['19608861', '19608861']
+            }
+        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan=None,
+                mapping_input=self.hprd_mapping,
+                allow_self_edges=True
+            )
+            self.assertTrue(expected.equals(iframe))
+
+    def test_hprd_will_ignore_nan_if_drop_nan_is_empty(self):
+        file_input = open(
+            "{}/test_data/{}".format(base_path, 'hprd_drop_nan.tsv'),
+            'rt'
+        )
+        self.handles.append(file_input)
+        expected = make_interaction_frame(
+            [None, 'O15393'], ['O15393', 'O15393'], ['acetylation', None],
+            **{
+                EXPERIMENT_TYPE: ['MI:0493', 'MI:0493'],
+                PUBMED: ['19608861', '19608861']
+            }
+        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan=[],
+                mapping_input=self.hprd_mapping,
+                allow_self_edges=True
+            )
+            self.assertTrue(expected.equals(iframe))
 
     def test_hprd_to_dataframe_filters_self_edges_if_false(self):
         file_input = open(
@@ -177,11 +300,14 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            allow_self_edges=False
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan='default',
+                mapping_input=self.hprd_mapping,
+                allow_self_edges=False
+            )
         self.assertTrue(iframe.empty)
 
     def test_hprd_to_dataframe_filters_nan(self):
@@ -190,32 +316,14 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            drop_nan=True
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                drop_nan='default',
+                ptm_input=file_input,
+                mapping_input=self.hprd_mapping,
+            )
         self.assertTrue(iframe.empty)
-
-    def test_hprd_to_dataframe_will_not_filter_nan_if_drop_is_false(self):
-        file_input = open(
-            "{}/test_data/{}".format(base_path, 'hprd_drop_nan.tsv'),
-            'rt'
-        )
-        self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            drop_nan=False
-        )
-        expected = pd.DataFrame(
-            {
-                SOURCE: ['None'], TARGET: ['O15393'],
-                LABEL: ['acetylation']
-            },
-            columns=[SOURCE, TARGET, LABEL]
-        )
-        self.assertTrue(expected.equals(iframe))
 
     def test_hprd_to_dataframe_can_exclude_labels(self):
         file_input = open(
@@ -223,37 +331,47 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            exclude_labels=['acetylation']
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                drop_nan='default',
+                ptm_input=file_input,
+                mapping_input=self.hprd_mapping,
+                exclude_labels=['acetylation']
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393'], TARGET: ['Q99685'],
-                LABEL: ['phosphorylation']
+                LABEL: ['phosphorylation'],
+                EXPERIMENT_TYPE: ['MI:0493'],
+                PUBMED: ['19608861']
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
 
-    def test_hprd_to_dataframe_can_does_not_exclude_multilabel_samples(self):
+    def test_hprd_to_dataframe_does_not_exclude_multilabel_samples(self):
         file_input = open(
             "{}/test_data/{}".format(base_path, 'hprd_exclude_label_ml.tsv'),
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            exclude_labels=['acetylation']
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                drop_nan='default',
+                ptm_input=file_input,
+                mapping_input=self.hprd_mapping,
+                exclude_labels=['acetylation']
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393'], TARGET: ['Q99685'],
-                LABEL: ['acetylation,phosphorylation']
+                LABEL: ['acetylation,phosphorylation'],
+                EXPERIMENT_TYPE: ['MI:0493'],
+                PUBMED: ['19608861']
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
 
@@ -263,17 +381,22 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            merge=True
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                drop_nan='default',
+                ptm_input=file_input,
+                mapping_input=self.hprd_mapping,
+                merge=True
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393'], TARGET: ['Q99685'],
-                LABEL: ['acetylation,phosphorylation']
+                LABEL: ['acetylation,phosphorylation'],
+                EXPERIMENT_TYPE: ['MI:0492,MI:0493'],
+                PUBMED: ['17808861,19608861']
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
 
@@ -283,17 +406,22 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            min_label_count=2
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                ptm_input=file_input,
+                drop_nan='default',
+                mapping_input=self.hprd_mapping,
+                min_label_count=2
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393', 'P48595'], TARGET: ['Q99685'] * 2,
-                LABEL: ['acetylation'] * 2
+                LABEL: ['acetylation'] * 2,
+                EXPERIMENT_TYPE: ['MI:0493'] * 2,
+                PUBMED: ['19608861'] * 2
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))
 
@@ -303,17 +431,22 @@ class TestHPRDModule(TestCase):
             'rt'
         )
         self.handles.append(file_input)
-        iframe = hprd_to_dataframe(
-            ptm_input=file_input,
-            mapping_input=self.hprd_mapping,
-            min_label_count=2,
-            merge=True
-        )
+        with begin_transaction(db_path=self.db_path) as session:
+            iframe = hprd_to_dataframe(
+                session=session,
+                drop_nan='default',
+                ptm_input=file_input,
+                mapping_input=self.hprd_mapping,
+                min_label_count=2,
+                merge=True
+            )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O15393', 'P48595'], TARGET: ['Q99685'] * 2,
-                LABEL: ['acetylation'] * 2
+                LABEL: ['acetylation'] * 2,
+                EXPERIMENT_TYPE: ['MI:0493'] * 2,
+                PUBMED: ['19608861'] * 2
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED]
         )
         self.assertTrue(expected.equals(iframe))

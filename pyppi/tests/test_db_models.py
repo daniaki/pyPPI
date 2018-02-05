@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import shutil
 
 from unittest import TestCase
 from sqlalchemy import create_engine
@@ -8,8 +9,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, Query
 
 from ..database import begin_transaction, Base
+from ..database.managers import ProteinManager
 from ..database.models import Protein, Interaction, Psimi, Pubmed
 from ..database.models import _check_annotations, _format_annotations
+from ..database.models import create_interactions, construct_m2m
 from ..database.exceptions import ObjectNotFound, ObjectAlreadyExists
 
 base_path = os.path.dirname(__file__)
@@ -108,7 +111,13 @@ class TestProteinModel(TestCase):
 
     def tearDown(self):
         self.session.rollback()
-        self.session.execute("DROP TABLE protein")
+        self.session.query(Interaction).delete()
+        self.session.query(Protein).delete()
+        self.session.query(Pubmed).delete()
+        self.session.query(Psimi).delete()
+        self.session.execute("DROP TABLE pmid_interactions")
+        self.session.execute("DROP TABLE psimi_interactions")
+        self.session.commit()
         self.session.close()
 
     def test_equality(self):
@@ -250,10 +259,13 @@ class TestInteractionModel(TestCase):
 
     def tearDown(self):
         self.session.rollback()
-        self.session.execute("DROP TABLE interaction")
-        self.session.execute("DROP TABLE protein")
-        self.session.execute("DROP TABLE pubmed")
-        self.session.execute("DROP TABLE psimi")
+        self.session.query(Interaction).delete()
+        self.session.query(Protein).delete()
+        self.session.query(Pubmed).delete()
+        self.session.query(Psimi).delete()
+        self.session.execute("DROP TABLE pmid_interactions")
+        self.session.execute("DROP TABLE psimi_interactions")
+        self.session.commit()
         self.session.close()
 
     def test_can_add_interaction(self):
@@ -274,6 +286,201 @@ class TestInteractionModel(TestCase):
         self.assertEqual(obj.pfam, "PF001,PF002")
         self.assertEqual(obj.go_mf, None)
         self.assertEqual(obj.label, None)
+
+    def test_can_add_new_label(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label=None
+        )
+        obj.add_label('activation')
+        self.assertEqual(obj.label, 'Activation')
+
+    def test_labels_as_list_is_sorted(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation,inhibition'
+        )
+        self.assertEqual(
+            obj.labels_as_list, list(sorted(['Activation', 'Inhibition']))
+        )
+
+    def test_can_get_singleton_label_as_list(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        self.assertEqual(
+            obj.labels_as_list, ['Activation']
+        )
+
+    def test_labels_as_list_empty_if_label_is_none(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label=None
+        )
+        self.assertEqual(
+            obj.labels_as_list, []
+        )
+
+    def test_can_add_to_existing_label(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='Phosphorylation'
+        )
+        obj.add_label('activation')
+        self.assertEqual(obj.label, 'Activation,Phosphorylation')
+
+    def test_can_add_an_existing_label_without_duplicating(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='Phosphorylation'
+        )
+        obj.add_label('Phosphorylation')
+        self.assertEqual(obj.label, 'Phosphorylation')
+
+    def test_raises_typeerror_when_setting_nonstring_label(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label=None
+        )
+        with self.assertRaises(TypeError):
+            obj.add_label(['Activation'])
+
+    def test_raises_value_when_setting_empty_string(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label=None
+        )
+        with self.assertRaises(ValueError):
+            obj.add_label('')
+
+    def test_raises_value_when_setting_multilabel(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label=None
+        )
+        with self.assertRaises(ValueError):
+            obj.add_label('activation,activation')
+
+    def test_can_remove_existing_label(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        obj.remove_label('activation')
+        self.assertEqual(obj.label, None)
+
+    def test_can_remove_existing_label_not_case_sensitive(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        obj.remove_label('ACTIVATION')
+        self.assertEqual(obj.label, None)
+
+    def test_remove_label_does_nothing_if_label_not_found(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        obj.remove_label('hello')
+        self.assertEqual(obj.label, 'Activation')
+
+    def test_can_remove_existing_duplicated_label(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation,activation'
+        )
+        obj.remove_label('activation')
+        self.assertEqual(obj.label, None)
+
+    def test_raises_typeerror_when_removing_nonstring_label(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        with self.assertRaises(TypeError):
+            obj.remove_label(['Activation'])
+
+    def test_raises_value_when_removing_empty_string(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        with self.assertRaises(ValueError):
+            obj.remove_label('')
+
+    def test_raises_value_when_removing_multilabel(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=True,
+            is_interactome=False,
+            label='activation'
+        )
+        with self.assertRaises(ValueError):
+            obj.remove_label('activation,activation')
 
     def test_combined_attr_is_a_string_of_sorted_ids_comma_separated(self):
         obj = Interaction(
@@ -296,6 +503,18 @@ class TestInteractionModel(TestCase):
         )
         obj.save(self.session, commit=True)
         self.assertEqual(self.a.interactions[0], obj)
+
+    def test_filters_out_nones_from_label_list(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_interactome=False,
+            is_training=False,
+            label=[None, None, 'Label']
+        )
+        obj.save(self.session, commit=True)
+        self.assertEqual(obj.label, 'Label')
 
     def test_interaction_equality(self):
         obj1 = Interaction(
@@ -691,13 +910,47 @@ class TestInteractionModel(TestCase):
         )
         obj.save(self.session, commit=True)
 
-        obj.pmid.append(pa)
+        obj.add_pmid_reference(pa)
         obj = self.session.query(Interaction).first()
         pa = self.session.query(Pubmed).first()
         self.assertEqual(obj.pmid, [pa])
         self.assertEqual(pa.interactions, [obj])
 
-    def test_can_append_duplicate_pmids(self):
+    def test_TE_add_or_remove_non_pubmed_reference(self):
+        pa = Psimi(accession="A", description="")
+        pa.save(self.session, commit=True)
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=False,
+            is_interactome=False,
+        )
+        obj.save(self.session, commit=True)
+
+        with self.assertRaises(TypeError):
+            obj.add_pmid_reference(pa)
+        with self.assertRaises(TypeError):
+            obj.remove_pmid_reference(pa)
+
+    def test_TE_add_or_remove_non_psimi_reference(self):
+        pa = Pubmed(accession="A")
+        pa.save(self.session, commit=True)
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=False,
+            is_interactome=False,
+        )
+        obj.save(self.session, commit=True)
+
+        with self.assertRaises(TypeError):
+            obj.add_psimi_reference(pa)
+        with self.assertRaises(TypeError):
+            obj.add_psimi_reference(pa)
+
+    def test_cannot_append_duplicate_pmids(self):
         pa = Pubmed(accession="A")
         pa.save(self.session, commit=True)
 
@@ -709,12 +962,12 @@ class TestInteractionModel(TestCase):
             is_interactome=False,
         )
         obj.save(self.session, commit=True)
-
-        obj.pmid.extend([pa, pa])
-        self.assertEqual(obj.pmid, [pa, pa])
+        obj.add_pmid_reference(pa)
+        obj.add_pmid_reference(pa)
+        self.assertEqual(obj.pmid, [pa])
         self.assertEqual(pa.interactions, [obj])
 
-    def test_can_append_duplicate_psimis(self):
+    def test_cannot_append_duplicate_psimis(self):
         pa = Psimi(accession="A", description='blah')
         pa.save(self.session, commit=True)
 
@@ -726,9 +979,9 @@ class TestInteractionModel(TestCase):
             is_interactome=False,
         )
         obj.save(self.session, commit=True)
-
-        obj.psimi.extend([pa, pa])
-        self.assertEqual(obj.psimi, [pa, pa])
+        obj.add_psimi_reference(pa)
+        obj.add_psimi_reference(pa)
+        self.assertEqual(obj.psimi, [pa])
         self.assertEqual(pa.interactions, [obj])
 
     def test_can_append_to_psimi_and_will_update_psimi_interactions(self):
@@ -743,12 +996,38 @@ class TestInteractionModel(TestCase):
             is_interactome=False,
         )
         obj.save(self.session, commit=True)
+        obj.add_psimi_reference(pa)
 
-        obj.psimi.append(pa)
         obj = self.session.query(Interaction).first()
         pa = self.session.query(Psimi).first()
         self.assertEqual(obj.psimi, [pa])
         self.assertEqual(pa.interactions, [obj])
+
+    def test_can_remove_non_existing_pmid_or_psimi_without_error(self):
+        obj = Interaction(
+            source=self.a.id,
+            target=self.b.id,
+            is_holdout=False,
+            is_training=False,
+            is_interactome=False,
+        )
+        obj.save(self.session, commit=True)
+
+        psimi_1 = Psimi(accession="A", description='blah')
+        psimi_2 = Psimi(accession="B", description='blah')
+        psimi_1.save(self.session, commit=True)
+        psimi_2.save(self.session, commit=True)
+        obj.add_psimi_reference(psimi_1)
+        obj.remove_psimi_reference(psimi_2)
+        self.assertTrue(obj.psimi, [psimi_1])
+
+        pubmed_1 = Pubmed(accession="A")
+        pubmed_2 = Pubmed(accession="B")
+        pubmed_1.save(self.session, commit=True)
+        pubmed_2.save(self.session, commit=True)
+        obj.add_pmid_reference(pubmed_1)
+        obj.remove_pmid_reference(pubmed_2)
+        self.assertTrue(obj.pmid, [pubmed_1])
 
     def test_remove_pmid_and_will_update_pmid_interactions(self):
         pa = Pubmed(accession="A")
@@ -769,7 +1048,7 @@ class TestInteractionModel(TestCase):
         self.assertEqual(pa.interactions, [obj])
 
         # Now remove and refresh
-        obj.pmid.remove(pa)
+        obj.remove_pmid_reference(pa)
         self.assertEqual(obj.pmid, [])
         self.assertEqual(pa.interactions, [])
 
@@ -792,7 +1071,7 @@ class TestInteractionModel(TestCase):
         self.assertEqual(pa.interactions, [obj])
 
         # Now remove and refresh
-        obj.psimi.remove(pa)
+        obj.remove_psimi_reference(pa)
         self.assertEqual(obj.psimi, [])
         self.assertEqual(pa.interactions, [])
 
@@ -822,9 +1101,13 @@ class TestPubmedModel(TestCase):
 
     def tearDown(self):
         self.session.rollback()
-        self.session.execute("DROP TABLE interaction")
-        self.session.execute("DROP TABLE protein")
-        self.session.execute("DROP TABLE pubmed")
+        self.session.query(Interaction).delete()
+        self.session.query(Protein).delete()
+        self.session.query(Pubmed).delete()
+        self.session.query(Psimi).delete()
+        self.session.execute("DROP TABLE pmid_interactions")
+        self.session.execute("DROP TABLE psimi_interactions")
+        self.session.commit()
         self.session.close()
 
     def test_cannot_save_two_pubmeds_with_same_accession(self):
@@ -849,7 +1132,7 @@ class TestPubmedModel(TestCase):
         pa.interactions.append(self.ia)
 
         ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.pmid[0], pa)
+        self.assertEqual(ia.pmid, [pa])
 
     def test_remove_interactions_and_will_update_interaction_pmid(self):
         pa = Pubmed(accession="A")
@@ -857,7 +1140,7 @@ class TestPubmedModel(TestCase):
 
         pa.interactions.append(self.ia)
         ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.pmid[0], pa)
+        self.assertEqual(ia.pmid, [pa])
 
         pa.interactions.remove(self.ia)
         ia = self.session.query(Interaction).first()
@@ -889,9 +1172,13 @@ class TestPsimiModel(TestCase):
 
     def tearDown(self):
         self.session.rollback()
-        self.session.execute("DROP TABLE interaction")
-        self.session.execute("DROP TABLE protein")
-        self.session.execute("DROP TABLE psimi")
+        self.session.query(Interaction).delete()
+        self.session.query(Protein).delete()
+        self.session.query(Pubmed).delete()
+        self.session.query(Psimi).delete()
+        self.session.execute("DROP TABLE pmid_interactions")
+        self.session.execute("DROP TABLE psimi_interactions")
+        self.session.commit()
         self.session.close()
 
     def test_cannot_save_two_psimis_with_same_accession(self):
@@ -916,7 +1203,7 @@ class TestPsimiModel(TestCase):
         pa.interactions.append(self.ia)
 
         ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.psimi[0], pa)
+        self.assertEqual(ia.psimi, [pa])
 
     def test_can_remove_interactions_and_will_update_interaction_psmi(self):
         pa = Psimi(accession="A", description="blah")
@@ -924,8 +1211,151 @@ class TestPsimiModel(TestCase):
 
         pa.interactions.append(self.ia)
         ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.psimi[0], pa)
+        self.assertEqual(ia.psimi, [pa])
 
         pa.interactions.remove(self.ia)
         ia = self.session.query(Interaction).first()
         self.assertEqual(ia.psimi, [])
+
+
+class TestUtilities(TestCase):
+    def setUp(self):
+        self.url = "sqlite:///" + os.path.normpath(
+            "{}/databases/test.db".format(base_path)
+        )
+ 
+        self.engine = create_engine(self.url, echo=False)
+        Base.metadata.create_all(self.engine)
+        self.session = Session(bind=self.engine, )
+
+        self.pa = Protein(uniprot_id="A", taxon_id=9606, reviewed=False)
+        self.pa.save(self.session, commit=True)
+        self.pb = Protein(uniprot_id="B", taxon_id=9606, reviewed=False)
+        self.pb.save(self.session, commit=True)
+        
+        self.ia = Interaction(
+            source=self.pa.id,
+            target=self.pb.id,
+            is_holdout=False,
+            is_training=False,
+            is_interactome=False,
+        )
+        self.ia.pmid = []
+        self.ia.psimi = []
+        self.ia.save(self.session, commit=True)
+
+        self.psi_a = Psimi(accession="MI:1", description="blah")
+        self.psi_b = Psimi(accession="MI:2", description="blah")
+        self.pm_a = Pubmed(accession="1")
+        self.pm_b = Pubmed(accession="2")
+        self.psi_a.save(self.session, commit=True)
+        self.psi_b.save(self.session, commit=True)
+        self.pm_a.save(self.session, commit=True)
+        self.pm_b.save(self.session, commit=True)
+
+    def tearDown(self):
+        self.session.rollback()
+        self.session.query(Interaction).delete()
+        self.session.query(Protein).delete()
+        self.session.query(Pubmed).delete()
+        self.session.query(Psimi).delete()
+        self.session.execute("DROP TABLE pmid_interactions")
+        self.session.execute("DROP TABLE psimi_interactions")
+        self.session.commit()
+        self.session.close()
+
+    def test_construct_m2m(self):
+        construct_m2m(
+            self.session,
+            self.ia,
+            pmids="1,2",
+            psimis="MI:1,MI:2",
+            replace=False
+        )
+        self.ia.save(self.session, commit=True)
+        self.assertEqual(
+            sorted(self.ia.pmid, key=lambda x: x.accession),
+            [self.pm_a, self.pm_b]
+        )
+        self.assertEqual(
+            sorted(self.ia.psimi, key=lambda x: x.accession),
+            [self.psi_a, self.psi_b]
+        )
+
+    def test_construct_m2m_ignores_None_or_empty(self):
+        construct_m2m(
+            self.session,
+            self.ia,
+            pmids=None,
+            psimis=",MI:2",
+            replace=False
+        )
+        self.ia.save(self.session, commit=True)
+        self.assertEqual(
+            sorted(self.ia.pmid, key=lambda x: x.accession),
+            []
+        )
+        self.assertEqual(
+            sorted(self.ia.psimi, key=lambda x: x.accession),
+            [self.psi_b]
+        )
+
+    def test_construct_m2m_replaces_m2m_if_replace_is_true(self):
+        self.ia.pmid = [self.pm_a]
+        self.ia.psimi = [self.psi_a]
+        self.ia.save(self.session, commit=True)
+        self.assertEqual(
+            sorted(self.ia.pmid, key=lambda x: x.accession),
+            [self.pm_a]
+        )
+        self.assertEqual(
+            sorted(self.ia.psimi, key=lambda x: x.accession),
+            [self.psi_a]
+        )
+
+        construct_m2m(
+            self.session,
+            self.ia,
+            pmids='2',
+            psimis="MI:2",
+            replace=True
+        )
+        self.ia.save(self.session, commit=True)
+        self.assertEqual(
+            sorted(self.ia.pmid, key=lambda x: x.accession),
+            [self.pm_b]
+        )
+        self.assertEqual(
+            sorted(self.ia.psimi, key=lambda x: x.accession),
+            [self.psi_b]
+        )
+    
+    def test_construct_m2m_appends_m2m_if_replace_is_false(self):
+        self.ia.pmid = [self.pm_a]
+        self.ia.psimi = [self.psi_a]
+        self.ia.save(self.session, commit=True)
+        self.assertEqual(
+            sorted(self.ia.pmid, key=lambda x: x.accession),
+            [self.pm_a]
+        )
+        self.assertEqual(
+            sorted(self.ia.psimi, key=lambda x: x.accession),
+            [self.psi_a]
+        )
+        
+        construct_m2m(
+            self.session,
+            self.ia,
+            pmids='2',
+            psimis="MI:2",
+            replace=False
+        )
+        self.ia.save(self.session, commit=True) 
+        self.assertEqual(
+            sorted(self.ia.pmid, key=lambda x: x.accession),
+            [self.pm_a, self.pm_b]
+        )
+        self.assertEqual(
+            sorted(self.ia.psimi, key=lambda x: x.accession),
+            [self.psi_a, self.psi_b]
+        )
