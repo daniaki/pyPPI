@@ -147,7 +147,6 @@ if __name__ == "__main__":
     verbose = args['verbose']
     selection = args['selection']
     model = args['model']
-    use_feature_cache = args['use_cache']
     direc = args['directory']
     hyperparam_iter = args['h_iterations']
     get_top_n = args['top']
@@ -175,9 +174,9 @@ if __name__ == "__main__":
     with begin_transaction() as session:
         labels = i_manager.training_labels(session, include_holdout=False)
         training = i_manager.training_interactions(
-            session, filter_out_holdout=True)
+            session, keep_holdout=False)
         testing = i_manager.holdout_interactions(
-            session, filter_out_training=True)
+            session, keep_training=False)
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
@@ -272,10 +271,11 @@ if __name__ == "__main__":
             fit_results.append((estimators, vectorizer, requires_dense))
 
         for fold_iter, (
-                (_, validation_idx), (estimators, vectorizer, requires_dense)
-            ) in enumerate(zip(cv, fit_results)):
+            (_, validation_idx), (estimators, vectorizer, requires_dense)
+        ) in enumerate(zip(cv, fit_results)):
             logger.info(
-                "Computing binary performance for fold {}.".format(fold_iter+1)
+                "Computing binary performance for fold {}.".format(
+                    fold_iter + 1)
             )
             y_valid_f_pred = []
             y_test_f_pred = []
@@ -284,7 +284,8 @@ if __name__ == "__main__":
 
             for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes_)):
                 logger.info(
-                    "\tComputing binary performance for label {}.".format(label)
+                    "\tComputing binary performance for label {}.".format(
+                        label)
                 )
 
                 X_valid_l = vectorizer.transform(X_train[validation_idx])
