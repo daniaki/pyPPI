@@ -249,41 +249,36 @@ class InteractionManager(object):
             "is_training": entry.is_training,
             "is_interactome": entry.is_interactome,
             "label": split_(entry.label) if split else entry.label,
+            "pmid": entry.pmid,
+            "psimi": entry.psimi,
             "id": entry.id
         }
 
-    def training_interactions(self, session, filter_out_holdout=False):
-        qs = session.query(Interaction).filter(
-            Interaction.is_training.is_(True)
-        )
-        if filter_out_holdout:
+    def training_interactions(self, session, keep_holdout=False):
+        qs = session.query(Interaction).filter_by(is_training=True)
+        if not keep_holdout:
             qs = qs.filter_by(is_holdout=False)
         return self.filter_matching_taxon_ids(qs)
 
-    def holdout_interactions(self, session, filter_out_training=False):
-        qs = session.query(Interaction).filter(
-            Interaction.is_holdout.is_(True)
-        )
-        if filter_out_training:
+    def holdout_interactions(self, session, keep_training=False):
+        qs = session.query(Interaction).filter_by(is_holdout=True)
+        if not keep_training:
             qs = qs.filter_by(is_training=False)
         return self.filter_matching_taxon_ids(qs)
 
-    def interactome_interactions(self, session, filter_out_training=False,
-                                 filter_out_holdout=False):
-        qs = session.query(Interaction).filter(
-            Interaction.is_interactome.is_(True)
-        )
-        if filter_out_holdout:
-            qs = qs.filter_by(is_holdout=False)
-        if filter_out_training:
+    def interactome_interactions(self, session, keep_training=False,
+                                 keep_holdout=False):
+        qs = session.query(Interaction).filter_by(is_interactome=True)
+        if not keep_training:
             qs = qs.filter_by(is_training=False)
-
+        if not keep_holdout:
+            qs = qs.filter_by(is_holdout=False)
         return self.filter_matching_taxon_ids(qs)
 
     def training_labels(self, session, include_holdout=False):
         labels = set()
         interactions = self.training_interactions(
-            session, filter_out_holdout=not include_holdout)
+            session, keep_holdout=include_holdout)
         for interaction in interactions:
             if interaction.label is None:
                 continue
