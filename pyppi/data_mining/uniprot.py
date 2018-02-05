@@ -154,8 +154,7 @@ def parse_record_into_protein(record, verbose=False):
 
 
 def batch_map(session, accessions, fr='ACC+ID', allow_download=False,
-              keep_unreviewed=True, match_taxon_id=9606
-              ):
+              keep_unreviewed=True, match_taxon_id=9606):
     """
     Map a list of accessions using the UniProt batch mapping service.
     :param accessions: List of accessions.
