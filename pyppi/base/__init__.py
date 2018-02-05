@@ -19,6 +19,11 @@ G2 = 'gene_b'
 SOURCE = 'source'
 TARGET = 'target'
 LABEL = 'label'
+PUBMED = 'pubmed'
+EXPERIMENT_TYPE = 'experiment_type'
+NULL_VALUES = (
+    '', 'None', 'NaN', 'none', 'nan', '-', 'unknown', None, ' ', np.NaN
+)
 
 
 def su_make_dir(path, mode=0o777):
@@ -152,7 +157,7 @@ def query_doctop_dict(docopt_dict, key):
     if key in docopt_dict:
         return docopt_dict[key]
     else:
-        return False
+        return None
 
 
 def parse_args(docopt_args):
@@ -165,21 +170,24 @@ def parse_args(docopt_args):
             parsed['directory'] = docopt_args['--directory']
         else:
             parsed['directory'] = './'
+
     if query_doctop_dict(docopt_args, '--label'):
         if docopt_args['--label'] not in load_ptm_labels():
-            sys.stdout.write("Invalid label selection. Select one of: ".format(
+            sys.stdout.write("Invalid label selection. Select one of: {}".format(
                 ' ,'.join(load_ptm_labels())
             ))
             sys.exit(0)
         parsed['label'] = docopt_args['--label']
-    backend = query_doctop_dict(docopt_args, '--backend')
-    if backend and backend not in ['threading', 'multiprocessing']:
-        sys.stdout.write(
-            "Backend must be one of 'threading' or 'multiprocessing'."
-        )
-        sys.exit(0)
-    else:
-        parsed['backend'] = backend or 'multiprocessing'
+
+    if query_doctop_dict(docopt_args, '--backend'):
+        backend = query_doctop_dict(docopt_args, '--backend')
+        if backend not in ['threading', 'multiprocessing']:
+            sys.stdout.write(
+                "Backend must be one of 'threading' or 'multiprocessing'."
+            )
+            sys.exit(0)
+        else:
+            parsed['backend'] = backend
 
     # Selection parsing
     selection = []
@@ -211,41 +219,39 @@ def parse_args(docopt_args):
     if has_features and len(selection) == 0:
         sys.stdout.write("Must have at least one feature.")
         sys.exit(0)
-    parsed['selection'] = selection
+    if has_features:
+        parsed['selection'] = selection
 
     # bool parsing
-    parsed['abs'] = query_doctop_dict(docopt_args, '--abs')
-    parsed['induce'] = query_doctop_dict(docopt_args, '--induce')
-    parsed['verbose'] = query_doctop_dict(docopt_args, '--verbose')
-    parsed['use_cache'] = query_doctop_dict(docopt_args, '--use_cache')
-    parsed['retrain'] = query_doctop_dict(docopt_args, '--retrain')
-    parsed['binary'] = query_doctop_dict(docopt_args, '--binary')
-    parsed['clear_cache'] = query_doctop_dict(docopt_args, '--clear_cache')
-    parsed['init_database'] = query_doctop_dict(docopt_args, '--init_database')
-    parsed['abs'] = query_doctop_dict(docopt_args, '--abs')
-    parsed['cost_sensitive'] = query_doctop_dict(
-        docopt_args, '--cost_sensitive'
-    )
-    parsed['update_features'] = query_doctop_dict(
-        docopt_args, '--update_features'
-    )
-    parsed['update_mapping'] = query_doctop_dict(
-        docopt_args, '--update_mapping'
-    )
+    booleans = [
+        '--abs', '--induce', '--verbose', '--retrain',
+        '--binary', '--clear_cache', '--cost_sensitive'
+    ]
+    for arg in booleans:
+        if query_doctop_dict(docopt_args, arg) is not None:
+            parsed[arg[2:]] = query_doctop_dict(docopt_args, arg)
 
     # Numeric parsing
-    n_jobs = int(query_doctop_dict(docopt_args, '--n_jobs')) or 1
-    n_splits = int(query_doctop_dict(docopt_args, '--n_splits')) or 5
-    n_iterations = int(query_doctop_dict(docopt_args, '--n_iterations')) or 5
-    h_iterations = int(query_doctop_dict(docopt_args, '--h_iterations')) or 60
-    top_features = int(query_doctop_dict(docopt_args, '--top')) or 25
-    threshold = float(query_doctop_dict(docopt_args, '--threshold')) or 0.5
-    parsed['n_jobs'] = n_jobs
-    parsed['n_splits'] = n_splits
-    parsed['n_iterations'] = n_iterations
-    parsed['threshold'] = threshold
-    parsed['h_iterations'] = h_iterations
-    parsed['top'] = top_features
+    if query_doctop_dict(docopt_args, '--n_jobs') is not None:
+        n_jobs = int(query_doctop_dict(docopt_args, '--n_jobs')) or 1
+        parsed['n_jobs'] = n_jobs
+    if query_doctop_dict(docopt_args, '--n_splits') is not None:
+        n_splits = int(query_doctop_dict(docopt_args, '--n_splits')) or 5
+        parsed['n_splits'] = n_splits
+    if query_doctop_dict(docopt_args, '--n_iterations') is not None:
+        n_iterations = int(query_doctop_dict(
+            docopt_args, '--n_iterations')) or 5
+        parsed['n_iterations'] = n_iterations
+    if query_doctop_dict(docopt_args, '--h_iterations') is not None:
+        h_iterations = int(query_doctop_dict(
+            docopt_args, '--h_iterations')) or 60
+        parsed['h_iterations'] = h_iterations
+    if query_doctop_dict(docopt_args, '--top') is not None:
+        top_features = int(query_doctop_dict(docopt_args, '--top')) or 25
+        parsed['top'] = top_features
+    if query_doctop_dict(docopt_args, '--threshold') is not None:
+        threshold = float(query_doctop_dict(docopt_args, '--threshold')) or 0.5
+        parsed['threshold'] = threshold
 
     # Input/Output parsing
     if query_doctop_dict(docopt_args, '--output'):
@@ -261,31 +267,29 @@ def parse_args(docopt_args):
             sys.stdout.write(e)
             sys.exit(0)
 
-    if query_doctop_dict(docopt_args, '--input') in (None, 'None'):
-        parsed['input'] = None
-    elif query_doctop_dict(docopt_args, '--input'):
-        try:
-            # if query_doctop_dict(docopt_args, '--directory'):
-            #     fp = open(
-            #         docopt_args['--directory'] + docopt_args['--input'], 'r')
-            # else:
-            fp = open(docopt_args['--input'], 'r')
-            fp.close()
-            parsed['input'] = docopt_args['--input']
-        except IOError as e:
-            sys.stdout.write(e)
-            sys.exit(0)
+    if query_doctop_dict(docopt_args, '--input') is not None:
+        if query_doctop_dict(docopt_args, '--input') == 'None':
+            parsed['input'] = None
+        elif query_doctop_dict(docopt_args, '--input'):
+            try:
+                fp = open(docopt_args['--input'], 'r')
+                fp.close()
+                parsed['input'] = docopt_args['--input']
+            except IOError as e:
+                sys.stdout.write(e)
+                sys.exit(0)
 
     # Model parsing
     model = query_doctop_dict(docopt_args, '--model')
-    if model and (model not in supported_estimators()):
-        sys.stdout.write(
-            'Classifier not supported. Please choose one of: {}'.format(
-                '\t\n'.join(supported_estimators().keys())
-            ))
-        sys.exit(0)
-    else:
-        parsed['model'] = model
+    if model is not None:
+        if (model not in supported_estimators()):
+            sys.stdout.write(
+                'Classifier not supported. Please choose one of: {}'.format(
+                    '\t\n'.join(supported_estimators().keys())
+                ))
+            sys.exit(0)
+        else:
+            parsed['model'] = model
     return parsed
 
 
@@ -293,17 +297,3 @@ def delete_cache():
     from ..data_mining.kegg import reset_kegg, reset_uniprot
     reset_kegg()
     reset_uniprot()
-
-
-def delete_database():
-    from ..database.models import Protein, Interaction
-    from ..database import begin_transaction, Base, ENGINE
-    from ..data import default_db_path
-    with begin_transaction() as session:
-        session.query(Protein).delete()
-        session.query(Interaction).delete()
-        try:
-            session.commit()
-        except:
-            session.rollback()
-            raise
