@@ -9,8 +9,10 @@ functionality to create data frames from the parsing results.
 """
 
 import itertools
+import numpy as np
 from ..data import generic_io
-from .tools import make_interaction_frame, process_interactions
+from ..base import PUBMED, EXPERIMENT_TYPE
+from .tools import process_interactions, make_interaction_frame
 
 INVALID_ACCESSIONS = ['', ' ', '-', 'unknown']
 
@@ -44,7 +46,7 @@ def edgelist_func(fp):
         target = validate_accession(xs[target_idx].strip().upper())
         sources.append(source)
         targets.append(target)
-        labels.append('-')
+        labels.append(None)
     return sources, targets, labels
 
 
@@ -70,7 +72,7 @@ def bioplex_func(fp):
         target = validate_accession(xs[target_idx].strip().upper())
         sources.append(source)
         targets.append(target)
-        labels.append('-')
+        labels.append(None)
     return sources, targets, labels
 
 
@@ -92,7 +94,7 @@ def pina_func(fp):
         target = validate_accession(xs[target_idx].strip().upper())
         sources.append(source)
         targets.append(target)
-        labels.append('-')
+        labels.append(None)
     return sources, targets, labels
 
 
@@ -103,46 +105,84 @@ def mitab_func(fp):
     :param fp: Open file handle containing the file to parse.
     :return: Tuple source, target and label lists.
     """
-    source_idx = 0
-    target_idx = 1
+    uniprot_source_idx = 4
+    uniprot_target_idx = 5
+    source_idx = 2
+    target_idx = 3
+    d_method_idx = 6  # detection method
+    pmid_idx = 8
+    i_type_idx = 11  # interaction type
+
     sources = []
     targets = []
     labels = []
-    ppis = []
+    pmids = []
+    experiment_types = []
 
     # Remove header
     next(fp)
 
     for line in fp:
-        accessions = []
-        xs = [l for l in line.strip().split('\t') if 'uniprotkb' in l]
-        if len(xs) < 2:
-            accessions = [[], []]
-        else:
-            for index in [source_idx, target_idx]:
-                ps = [e for e in xs[index].split('|')
-                      if ('uniprotkb' in e) and ('_' not in e)]
-                if len(ps) == 0:
-                    accessions.append([])
-                else:
-                    p = [e for e in xs[index].split('|')
-                         if ('uniprotkb' in e) and ('_' not in e)]
-                    p = [x.split(':')[1] for x in p]
-                    accessions.append(p)
-        ppis.append(accessions)
+        xs = line.strip().split('\t')
+        ensembl_source = xs[source_idx].strip()
+        ensembl_target = xs[target_idx].strip()
+        if ('ENSG' not in ensembl_source) or ('ENSG' not in ensembl_target):
+            continue
 
-    # Iterate through the list of tuples, each tuple being a
-    # list of accessions found within a line for each of the two proteins.
-    for source_xs, target_xs in ppis:
-        for source, target in itertools.product(source_xs, target_xs):
+        # These formats might contain multiple uniprot interactors in a
+        # single line, or none. Continue parsing if the latter.
+        source_ls = [
+            elem.split(':')[1] for elem in xs[uniprot_source_idx].split('|')
+            if ('uniprotkb' in elem and not '_' in elem)
+        ]
+        target_ls = [
+            elem.split(':')[1] for elem in xs[uniprot_target_idx].split('|')
+            if ('uniprotkb' in elem) and (not '_' in elem)
+        ]
+        if len(source_ls) < 1 or len(target_ls) < 1:
+            continue
+
+        d_method_line = xs[d_method_idx].strip()
+        d_psimi = None
+        d_description = None
+        if d_method_line not in ('', '-'):
+            _, d_method_text = d_method_line.strip().split("psi-mi:")
+            _, d_psimi, d_description = d_method_text.split('"')
+            d_description = d_description.replace('(', '').replace(')', '')
+
+        pmid_line = xs[pmid_idx].strip()
+        pmid = None
+        if pmid_line not in ('', '-'):
+            pmid = ','.join(
+                sorted(set(
+                    [pmid_line.split(':')[-1] for t in pmid_line.split('|')]
+                ))
+            )
+
+        i_type_line = xs[i_type_idx].strip()
+        i_psimi = None
+        i_description = None
+        if i_type_line not in ('', '-'):
+            _, i_method_text = i_type_line.strip().split("psi-mi:")
+            _, i_psimi, i_description = i_method_text.split('"')
+            i_description = i_description.replace('(', '').replace(')', '')
+
+        # Iterate through the list of tuples, each tuple being a
+        # list of accessions found within a line for each of the two proteins.
+        for source, target in itertools.product(source_ls, target_ls):
             source = validate_accession(source)
             target = validate_accession(target)
-            label = '-'
-            sources.append(source)
-            targets.append(target)
-            labels.append(label)
+            if source is None or target is None:
+                continue
+            else:
+                label = None
+                sources.append(source)
+                targets.append(target)
+                labels.append(label)
+                pmids.append(pmid)
+                experiment_types.append(d_psimi)
 
-    return sources, targets, labels
+    return sources, targets, labels, pmids, experiment_types
 
 
 def generic_to_dataframe(f_input, parsing_func, drop_nan=False,
@@ -168,8 +208,16 @@ def generic_to_dataframe(f_input, parsing_func, drop_nan=False,
     if isinstance(f_input, str):
         lines = generic_io(f_input)
 
-    sources, targets, labels = parsing_func(lines)
-    interactions = make_interaction_frame(sources, targets, labels)
+    if parsing_func == mitab_func:
+        sources, targets, labels, pmids, e_types = parsing_func(lines)
+        interactions = make_interaction_frame(
+            sources, targets, labels,
+            **{PUBMED: pmids, EXPERIMENT_TYPE: e_types}
+        )
+    else:
+        sources, targets, labels = parsing_func(lines)
+        interactions = make_interaction_frame(sources, targets, labels)
+
     interactions = process_interactions(
         interactions=interactions,
         drop_nan=drop_nan,
