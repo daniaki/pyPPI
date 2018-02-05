@@ -3,6 +3,8 @@
 This module contains the SQLAlchemy database definitions and related
 functions to access and update the database files.
 """
+import logging
+import numpy as np
 from enum import Enum
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Table
@@ -11,6 +13,10 @@ from sqlalchemy.sql import and_
 
 from ..database import Base
 from ..database.exceptions import ObjectNotFound, ObjectAlreadyExists
+from ..base import SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED, NULL_VALUES
+
+
+logger = logging.getLogger("pyppi")
 
 
 def _format_annotation(value, upper=True):
@@ -339,20 +345,15 @@ class Interaction(Base):
         self.pfam = pfam
 
     def __repr__(self):
-        from ..database import begin_transaction
-        with begin_transaction() as session:
-            source_uid = session.query(Protein).get(self.source)
-            target_uid = session.query(Protein).get(self.target)
         string = (
             "<Interaction("
-            "id={}, source={} ({}), target={} ({}), training={}, holdout={}, "
+            "id={}, source={}, target={}, training={}, holdout={}, "
             "interactome={}, label={}"
             ")"
             ">"
         )
         return string.format(
-            self.id, self.source, None or source_uid.uniprot_id,
-            self.target, None or target_uid.uniprot_id,
+            self.id, self.source, self.target,
             self.is_training, self.is_holdout,
             self.is_interactome, self.label
         )
@@ -595,6 +596,9 @@ class Interaction(Base):
         if not any(valid_types):
             raise TypeError("Label must be list, str, set or None.")
 
+        if isinstance(value, list) or isinstance(value, set):
+            value = [v for v in value if v is not None]
+
         if not value:
             self._label = None
         else:
@@ -607,6 +611,73 @@ class Interaction(Base):
                 self._label = None
             else:
                 self._label = labels
+
+    @property
+    def labels_as_list(self):
+        if self.label is None:
+            return []
+        else:
+            return list(sorted(self.label.split(',')))
+
+    def add_label(self, label):
+        if not isinstance(label, str):
+            raise TypeError("Label must be string.")
+        elif not label.strip():
+            raise ValueError("Cannot set empty label.")
+        elif len(label.split(',')) > 1:
+            raise ValueError("Cannot set multiple labels at once.")
+        else:
+            if self.label is None:
+                self.label = label
+            else:
+                self.label = self.label.split(',') + [label]
+            return self
+
+    def remove_label(self, label):
+        if self.label is None:
+            return self
+        if not isinstance(label, str):
+            raise TypeError("Label must be string")
+        elif not label.strip():
+            raise ValueError("Cannot remove empty label.")
+        elif len(label.split(',')) > 1:
+            raise ValueError("Cannot remove multiple labels at once.")
+        else:
+            labels = self.label.split(',')
+            label = label.strip().capitalize()
+            try:
+                labels.remove(label)
+                self.label = labels
+            except ValueError:
+                return self
+
+    def add_pmid_reference(self, pmid):
+        if not isinstance(pmid, Pubmed):
+            raise TypeError("pmid must be an instance of Pubmed.")
+        if not (pmid in self.pmid):
+            self.pmid.append(pmid)
+        return self
+
+    def remove_pmid_reference(self, pmid):
+        if not isinstance(pmid, Pubmed):
+            raise TypeError("pmid must be an instance of Pubmed.")
+        if pmid in self.pmid:
+            self.pmid.remove(pmid)
+        return self
+
+    def add_psimi_reference(self, psimi):
+        if not isinstance(psimi, Psimi):
+            raise TypeError("psimi must be an instance of Psimi.")
+        if not (psimi in self.psimi):
+            self.psimi.append(psimi)
+        return self
+
+    def remove_psimi_reference(self, psimi):
+        if not isinstance(psimi, Psimi):
+            raise TypeError("psimi must be an instance of Psimi.")
+        if psimi in self.psimi:
+            self.psimi.remove(psimi)
+        return self
 
     def _set_annotation_attribute(self, attr, value):
         accepted_types = [
@@ -711,3 +782,82 @@ class Psimi(Base):
     @property
     def interactions(self):
         return self.psimi_interactions
+
+
+# ---- Helper for M2M linking
+def construct_m2m(session, entry, pmids, psimis, replace=False):
+    pmid_objs = set() if replace else set(entry.pmid)
+    if pmids not in NULL_VALUES:
+        for pmid in pmids.split(','):
+            pmid_obj = session.query(Pubmed).filter_by(
+                accession=pmid
+            ).first()
+            if pmid_obj is not None:
+                pmid_objs.add(pmid_obj)
+        entry.pmid = list(pmid_objs)
+
+    if psimis not in NULL_VALUES:
+        psimi_objs = set() if replace else set(entry.psimi)
+        for psimi in psimis.split(','):
+            psimi_obj = session.query(Psimi).filter_by(
+                accession=psimi
+            ).first()
+            if psimi_obj is not None:
+                psimi_objs.add(psimi_obj)
+        entry.psimi = list(psimi_objs)
+
+    return entry
+
+
+def create_interactions(session, df, existing_interactions, protein_map,
+                        is_training, is_holdout, is_interactome,
+                        feature_map, replace_label=False,
+                        replace_m2m=False, name=None):
+    zipped = zip(
+        df[SOURCE],
+        df[TARGET],
+        df[LABEL],
+        df[PUBMED],
+        df[EXPERIMENT_TYPE]
+    )
+    for (uniprot_a, uniprot_b, label, pmids, psimis) in zipped:
+        if str(label) in NULL_VALUES:
+            label = None
+        entry = existing_interactions.get((uniprot_a, uniprot_b), None)
+        if entry is None:
+            entry = Interaction(
+                source=protein_map[uniprot_a].id,
+                target=protein_map[uniprot_b].id,
+                is_training=is_training,
+                is_holdout=is_holdout,
+                is_interactome=is_interactome,
+                label=label,
+                **feature_map[(uniprot_a, uniprot_b)]
+            )
+        else:
+            if is_training:
+                entry.is_training = is_training
+            if is_holdout:
+                entry.is_holdout = is_holdout
+            if is_interactome:
+                entry.is_interactome = is_interactome
+
+            if not is_interactome and label is not None:
+                if replace_label:
+                    entry.label = label.split(',')
+                else:
+                    new_labels = label.split(',')
+                    entry.label = entry.labels_as_list + new_labels
+
+            for key, value in feature_map[(uniprot_a, uniprot_b)].items():
+                setattr(entry, key, value)
+
+        # The following block constructs the Many-to-Many relationships
+        # between the Interaction table and the Pubmed/Psimi tables.
+        entry.save(session, commit=False)
+        entry = construct_m2m(
+            session, entry, pmids, psimis, replace=replace_m2m
+        )
+        existing_interactions[(uniprot_a, uniprot_b)] = entry
+
+    return existing_interactions
