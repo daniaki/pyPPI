@@ -4,12 +4,17 @@
 This module contains functions to construct a binary relevance classifier
 using the OVR estimaor in sklearn
 """
-
+import logging
 from operator import itemgetter
 
 import numpy as np
+from sklearn.naive_bayes import GaussianNB, BernoulliNB, MultinomialNB
+from sklearn.neighbors import KNeighborsClassifier
 
 from ..data import get_term_description
+
+
+logger = logging.getLogger("pyppi")
 
 
 def get_coefs(clf):
@@ -22,12 +27,15 @@ def get_coefs(clf):
     def feature_imp(estimator):
         if hasattr(estimator, 'steps'):
             estimator = estimator.steps[-1][-1]
+
         if hasattr(estimator, "coef_"):
             return estimator.coef_
         elif hasattr(estimator, "coefs_"):
             return estimator.coefs_
         elif hasattr(estimator, "feature_importances_"):
             return estimator.feature_importances_
+        elif hasattr(estimator, "feature_log_prob_"):
+            return estimator.feature_log_prob_[1]
         else:
             raise AttributeError(
                 "Estimator {} doesn't support "
@@ -48,8 +56,20 @@ def top_n_features(n, clf, go_dag, ipr_map, pfam_map,
     :return: array like, shape (n_estimators, n).
         Each element in a list is a tuple (feature_idx, weight).
     """
+    if isinstance(clf, KNeighborsClassifier):
+        logger.warning("Top features not supported for KNeighborsClassifier.")
+        return None
+    if isinstance(clf, GaussianNB):
+        logger.warning("Top features not supported for GaussianNB.")
+        return None
+
     top_features = []
-    coefs = get_coefs(clf)[0]
+    coefs = get_coefs(clf)
+    try:
+        n_features = max(coefs.shape[0], coefs.shape[1])
+    except IndexError:
+        n_features = coefs.shape[0]
+    coefs = coefs.reshape((n_features,))
 
     if absolute:
         coefs = abs(coefs)
