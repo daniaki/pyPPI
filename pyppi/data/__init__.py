@@ -174,13 +174,13 @@ def pfam_name_map():
 
 def get_term_description(term, go_dag, ipr_map, pfam_map):
     term = term.upper()
-    if 'GO' in term:
-        term = term.replace("GO", "GO:")
-        return go_dag[term].name
-    elif 'IPR' in term:
+    if 'IPR' in term:
         return ipr_map[term]
     elif 'PF' in term:
         return pfam_map[term]
+    else:
+        term = "GO:" + term
+        return go_dag[term].name
     return None
 
 
