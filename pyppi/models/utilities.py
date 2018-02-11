@@ -47,6 +47,29 @@ def get_coefs(clf):
         return feature_imp(clf)
 
 
+def rename(term):
+    """
+    Re-format feature terms after they've been formated by the vectorizer.
+
+    Parameters:
+    ----------
+    term : str
+        Mutilated term in string format.
+    Returns
+    -------
+    str
+        The normalised term.
+    """
+    term = term.upper()
+    if 'IPR' in term:
+        return term
+    elif 'PF' in term:
+        return term
+    else:
+        term = "GO:" + term
+        return term
+
+
 def top_n_features(n, clf, go_dag, ipr_map, pfam_map,
                    absolute=False, vectorizer=None):
     """
@@ -81,7 +104,7 @@ def top_n_features(n, clf, go_dag, ipr_map, pfam_map,
     if vectorizer:
         idx = [idx for (idx, w) in idx_coefs]
         ws = [w for (idx, w) in idx_coefs]
-        names = np.asarray(vectorizer.get_feature_names())[idx]
+        names = np.asarray(rename(vectorizer.get_feature_names()))[idx]
         descriptions = np.asarray(
             [
                 get_term_description(

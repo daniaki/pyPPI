@@ -178,8 +178,7 @@ def get_term_description(term, go_dag, ipr_map, pfam_map):
         return ipr_map[term]
     elif 'PF' in term:
         return pfam_map[term]
-    else:
-        term = "GO:" + term
+    elif "GO" in term:
         return go_dag[term].name
     return None
 

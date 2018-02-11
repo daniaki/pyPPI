@@ -104,7 +104,8 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
         logger.info("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
-            random_state=rng.randint(MAX_SEED)
+            random_state=rng.randint(MAX_SEED),
+            n_jobs=n_jobs
         )
         clf = RandomizedSearchCV(
             estimator=model_to_tune,
