@@ -26,6 +26,10 @@ NULL_VALUES = (
 )
 
 
+def is_null(value):
+    return str(value) in NULL_VALUES
+
+
 def su_make_dir(path, mode=0o777):
     if not path or os.path.exists(path):
         print("{} already exists...".format(path))
@@ -160,7 +164,7 @@ def query_doctop_dict(docopt_dict, key):
         return None
 
 
-def parse_args(docopt_args):
+def parse_args(docopt_args, skip_label=False):
     parsed = {}
     from ..database.models import Interaction
 
@@ -172,12 +176,18 @@ def parse_args(docopt_args):
             parsed['directory'] = './'
 
     if query_doctop_dict(docopt_args, '--label'):
-        if docopt_args['--label'] not in load_ptm_labels():
+        label = docopt_args['--label']
+        if label in (None, 'None'):
+            parsed['label'] = None
+        elif skip_label:
+            parsed['label'] = docopt_args['--label']
+        elif label not in load_ptm_labels():
             sys.stdout.write("Invalid label selection. Select one of: {}".format(
                 ' ,'.join(load_ptm_labels())
             ))
             sys.exit(0)
-        parsed['label'] = docopt_args['--label']
+        else:
+            parsed['label'] = docopt_args['--label']
 
     if query_doctop_dict(docopt_args, '--backend'):
         backend = query_doctop_dict(docopt_args, '--backend')
@@ -225,7 +235,8 @@ def parse_args(docopt_args):
     # bool parsing
     booleans = [
         '--abs', '--induce', '--verbose', '--retrain',
-        '--binary', '--clear_cache', '--cost_sensitive'
+        '--binary', '--clear_cache', '--cost_sensitive',
+        '--gene_names'
     ]
     for arg in booleans:
         if query_doctop_dict(docopt_args, arg) is not None:
@@ -250,18 +261,20 @@ def parse_args(docopt_args):
         top_features = int(query_doctop_dict(docopt_args, '--top')) or 25
         parsed['top'] = top_features
     if query_doctop_dict(docopt_args, '--threshold') is not None:
-        threshold = float(query_doctop_dict(docopt_args, '--threshold')) or 0.5
+        threshold = float(query_doctop_dict(docopt_args, '--threshold'))
         parsed['threshold'] = threshold
 
     # Input/Output parsing
     if query_doctop_dict(docopt_args, '--output'):
         try:
             if query_doctop_dict(docopt_args, '--directory'):
-                fp = open(
-                    docopt_args['--directory'] + docopt_args['--output'], 'w')
+                path = docopt_args['--directory'] + docopt_args['--output']
+                open(path, 'w').close()
+                os.remove(path)
             else:
-                fp = open(docopt_args['--output'], 'w')
-            fp.close()
+                path = docopt_args['--output']
+                open(path, 'w').close()
+                os.remove(path)
             parsed['output'] = docopt_args['--output']
         except IOError as e:
             sys.stdout.write(e)
@@ -290,6 +303,22 @@ def parse_args(docopt_args):
             sys.exit(0)
         else:
             parsed['model'] = model
+
+    if query_doctop_dict(docopt_args, '--pathway') is not None:
+        if query_doctop_dict(docopt_args, '--pathway') == 'None':
+            parsed['pathway'] = None
+        elif query_doctop_dict(docopt_args, '--pathway'):
+            try:
+                fp = open(docopt_args['--pathway'], 'r')
+                pathway = []
+                for line in fp:
+                    pathway.append(line.strip().upper())
+                fp.close()
+                parsed['pathway'] = pathway
+            except IOError as e:
+                sys.stdout.write(e)
+                sys.exit(0)
+
     return parsed
 
 

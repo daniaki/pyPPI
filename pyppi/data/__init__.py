@@ -204,7 +204,7 @@ def load_ptm_labels():
     labels = set()
     with open(ptm_labels_path, 'r') as fp:
         for line in fp:
-            l = line.strip().replace(' ', '-').lower()
+            l = line.strip().replace(' ', '-').capitalize()
             labels.add(l)
     return list(labels)
 
@@ -212,7 +212,7 @@ def load_ptm_labels():
 def save_ptm_labels(labels):
     with open(ptm_labels_path, 'w') as fp:
         for l in labels:
-            l = l.replace(' ', '-').lower()
+            l = l.replace(' ', '-').capitalize()
             fp.write('{}\n'.format(l))
 
 

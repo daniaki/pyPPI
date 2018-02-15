@@ -1,7 +1,8 @@
 import unittest
 from pyppi.tests import (
     test_database, test_features, test_uniprot,
-    test_db_models, test_managers, test_ontology
+    test_db_models, test_managers, test_ontology,
+    test_database_utilities
 )
 
 if __name__ == "__main__":
@@ -28,7 +29,12 @@ if __name__ == "__main__":
     # tests = loader.discover(start_dir='./', pattern="test_database.py")
     # unittest.TextTestRunner().run(tests)
 
-    # tests = loader.discover(start_dir='./', pattern="test_datamining_tools.py")
+    # tests = loader.discover(
+    #     start_dir='./', pattern="test_database_utilities.py")
+    # unittest.TextTestRunner().run(tests)
+
+    # tests = loader.discover(
+    #     start_dir='./', pattern="test_datamining_tools.py")
     # unittest.TextTestRunner().run(tests)
 
     # tests = loader.discover(start_dir='./', pattern="test_generic.py")

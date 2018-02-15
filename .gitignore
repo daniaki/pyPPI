@@ -4,6 +4,9 @@
 data/*
 data/
 
+*.png
+*.jpg
+
 __pycache__/*
 
 .ipynb_checkpoints/*
