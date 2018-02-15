@@ -64,8 +64,9 @@ def _check_annotations(values, dbtype=None):
 
     if not all_valid:
         raise ValueError(
-            "Annotations contain invalid values for database type {}".format(
-                dbtype
+            "Annotations contain invalid values for database type {}. "
+            "Caused by {}.".format(
+                dbtype, values
             )
         )
 
@@ -594,7 +595,10 @@ class Interaction(Base):
             isinstance(value, type(None))
         ]
         if not any(valid_types):
-            raise TypeError("Label must be list, str, set or None.")
+            raise TypeError(
+                "Label must be list, str, set or None. Found {}.".format(
+                    type(value))
+            )
 
         if isinstance(value, list) or isinstance(value, set):
             value = [v for v in value if v is not None]
@@ -782,82 +786,3 @@ class Psimi(Base):
     @property
     def interactions(self):
         return self.psimi_interactions
-
-
-# ---- Helper for M2M linking
-def construct_m2m(session, entry, pmids, psimis, replace=False):
-    pmid_objs = set() if replace else set(entry.pmid)
-    if pmids not in NULL_VALUES:
-        for pmid in pmids.split(','):
-            pmid_obj = session.query(Pubmed).filter_by(
-                accession=pmid
-            ).first()
-            if pmid_obj is not None:
-                pmid_objs.add(pmid_obj)
-        entry.pmid = list(pmid_objs)
-
-    if psimis not in NULL_VALUES:
-        psimi_objs = set() if replace else set(entry.psimi)
-        for psimi in psimis.split(','):
-            psimi_obj = session.query(Psimi).filter_by(
-                accession=psimi
-            ).first()
-            if psimi_obj is not None:
-                psimi_objs.add(psimi_obj)
-        entry.psimi = list(psimi_objs)
-
-    return entry
-
-
-def create_interactions(session, df, existing_interactions, protein_map,
-                        is_training, is_holdout, is_interactome,
-                        feature_map, replace_label=False,
-                        replace_m2m=False, name=None):
-    zipped = zip(
-        df[SOURCE],
-        df[TARGET],
-        df[LABEL],
-        df[PUBMED],
-        df[EXPERIMENT_TYPE]
-    )
-    for (uniprot_a, uniprot_b, label, pmids, psimis) in zipped:
-        if str(label) in NULL_VALUES:
-            label = None
-        entry = existing_interactions.get((uniprot_a, uniprot_b), None)
-        if entry is None:
-            entry = Interaction(
-                source=protein_map[uniprot_a].id,
-                target=protein_map[uniprot_b].id,
-                is_training=is_training,
-                is_holdout=is_holdout,
-                is_interactome=is_interactome,
-                label=label,
-                **feature_map[(uniprot_a, uniprot_b)]
-            )
-        else:
-            if is_training:
-                entry.is_training = is_training
-            if is_holdout:
-                entry.is_holdout = is_holdout
-            if is_interactome:
-                entry.is_interactome = is_interactome
-
-            if not is_interactome and label is not None:
-                if replace_label:
-                    entry.label = label.split(',')
-                else:
-                    new_labels = label.split(',')
-                    entry.label = entry.labels_as_list + new_labels
-
-            for key, value in feature_map[(uniprot_a, uniprot_b)].items():
-                setattr(entry, key, value)
-
-        # The following block constructs the Many-to-Many relationships
-        # between the Interaction table and the Pubmed/Psimi tables.
-        entry.save(session, commit=False)
-        entry = construct_m2m(
-            session, entry, pmids, psimis, replace=replace_m2m
-        )
-        existing_interactions[(uniprot_a, uniprot_b)] = entry
-
-    return existing_interactions

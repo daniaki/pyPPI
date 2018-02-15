@@ -150,19 +150,32 @@ class InteractionManager(object):
         return None
 
     def get_by_source_target(self, session, source, target):
-        source = self._get_protein(session, source, 'source')
-        target = self._get_protein(session, target, 'target')
+        if not isinstance(source, Protein):
+            source = self._get_protein(session, source, 'source')
+        if not isinstance(target, Protein):
+            target = self._get_protein(session, target, 'target')
         if source is None or target is None:
             return None
         query_set = session.query(Interaction).filter(and_(
             Interaction.source == source.id,
             Interaction.target == target.id
         ))
+
         if query_set.count() > 1:
             raise ValueError(
                 "More than one Interaction found Database integrity "
                 "has been compromised. Abandon ship! Abandon ship!"
             )
+        elif query_set.count() == 0:
+            if self.verbose:
+                logger.info(
+                    "No interactions matching ({}, {}) found.".format(
+                        "Any" if source is None else source.uniprot_id,
+                        "Any" if target is None else target.uniprot_id
+                    )
+                )
+            return None
+
         if self.match_taxon_id is not None:
             query_set = query_set.filter_by(taxon_id=self.match_taxon_id)
             if query_set.count() == 0:
@@ -179,7 +192,7 @@ class InteractionManager(object):
             else:
                 return query_set[0]
         else:
-            return None
+            return query_set[0]
 
     def get_by_label(self, session, label=None):
         if label is not None:
