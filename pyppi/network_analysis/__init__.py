@@ -41,30 +41,32 @@ class InteractionNetwork(object):
         found in `interactions_`
     """
 
-    def __init__(self, interactions, sep=',', output_dir='./'):
-        interactions = pd.read_csv(interactions, sep=sep)
+    def __init__(self, interactions, sep='\t', output_dir='./'):
         self.interactions_ = interactions
         self.columns_ = list(interactions.columns)
         self.gene_names_ = {}
         self.output_dir_ = output_dir
         self.sep = sep
         self.edges_ = list(zip(interactions[P1], interactions[G1]))
+        self.training_edges = set()
+        self.training_nodes = set()
+
         p1_g1 = zip(interactions[P1], interactions[G1])
         p2_g2 = zip(interactions[P2], interactions[G2])
         for (p1, g1), (p2, g2) in zip(p1_g1, p2_g2):
             self.gene_names_[p1] = g1
             self.gene_names_[p2] = g2
 
+        self.labels = [
+            c[:-3] for c in interactions.columns
+            if ('-pr' in c) and ('sum' not in c) and ('max' not in c)
+        ]
+
         i_manager = InteractionManager(verbose=False, match_taxon_id=None)
         p_manager = ProteinManager(verbose=False, match_taxon_id=None)
-        self.training_edges = set()
-        self.training_nodes = set()
         with begin_transaction() as session:
-            self.labels = i_manager.training_labels(
-                session, include_holdout=True
-            )
             training_edges = i_manager.training_interactions(
-                session, filter_out_holdout=False
+                session, keep_holdout=True
             )
             for interaction in training_edges:
                 a = p_manager.get_by_id(session, interaction.source).uniprot_id
@@ -75,6 +77,20 @@ class InteractionNetwork(object):
         for (a, b) in self.training_edges:
             self.training_nodes.add(a)
             self.training_nodes.add(b)
+
+    def _validate_threshold(self, value):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            raise ValueError(
+                "Threshold must be a float. Found {}.".format(type(value))
+            )
+
+    def _label_to_column(self, label):
+        if not label.endswith('-pr'):
+            return label + '-pr'
+        else:
+            return label
 
     def node_in_training_set(self, node):
         return node in self.training_nodes
@@ -95,16 +111,16 @@ class InteractionNetwork(object):
 
         :return: Self
         """
-        if label not in self.columns_:
+        if label not in self.labels:
             raise ValueError(
                 "{} is not a valid label. Please choose from {}.".format(
                     label, ', '.join(self.labels))
             )
-        if not isinstance(threshold, float):
-            raise ValueError("Threshold must be a float.")
+        column = self._label_to_column(label)
 
+        threshold = self._validate_threshold(threshold)
         label_idx = self.interactions_[
-            self.interactions_[label] >= threshold
+            self.interactions_[column] >= threshold
         ].index.values
         pp_path = '{}/{}_pp.tsv'.format(self.output_dir_, label)
         noa_path = '{}/{}_node_attrs.noa'.format(self.output_dir_, label)
@@ -134,32 +150,38 @@ class InteractionNetwork(object):
 
         :return: Self
         """
-        if not isinstance(threshold, float):
-            raise ValueError("Threshold must be a float.")
         df = self.interactions_
         accesion_list = set(accession_list)
+        threshold = self._validate_threshold(threshold)
 
         a, b = (P1, P2)
         if genes:
             a, b = (G1, G2)
-        edges = [sorted([p1, p2]) for (p1, p2) in zip(df[a], df[b])]
+        edges = [tuple(sorted([p1, p2])) for (p1, p2) in zip(df[a], df[b])]
         edge_idx = np.asarray(
-            [i for i, (p1, p2) in enumerate(edges)
-             if p1 in accesion_list or p2 in accesion_list]  # or?
+            [
+                i for i, (p1, p2) in enumerate(edges)
+                if (p1 in accesion_list) or (p2 in accesion_list)
+            ]
         )
         if len(edge_idx) == 0:
-            ValueError("No subnetwork could be induced with the given"
-                       "pathway list.")
+            raise ValueError(
+                "No subnetwork could be induced with the given"
+                "pathway list."
+            )
 
         # Filter for the interactions with a max probability greater
         # than `threshold`.
         df = df.loc[edge_idx, ]
-        sel = (df.loc[:, self.labels].max(axis=1) >= threshold).values
+        sel = (df['max-pr'] >= threshold).values
         edge_idx = df[sel].index.values
 
         if len(edge_idx) == 0:
-            ValueError("Threshold set too high and no subnetwork could be "
-                       "induced with the given pathway list.")
+            raise ValueError(
+                "Threshold set too high and no subnetwork could be "
+                "induced with the given pathway list."
+            )
+
         label = 'pathway'
         pp_path = '{}/{}_pp.tsv'.format(self.output_dir_, label)
         noa_path = '{}/{}_node_attrs.noa'.format(self.output_dir_, label)
@@ -188,29 +210,28 @@ class InteractionNetwork(object):
         gene_names = [self.gene_names_[a] for a in accessions]
         node_in_training = [self.node_in_training_set(a) for a in accessions]
         cyto_n_attrs = pd.DataFrame(Od([
-            ('Name', accessions),
-            ('Node in training', node_in_training),
-            ('Gene Name', gene_names)
+            ('name', accessions),
+            ('node in training', node_in_training),
+            ('gene name', gene_names)
         ]))
         cyto_n_attrs.to_csv(noa_path, sep=self.sep, index=False)
 
         # Compute some selected edge-attributes a,
         # Write the eda (edge-attribute) file.
-        edge_in_training = [self.edge_in_training_set(e) for e in edges]
-        cyto_e_attrs = [('%s-pr' % l, df[l].values) for l in self.labels]
-        cyto_e_attrs += [
-            ('Name', ['{} pp {}'.format(p1, p2) for p1, p2 in edges])
+        columns = ['source', 'target', 'name', 'edge in training', 'max-pr']
+        cyto_e_attrs = {}
+        cyto_e_attrs['source'] = [p1 for p1, _ in edges]
+        cyto_e_attrs['target'] = [p2 for _, p2 in edges]
+        cyto_e_attrs['name'] = ['{} pp {}'.format(p1, p2) for p1, p2 in edges]
+        cyto_e_attrs['edge in training'] = [
+            self.edge_in_training_set(e) for e in edges
         ]
-        cyto_e_attrs += [
-            ('Edge In Training', edge_in_training)
-        ]
-        cyto_e_attrs = pd.DataFrame(data=Od(cyto_e_attrs))
-        cyto_e_attrs.to_csv(eda_path, sep=self.sep, index=False)
+        cyto_e_attrs['max-pr'] = list(df['max-pr'].values)
+        for label in self.labels:
+            column = self._label_to_column(label)
+            cyto_e_attrs[column] = df[column].values
+            columns.append(column)
 
-        cyto_interactions = pd.DataFrame(Od([
-            ('source', [p1 for p1, _ in edges]),
-            ('target', [p2 for _, p2 in edges]),
-            ('interaction', ['pp' for _ in edges])
-        ]))
+        cyto_interactions = pd.DataFrame(cyto_e_attrs, columns=columns)
         cyto_interactions.to_csv(pp_path, sep=self.sep, index=False)
         return self
