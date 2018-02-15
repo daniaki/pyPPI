@@ -413,6 +413,54 @@ def merge_labels(interactions):
     return interactions
 
 
+def remove_common_ppis(df_1, df_2):
+    """
+    Collects all ppis which are common to df_1 and df_2 by looking at the
+    SOURCE and TARGET columns. Removes these common ppis from df_1 and df_2
+    and collects them into a new dataframe.
+
+    Note: Expected the SOURCE and TARGET columns to be pre-sorted, otherwise
+    this method will not detect permuted ppis (A, B)/(B, A).
+
+    :param df_1: 
+        DataFrame with 'source', 'target' and 'label' columns.
+    :param df_2: 
+        DataFrame with 'source', 'target' and 'label' columns.
+    :return: 
+        tuple of DataFrames (df_1_unique, df_2_unique, common)
+    """
+    ppis_df_1 = list(zip(df_1[SOURCE], df_1[TARGET]))
+    ppis_df_2 = list(zip(df_2[SOURCE], df_2[TARGET]))
+    common_ppis = set(ppis_df_1) & set(ppis_df_2)
+
+    unique_idx = set()
+    common_idx = set()
+    for idx, ppi in enumerate(ppis_df_1):
+        if ppi in common_ppis:
+            common_idx.add(idx)
+        else:
+            unique_idx.add(idx)
+    df_1_unique = df_1.loc[unique_idx, :]
+    df_1_common = df_1.loc[common_idx, :]
+
+    unique_idx = set()
+    common_idx = set()
+    for idx, ppi in enumerate(ppis_df_2):
+        if ppi in common_ppis:
+            common_idx.add(idx)
+        else:
+            unique_idx.add(idx)
+    df_2_unique = df_2.loc[unique_idx, :]
+    df_2_common = df_2.loc[common_idx, :]
+
+    df_1_unique.reset_index(drop=True, inplace=True)
+    df_2_unique.reset_index(drop=True, inplace=True)
+    common = pd.concat([df_1_common, df_2_common], ignore_index=True)
+    common.reset_index(drop=True, inplace=True)
+
+    return df_1_unique, df_2_unique, common
+
+
 def remove_duplicates(interactions):
     """
     Remove rows with identical source, target and label column entries.

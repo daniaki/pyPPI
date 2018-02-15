@@ -168,13 +168,18 @@ def batch_map(session, accessions, fr='ACC+ID', allow_download=False,
 
     # No data was downloaded, try again a few times.
     if mapping == {}:
-        for i in range(0, 5):
-            time.sleep(3)
+        for i in range(0, 4):
             mapping = uniprot_mapper.mapping(
                 fr=fr, to='ACC', query=accessions
             )
             if mapping:
                 break
+            else:
+                logger.warning(
+                    "Could not download map from uniprot server. "
+                    "Attempt {}/5. Re-attempt in 3 seconds.".format(i + 2)
+                )
+                time.sleep(3)
     if mapping == {}:
         raise ValueError("Could not download map from uniprot server.")
 
