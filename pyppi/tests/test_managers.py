@@ -210,6 +210,26 @@ class TestInteractionManager(TestCase):
         )
         self.assertEqual(result, obj)
 
+    def test_can_get_by_source_target_when_objects_are_passed_in(self):
+        obj = Interaction(
+            source=self.protein_a, target=self.protein_b,
+            is_training=False, is_holdout=False, label="activation",
+            is_interactome=False
+        )
+        obj.save(self.session, commit=True)
+        result = self.i_manager.get_by_source_target(
+            session=self.session, source=self.protein_a.id,
+            target=self.protein_b.id
+        )
+        self.assertEqual(result, obj)
+
+    def test_can_get_by_source_target_return_none_not_found(self):
+        result = self.i_manager.get_by_source_target(
+            session=self.session, source=self.protein_a.id,
+            target=self.protein_b.id
+        )
+        self.assertIs(result, None)
+
     def test_get_by_source_target_returns_none_if_source_not_found(self):
         obj = Interaction(
             source=self.protein_a.id, target=self.protein_b.id,
@@ -249,6 +269,20 @@ class TestInteractionManager(TestCase):
             target=self.protein_b.id
         )
         self.assertTrue(result is None)
+
+    def test_get_by_source_target_returns_doesnt_filter_if_taxon_id_None(self):
+        self.i_manager.match_taxon_id = None
+        obj = Interaction(
+            source=self.protein_a.id, target=self.protein_b.id,
+            is_training=False, is_holdout=False, label="activation",
+            is_interactome=False
+        )
+        obj.save(self.session, commit=True)
+        result = self.i_manager.get_by_source_target(
+            session=self.session, source=self.protein_a.id,
+            target=self.protein_b.id
+        )
+        self.assertEqual(result.id, obj.id)
 
     def test_can_get_all_interactions_by_label(self):
         obj1 = Interaction(
@@ -356,6 +390,28 @@ class TestInteractionManager(TestCase):
         results = self.i_manager.get_by_source(self.session, self.protein_a)
         self.assertEqual(results.count(), 0)
 
+    def test_get_by_source_ignore_taxonid_when_set_to_none(self):
+        obj = Interaction(
+            source=self.protein_a.id, target=self.protein_b.id,
+            is_training=False, is_holdout=False, label=None,
+            is_interactome=False
+        )
+        self.i_manager.match_taxon_id = None
+        obj.save(self.session, commit=True)
+        results = self.i_manager.get_by_source(self.session, self.protein_a)
+        self.assertEqual(results.count(), 1)
+
+    def test_get_by_target_ignore_taxonid_when_set_to_none(self):
+        obj = Interaction(
+            source=self.protein_a.id, target=self.protein_b.id,
+            is_training=False, is_holdout=False, label=None,
+            is_interactome=False
+        )
+        self.i_manager.match_taxon_id = None
+        obj.save(self.session, commit=True)
+        results = self.i_manager.get_by_target(self.session, self.protein_b)
+        self.assertEqual(results.count(), 1)
+
     def test_get_by_target_returns_all_interactions_matching_source(self):
         obj1 = Interaction(
             source=self.protein_a.id, target=self.protein_b.id,
@@ -412,6 +468,16 @@ class TestInteractionManager(TestCase):
         self.assertTrue(self.i_manager.taxon_ids_match(obj))
 
     def test_get_by_id_works(self):
+        obj = Interaction(
+            source=self.protein_a.id, target=self.protein_b.id,
+            is_training=False, is_holdout=False, is_interactome=False
+        )
+        obj.save(self.session, commit=True)
+        entry = self.i_manager.get_by_id(self.session, obj.id)
+        self.assertEqual(entry, obj)
+
+    def test_get_by_id_works_when_match_taxon_is_none(self):
+        self.i_manager.match_taxon_id = None
         obj = Interaction(
             source=self.protein_a.id, target=self.protein_b.id,
             is_training=False, is_holdout=False, is_interactome=False
