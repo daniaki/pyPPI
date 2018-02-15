@@ -37,7 +37,9 @@ from pyppi.data import uniprot_sprot, uniprot_trembl
 
 from pyppi.database import make_session, begin_transaction, delete_database
 from pyppi.database.models import Protein, Interaction, Pubmed, Psimi
-from pyppi.database.models import construct_m2m, create_interactions
+from pyppi.database.utilities import generate_interaction_tuples
+from pyppi.database.utilities import update_interaction
+from pyppi.database.utilities import psimi_string_to_list, pmid_string_to_list
 from pyppi.database.managers import InteractionManager, ProteinManager
 
 from pyppi.data_mining.uniprot import parse_record_into_protein
@@ -46,7 +48,7 @@ from pyppi.data_mining.generic import bioplex_func, mitab_func, pina_func
 from pyppi.data_mining.generic import generic_to_dataframe
 from pyppi.data_mining.hprd import hprd_to_dataframe
 from pyppi.data_mining.tools import process_interactions, make_interaction_frame
-from pyppi.data_mining.tools import remove_intersection, remove_labels
+from pyppi.data_mining.tools import remove_common_ppis, remove_labels
 from pyppi.data_mining.tools import map_network_accessions
 from pyppi.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
 from pyppi.data_mining.ontology import get_active_instance
@@ -65,9 +67,6 @@ if __name__ == "__main__":
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-    # ---------------------------------------------------------------------- #
-    #                     MODIFY THESE TO SUIT YOUR NEEDS
-    # ---------------------------------------------------------------------- #
     args = docopt(__doc__)
     args = parse_args(args)
     n_jobs = args['n_jobs']
@@ -77,7 +76,7 @@ if __name__ == "__main__":
     p_manager = ProteinManager(verbose=True, match_taxon_id=9606)
 
     # Setup the protein table in the database
-    # -------------------------------------------------------------------------- #
+    # ----------------------------------------------------------------------- #
     if clear_cache:
         logger.info("Clearing Biopython/Bioservices cache.")
         delete_cache()
@@ -108,7 +107,7 @@ if __name__ == "__main__":
     session = make_session(db_path=default_db_path)
 
     # Construct all the networks
-    # -------------------------------------------------------------------------- #
+    # ----------------------------------------------------------------------- #
     logger.info("Building KEGG interactions.")
     pathways = download_pathway_ids('hsa')
     kegg = pathways_to_dataframe(
@@ -228,7 +227,7 @@ if __name__ == "__main__":
         [l for l in hprd[LABEL] if l not in hprd_test_labels]
     )
     train_hprd = remove_labels(hprd, hprd_test_labels)
-    test_hprd = remove_labels(hprd, hprd_train_labels)
+    testing = remove_labels(hprd, hprd_train_labels)
     training = pd.concat([kegg, train_hprd], ignore_index=True).reset_index(
         drop=True, inplace=False)
 
@@ -237,21 +236,17 @@ if __name__ == "__main__":
     # with a different label compared to the same instance in training
     # into the training set. This way we can keep the testing and
     # training sets completely disjoint.
-    testing, common_to_kegg_and_hprd = remove_intersection(
-        interactions=test_hprd,
-        other=training,
-        use_label=False
+    training, testing, common = remove_common_ppis(
+        df_1=training,
+        df_2=testing
     )
-    training, _ = remove_intersection(
-        interactions=training,
-        other=common_to_kegg_and_hprd,
-        use_label=False
+    full_training = pd.concat(
+        [training, testing, common],
+        ignore_index=True
+    ).reset_index(
+        drop=True, inplace=False
     )
 
-    full_training = pd.concat(
-        [training, testing, common_to_kegg_and_hprd],
-        ignore_index=True
-    )
     testing = process_interactions(
         interactions=testing,
         drop_nan='default', allow_duplicates=False, allow_self_edges=True,
@@ -267,8 +262,8 @@ if __name__ == "__main__":
         drop_nan='default', allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=5, merge=True
     )
-    common_to_kegg_and_hprd = process_interactions(
-        interactions=common_to_kegg_and_hprd,
+    common = process_interactions(
+        interactions=common,
         drop_nan='default', allow_duplicates=False, allow_self_edges=True,
         exclude_labels=None, min_counts=None, merge=True
     )
@@ -347,66 +342,110 @@ if __name__ == "__main__":
     # Training should only update the is_training to true and leave other
     # boolean fields alone.
     logger.info("Creating training interaction entries.")
-    interactions = create_interactions(
-        session=session,
-        df=training,
-        existing_interactions=interactions,
-        protein_map=protein_map,
-        is_training=True,
-        is_holdout=False,
-        is_interactome=False,
-        feature_map=feature_map,
-        replace_label=False,
-        replace_m2m=False,
-    )
+    generator = generate_interaction_tuples(training)
+    for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
+        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+        class_kwargs["source"] = protein_map[uniprot_a]
+        class_kwargs["target"] = protein_map[uniprot_b]
+        class_kwargs["label"] = label
+        class_kwargs["is_training"] = True
+        class_kwargs["is_holdout"] = False
+        class_kwargs["is_interactome"] = False
+        entry = update_interaction(
+            session=session,
+            commit=False,
+            psimi_ls=psimi_string_to_list(session, psimi),
+            pmid_ls=pmid_string_to_list(session, pmids),
+            replace_fields=False,
+            override_boolean=False,
+            create_if_not_found=True,
+            match_taxon_id=9606,
+            verbose=False,
+            update_features=False,
+            **class_kwargs
+        )
+        interactions[(uniprot_a, uniprot_b,)] = entry
 
     # Testing should only update the is_holdout to true and leave other
     # boolean fields alone.
     logger.info("Creating holdout interaction entries.")
-    interactions = create_interactions(
-        session=session,
-        df=testing,
-        existing_interactions=interactions,
-        protein_map=protein_map,
-        is_training=False,
-        is_holdout=True,
-        is_interactome=False,
-        feature_map=feature_map,
-        replace_label=False,
-        replace_m2m=False,
-    )
+    generator = generate_interaction_tuples(testing)
+    for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
+        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+        class_kwargs["source"] = protein_map[uniprot_a]
+        class_kwargs["target"] = protein_map[uniprot_b]
+        class_kwargs["label"] = label
+        class_kwargs["is_training"] = False
+        class_kwargs["is_holdout"] = True
+        class_kwargs["is_interactome"] = False
+        entry = update_interaction(
+            session=session,
+            commit=False,
+            psimi_ls=psimi_string_to_list(session, psimi),
+            pmid_ls=pmid_string_to_list(session, pmids),
+            replace_fields=False,
+            override_boolean=False,
+            create_if_not_found=True,
+            match_taxon_id=9606,
+            verbose=False,
+            update_features=False,
+            **class_kwargs
+        )
+        interactions[(uniprot_a, uniprot_b,)] = entry
 
     # Common are in both kegg and hprd so should only update the is_training
     # and is_holdout to true and leave other boolean fields alone.
     logger.info("Creating training/holdout interaction entries.")
-    interactions = create_interactions(
-        session=session,
-        df=common_to_kegg_and_hprd,
-        existing_interactions=interactions,
-        protein_map=protein_map,
-        is_training=True,
-        is_holdout=True,
-        is_interactome=False,
-        feature_map=feature_map,
-        replace_label=False,
-        replace_m2m=False,
-    )
+    generator = generate_interaction_tuples(common)
+    for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
+        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+        class_kwargs["source"] = protein_map[uniprot_a]
+        class_kwargs["target"] = protein_map[uniprot_b]
+        class_kwargs["label"] = label
+        class_kwargs["is_training"] = True
+        class_kwargs["is_holdout"] = True
+        class_kwargs["is_interactome"] = False
+        entry = update_interaction(
+            session=session,
+            commit=False,
+            psimi_ls=psimi_string_to_list(session, psimi),
+            pmid_ls=pmid_string_to_list(session, pmids),
+            replace_fields=False,
+            override_boolean=False,
+            create_if_not_found=True,
+            match_taxon_id=9606,
+            verbose=False,
+            update_features=False,
+            **class_kwargs
+        )
+        interactions[(uniprot_a, uniprot_b,)] = entry
 
     # Training should only update the is_interactome to true and leave other
     # boolean fields alone.
     logger.info("Creating interactome interaction entries.")
-    interactions = create_interactions(
-        session=session,
-        df=interactome,
-        existing_interactions=interactions,
-        protein_map=protein_map,
-        is_training=False,
-        is_holdout=False,
-        is_interactome=True,
-        feature_map=feature_map,
-        replace_label=False,
-        replace_m2m=False,
-    )
+    generator = generate_interaction_tuples(interactome)
+    for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
+        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+        class_kwargs["source"] = protein_map[uniprot_a]
+        class_kwargs["target"] = protein_map[uniprot_b]
+        class_kwargs["label"] = label
+        class_kwargs["is_training"] = False
+        class_kwargs["is_holdout"] = False
+        class_kwargs["is_interactome"] = True
+        entry = update_interaction(
+            session=session,
+            commit=False,
+            psimi_ls=psimi_string_to_list(session, psimi),
+            pmid_ls=pmid_string_to_list(session, pmids),
+            replace_fields=False,
+            override_boolean=False,
+            create_if_not_found=True,
+            match_taxon_id=9606,
+            verbose=False,
+            update_features=False,
+            **class_kwargs
+        )
+        interactions[(uniprot_a, uniprot_b,)] = entry
 
     # Batch commit might be quicker than calling save on each interaction.
     logger.info("Writing to database.")

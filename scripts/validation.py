@@ -50,7 +50,9 @@ from pyppi.data import get_term_description, ipr_name_map, pfam_name_map
 from pyppi.models.utilities import get_coefs, top_n_features
 from pyppi.models import make_classifier, get_parameter_distribution_for_model
 from pyppi.models import supported_estimators
-from pyppi.model_selection.scoring import fdr_score, specificity
+from pyppi.model_selection.scoring import (
+    fdr_score, specificity, positive_label_hammming_loss
+)
 from pyppi.model_selection.sampling import IterativeStratifiedKFold
 
 from pyppi.data_mining.ontology import get_active_instance
@@ -69,10 +71,9 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.metrics import (
-    recall_score, make_scorer,
     label_ranking_average_precision_score,
     label_ranking_loss,
-    confusion_matrix
+    hamming_loss
 )
 
 MAX_SEED = 1000000
@@ -207,7 +208,6 @@ if __name__ == "__main__":
     logger.info("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
     rng = np.random.RandomState(seed=42)
-    max_seed = 1000000
     top_features = {
         "absolute": {
             l: {
@@ -238,7 +238,9 @@ if __name__ == "__main__":
         ('Label Ranking Average Precision',
             label_ranking_average_precision_score),
         ('Macro (weighted) F1', f1_score),
-        ('Macro (un-weighted) F1', f1_score)
+        ('Samples F1', f1_score),
+        ('Hamming Loss', hamming_loss),
+        ('Positive Label Hamming Loss', positive_label_hammming_loss)
     ]
     n_scorers = len(binary_scoring_funcs)
     n_ml_scorers = len(multilabel_scoring_funcs)
@@ -371,13 +373,19 @@ if __name__ == "__main__":
 
             for func_idx, (func_name, func) in enumerate(multilabel_scoring_funcs):
                 if func_name == 'Macro (weighted) F1':
-                    scores_v = func(y_valid_f, y_valid_f_pred,
-                                    average='weighted')
-                    scores_t = func(y_test_f, y_test_f_pred,
-                                    average='weighted')
-                elif func_name == 'Macro (un-weighted) F1':
-                    scores_v = func(y_valid_f, y_valid_f_pred, average='macro')
-                    scores_t = func(y_test_f, y_test_f_pred, average='macro')
+                    scores_v = func(
+                        y_valid_f, y_valid_f_pred, average='weighted'
+                    )
+                    scores_t = func(
+                        y_test_f, y_test_f_pred, average='weighted'
+                    )
+                elif func_name == 'Samples F1':
+                    scores_v = func(
+                        y_valid_f, y_valid_f_pred, average='samples'
+                    )
+                    scores_t = func(
+                        y_test_f, y_test_f_pred, average='samples'
+                    )
                 elif func_name == 'Label Ranking Average Precision':
                     scores_v = func(y_valid_f, y_valid_f_proba)
                     scores_t = func(y_test_f, y_test_f_proba)
