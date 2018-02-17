@@ -41,6 +41,7 @@ import logging
 import numpy as np
 import pandas as pd
 import joblib
+from collections import Counter
 from numpy.random import RandomState
 from joblib import Parallel, delayed
 from datetime import datetime
@@ -301,6 +302,7 @@ if __name__ == "__main__":
         ','.join(np.asarray(labels)[selector]) or None for selector in
         [np.where(row >= 0.5) for row in predictions]
     ]
+
     predicted_label_at_max = [
         labels[idx] for idx in
         [np.argmax(row) for row in predictions]
@@ -400,6 +402,15 @@ if __name__ == "__main__":
     }
     with open("{}/dataset_statistics.json".format(direc), 'wt') as fp:
         json.dump(data, fp, indent=4, sort_keys=True)
+
+    # Count how many labels prediction distribution
+    # -------------------------------------------------------------------- #
+    label_dist = Counter(
+        l for ls in predicted_labels for l in str(ls).split(',')
+        if ls is not None
+    )
+    with open("{}/prediction_distribution.json".format(direc), 'wt') as fp:
+        json.dump(label_dist, fp, indent=4, sort_keys=True)
 
     # Save and close session
     log_message("Commiting changes to database.")
