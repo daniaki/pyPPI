@@ -78,10 +78,11 @@ from sklearn.metrics import (
 
 
 MAX_SEED = 1000000
+RANDOM_STATE = 100
 
 
 def train_fold(X, y, labels, fold_iter, use_binary, model,
-               hyperparam_iter, rng, params):
+               hyperparam_iter, params):
     log_message("Fitting fold {}.".format(fold_iter + 1))
 
     # Prepare all training and testing data
@@ -97,8 +98,8 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
         log_message("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
-            random_state=rng.randint(MAX_SEED),
-            n_jobs=1
+            random_state=RANDOM_STATE,
+            n_jobs=n_jobs
         )
         clf = RandomizedSearchCV(
             estimator=model_to_tune,
@@ -107,12 +108,12 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
             cv=StratifiedKFold(
                 n_splits=3,
                 shuffle=True,
-                random_state=rng.randint(MAX_SEED)
+                random_state=RANDOM_STATE
             ),
             n_iter=hyperparam_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=rng.randint(MAX_SEED),
+            random_state=RANDOM_STATE,
             param_distributions=params,
         )
         with warnings.catch_warnings():
@@ -204,7 +205,6 @@ if __name__ == "__main__":
     log_message("Setting up preliminaries and the statistics arrays")
     log_message("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
-    rng = np.random.RandomState(seed=42)
     top_features = {
         "absolute": {
             l: {
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     for bs_iter in range(n_iter):
         log_message("Fitting bootstrap iteration {}.".format(bs_iter + 1))
         cv = IterativeStratifiedKFold(
-            n_splits=n_splits, random_state=rng.randint(MAX_SEED)
+            n_splits=n_splits, random_state=RANDOM_STATE
         )
         cv = list(cv.split(X_train, y_train))
 
@@ -265,7 +265,6 @@ if __name__ == "__main__":
                 use_binary=use_binary,
                 model=model,
                 hyperparam_iter=hyperparam_iter,
-                rng=rng,
                 params=params
             )
             fit_results.append((estimators, vectorizer, requires_dense))

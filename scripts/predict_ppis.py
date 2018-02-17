@@ -76,6 +76,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 MAX_SEED = 1000000
+RANDOM_STATE = 100
 
 if __name__ == "__main__":
     args = parse_args(docopt(__doc__))
@@ -265,17 +266,17 @@ if __name__ == "__main__":
             cv=StratifiedKFold(
                 n_splits=5,
                 shuffle=True,
-                random_state=rng.randint(MAX_SEED)
+                random_state=RANDOM_STATE
             ),
             n_iter=rcv_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=rng.randint(MAX_SEED),
+            random_state=RANDOM_STATE,
             scoring='f1',
             error_score=0.0,
             param_distributions=params,
             estimator=make_classifier(
-                model, random_state=rng.randint(MAX_SEED)
+                model, random_state=RANDOM_STATE
             )
         )
         clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
