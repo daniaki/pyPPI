@@ -355,7 +355,7 @@ if __name__ == "__main__":
                 top_features["absolute"][label][bs_iter][fold_iter].extend(
                     top_n_abs)
 
-            log_message("Computing fold mult-label performance.")
+            log_message("Computing fold multi-label performance.")
             # True scores in multi-label indicator format
             y_valid_f = y_train[validation_idx]
             y_test_f = y_test

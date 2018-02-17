@@ -104,7 +104,9 @@ def top_n_features(n, clf, go_dag, ipr_map, pfam_map,
     if vectorizer:
         idx = [idx for (idx, w) in idx_coefs]
         ws = [w for (idx, w) in idx_coefs]
-        names = np.asarray(rename(vectorizer.get_feature_names()))[idx]
+        names = np.asarray(
+            [rename(x) for x in vectorizer.get_feature_names()]
+        )[idx]
         descriptions = np.asarray(
             [
                 get_term_description(
