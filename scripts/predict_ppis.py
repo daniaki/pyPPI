@@ -72,19 +72,20 @@ from sklearn.model_selection import RandomizedSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import StratifiedKFold
 
+
 MAX_SEED = 1000000
+logger = logging.getLogger("scripts")
+handler = logging.StreamHandler()
+formatter = logging.Formatter(
+    '%(asctime)s %(name)-8s %(levelname)-8s %(message)s'
+)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
 
 if __name__ == "__main__":
-    logger = logging.getLogger("scripts")
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        '%(asctime)s %(name)-12s %(levelname)-8s %(message)s'
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-
     args = parse_args(docopt(__doc__))
     n_jobs = args['n_jobs']
     n_splits = args['n_splits']

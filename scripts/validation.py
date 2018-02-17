@@ -42,7 +42,7 @@ from datetime import datetime
 from docopt import docopt
 import warnings
 
-from pyppi.base import parse_args, su_make_dir
+from pyppi.base import parse_args, su_make_dir, log_message
 from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import testing_network_path, training_network_path
 from pyppi.data import get_term_description, ipr_name_map, pfam_name_map
@@ -76,21 +76,13 @@ from sklearn.metrics import (
     hamming_loss
 )
 
+
 MAX_SEED = 1000000
-logger = logging.getLogger("scripts")
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    '%(asctime)s %(name)-12s %(levelname)-8s %(message)s'
-)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
-logger.propagate = False
 
 
 def train_fold(X, y, labels, fold_iter, use_binary, model,
                hyperparam_iter, rng, params):
-    logger.info("Fitting fold {}.".format(fold_iter + 1))
+    log_message("Fitting fold {}.".format(fold_iter + 1))
 
     # Prepare all training and testing data
     vectorizer = CountVectorizer(
@@ -102,11 +94,11 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
     requires_dense = False
     estimators = []
     for i, label in enumerate(labels):
-        logger.info("\tFitting label {}.".format(label))
+        log_message("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
             random_state=rng.randint(MAX_SEED),
-            n_jobs=n_jobs
+            n_jobs=1
         )
         clf = RandomizedSearchCV(
             estimator=model_to_tune,
@@ -129,7 +121,7 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
                 clf.fit(X, y[:, i])
                 requires_dense = False
             except TypeError:
-                logger.info(
+                log_message(
                     "Error fitting sparse input. Converting to dense input."
                 )
                 X = X.todense()
@@ -167,7 +159,7 @@ if __name__ == "__main__":
 
     # Load all the training data, features etc.
     # ------------------------------------------------------------------- #
-    logger.info("Loading training and testing data.")
+    log_message("Loading training and testing data.")
     ipr_map = ipr_name_map()
     pfam_map = pfam_name_map()
     go_dag = get_active_instance()
@@ -182,18 +174,23 @@ if __name__ == "__main__":
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
-    logger.info("Preparing training and testing data.")
+    log_message("Preparing training and testing data.")
     X_train, y_train = format_interactions_for_sklearn(training, selection)
     X_test, y_test = format_interactions_for_sklearn(testing, selection)
 
     logging.info("Computing class distributions.")
+    counter = Counter([l for ls in y_train for l in ls])
+    counter["n_samples"] = training.count()
     json.dump(
-        Counter([l for ls in y_train for l in ls]),
+        counter,
         fp=open("{}/training_distribution.json".format(direc), 'w'),
         indent=4, sort_keys=True
     )
+
+    counter = Counter([l for ls in y_test for l in ls])
+    counter["n_samples"] = testing.count()
     json.dump(
-        Counter([l for ls in y_test for l in ls]),
+        counter,
         fp=open("{}/testing_distribution.json".format(direc), 'w'),
         indent=4, sort_keys=True
     )
@@ -204,8 +201,8 @@ if __name__ == "__main__":
 
     # Set up the numpy arrays and dictionarys for statistics etc
     # -------------------------------------------------------------------- #
-    logger.info("Setting up preliminaries and the statistics arrays")
-    logger.info("Found classes {}".format(', '.join(mlb.classes_)))
+    log_message("Setting up preliminaries and the statistics arrays")
+    log_message("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
     rng = np.random.RandomState(seed=42)
     top_features = {
@@ -252,7 +249,7 @@ if __name__ == "__main__":
     # Begin the main show!
     # ------------------------------------------------------------------- #
     for bs_iter in range(n_iter):
-        logger.info("Fitting bootstrap iteration {}.".format(bs_iter + 1))
+        log_message("Fitting bootstrap iteration {}.".format(bs_iter + 1))
         cv = IterativeStratifiedKFold(
             n_splits=n_splits, random_state=rng.randint(MAX_SEED)
         )
@@ -276,7 +273,7 @@ if __name__ == "__main__":
         for fold_iter, (
             (_, validation_idx), (estimators, vectorizer, requires_dense)
         ) in enumerate(zip(cv, fit_results)):
-            logger.info(
+            log_message(
                 "Computing binary performance for fold {}.".format(
                     fold_iter + 1)
             )
@@ -286,7 +283,7 @@ if __name__ == "__main__":
             y_test_f_proba = []
 
             for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes_)):
-                logger.info(
+                log_message(
                     "\tComputing binary performance for label {}.".format(
                         label)
                 )
@@ -358,7 +355,7 @@ if __name__ == "__main__":
                 top_features["absolute"][label][bs_iter][fold_iter].extend(
                     top_n_abs)
 
-            logger.info("Computing fold mult-label performance.")
+            log_message("Computing fold mult-label performance.")
             # True scores in multi-label indicator format
             y_valid_f = y_train[validation_idx]
             y_test_f = y_test
@@ -400,7 +397,7 @@ if __name__ == "__main__":
 
     # Write out all the statistics to a multi-indexed dataframe
     # -------------------------------------------------------------------- #
-    logger.info("Writing statistics to file.")
+    log_message("Writing statistics to file.")
 
     # Binary Statistics
     # -------------------------------------------------------------------- #
@@ -456,7 +453,7 @@ if __name__ == "__main__":
 
     # Top N Features, train/y-array index order
     # -------------------------------------------------------------------- #
-    logger.info("Writing label training order.")
+    log_message("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
         fp.write(",".join(mlb.classes_))
 
