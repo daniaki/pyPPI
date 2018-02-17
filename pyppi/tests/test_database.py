@@ -41,7 +41,7 @@ class TestContextManager(TestCase):
 
     def test_can_connect(self):
         with begin_transaction(db_path=self.db_path) as session:
-            self.assertTrue(session.is_active, True)
+            self.assertTrue(session.is_active)
 
     def test_make_session_creates_tables(self):
         session = make_session(db_path=self.db_path)

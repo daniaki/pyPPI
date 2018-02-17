@@ -43,14 +43,25 @@ def init_protein_table(record_handle=None, db_path=None):
 
 
 def add_interaction(session, commit=False, verbose=False, psimi_ls=(),
-                    pmid_ls=(), match_taxon_id=None, **class_kwargs):
+                    pmid_ls=(), existing_interactions=None,
+                    match_taxon_id=None, **class_kwargs):
     try:
         i_manager = InteractionManager(
             verbose=verbose, match_taxon_id=match_taxon_id
         )
         source = class_kwargs["source"]
         target = class_kwargs["target"]
-        if i_manager.get_by_source_target(session, source, target):
+        if isinstance(source, Protein):
+            source = source.uniprot_id
+        if isinstance(target, Protein):
+            target = target.uniprot_id
+
+        if existing_interactions is not None:
+            entry = existing_interactions.get((source, target), None)
+        else:
+            entry = i_manager.get_by_source_target(session, source, target)
+
+        if entry is not None:
             raise ObjectAlreadyExists(
                 "Interaction ({}, {}) already exists.".format(
                     source, target)
@@ -87,14 +98,23 @@ def add_interaction(session, commit=False, verbose=False, psimi_ls=(),
 def update_interaction(session, commit=False, psimi_ls=(), pmid_ls=(),
                        replace_fields=False, override_boolean=False,
                        create_if_not_found=False, match_taxon_id=None,
-                       verbose=False, update_features=True, **class_kwargs):
+                       verbose=False, update_features=True,
+                       existing_interactions=None, **class_kwargs):
     try:
         i_manager = InteractionManager(
             verbose=verbose, match_taxon_id=match_taxon_id
         )
         source = class_kwargs["source"]
         target = class_kwargs["target"]
-        entry = i_manager.get_by_source_target(session, source, target)
+        if isinstance(source, Protein):
+            source = source.uniprot_id
+        if isinstance(target, Protein):
+            target = target.uniprot_id
+
+        if existing_interactions is not None:
+            entry = existing_interactions.get((source, target), None)
+        else:
+            entry = i_manager.get_by_source_target(session, source, target)
 
         if entry is None and not create_if_not_found:
             raise ObjectNotFound(
@@ -103,6 +123,7 @@ def update_interaction(session, commit=False, psimi_ls=(), pmid_ls=(),
         elif entry is None and create_if_not_found:
             return add_interaction(
                 session, commit=commit,
+                existing_interactions=existing_interactions,
                 psimi_ls=psimi_ls, pmid_ls=pmid_ls,
                 **class_kwargs
             )

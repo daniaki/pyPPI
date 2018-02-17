@@ -24,9 +24,6 @@ ipr_names_path = os.path.join(PATH, 'ipr_names.list')
 pfam_names_path = os.path.join(PATH, 'Pfam-A.clans.tsv.gz')
 
 ptm_labels_path = os.path.join(PATH, 'labels.tsv')
-annotation_extractor_path = os.path.join(PATH, 'annotation_extractor.pkl')
-accession_features_path = os.path.join(PATH, 'accession_features.pkl')
-ppi_features_path = os.path.join(PATH, 'ppi_features.pkl')
 
 kegg_network_path = os.path.join(PATH, 'networks/kegg_network.tsv')
 hprd_network_path = os.path.join(PATH, 'networks/hprd_network.tsv')
@@ -47,7 +44,7 @@ innate_c_mitab_path = os.path.join(PATH, 'networks/innatedb_curated.mitab.gz')
 innate_i_mitab_path = os.path.join(PATH, 'networks/innatedb_imported.mitab.gz')
 pina2_sif_path = os.path.join(PATH, 'networks/pina2_homo_sapiens-20140521.sif')
 
-uniprot_record_cache = os.path.join(PATH, 'uprot_records.dict')
+feature_cache_path = os.path.join(PATH, 'features.json.gz')
 uniprot_map_path = os.path.join(PATH, 'accession_map.json')
 classifier_path = os.path.join(PATH, 'classifier.pkl')
 
@@ -195,6 +192,17 @@ def save_uniprot_accession_map(mapping):
         return json.dump(mapping, fp)
 
 
+def load_features():
+    with gzip.open(feature_cache_path, 'rb') as fp:
+        features = json.loads(fp.read().decode("utf-8"))
+    return features
+
+
+def save_features(features):
+    with gzip.open(feature_cache_path, 'wb') as fp:
+        fp.write(json.dumps(features).encode("utf-8"))
+
+
 def load_ptm_labels():
     """
     Load the labels in the tsv file into a list.
@@ -224,14 +232,6 @@ def load_network_from_path(path):
 def save_network_to_path(interactions, path):
     import numpy as np
     return interactions.to_csv(path, sep='\t', index=False, na_rep=str(np.NaN))
-
-
-def read_pd_pickle(path):
-    return pd.read_pickle(path)
-
-
-def pickle_pd_object(obj, path):
-    return obj.to_pickle(path)
 
 
 def load_kegg_to_up():

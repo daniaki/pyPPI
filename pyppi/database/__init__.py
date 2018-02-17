@@ -9,7 +9,7 @@ import logging
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 
 from ..data import default_db_path
@@ -23,19 +23,22 @@ def __init_database(engine):
         Protein, Interaction, Pubmed, Psimi,
         psimi_interactions, pmid_interactions
     )
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
     psimi_interactions.create(bind=engine, checkfirst=True)
     pmid_interactions.create(bind=engine, checkfirst=True)
 
 
-try:
-    ENGINE = create_engine("sqlite:///" + os.path.normpath(default_db_path))
-    __init_database(ENGINE)
-except:
-    logger.exception(
-        "Could not create an engine for {}.".format(default_db_path)
-    )
-    raise
+def create_default_engine():
+    try:
+        engine = create_engine(
+            "sqlite:///" + os.path.normpath(default_db_path)
+        )
+        return engine
+    except:
+        logger.exception(
+            "Could not create an engine for {}.".format(default_db_path)
+        )
+        raise
 
 
 @contextmanager
@@ -46,7 +49,8 @@ def begin_transaction(db_path=None, echo=False):
             engine = create_engine("sqlite:///" + os.path.normpath(db_path))
             __init_database(engine)
         else:
-            engine = ENGINE
+            engine = create_default_engine()
+            __init_database(engine)
 
         session = Session(bind=engine)
         yield session
@@ -55,6 +59,7 @@ def begin_transaction(db_path=None, echo=False):
     except:
         if session is not None:
             session.rollback()
+            session.close()
         raise
 
 
@@ -64,7 +69,9 @@ def make_session(db_path=None, echo=False):
             engine = create_engine("sqlite:///" + os.path.normpath(db_path))
             __init_database(engine)
         else:
-            engine = ENGINE
+            engine = create_default_engine()
+            __init_database(engine)
+
         session = Session(bind=engine)
         return session
     except:

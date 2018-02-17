@@ -5,7 +5,9 @@ logger.setLevel(logging.INFO)
 logger.propagate = False
 handler = logging.StreamHandler()
 formatter = logging.Formatter(
-    '%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 handler.setFormatter(formatter)
 
 if not logger.handlers:
@@ -21,4 +23,6 @@ __all__ = [
     'network_analysis',
     'output',
     'tests'
+
+
 ]

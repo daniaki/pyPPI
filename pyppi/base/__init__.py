@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import pandas as pd
 from itertools import islice
+from datetime import datetime
 import math
 
 from ..data import load_ptm_labels
@@ -28,6 +29,19 @@ NULL_VALUES = (
 
 def is_null(value):
     return str(value) in NULL_VALUES
+
+
+def log_message(msg, name='pyppi', level="info"):
+    print(
+        '%(asctime)s %(name)-8s %(levelname)-8s %(message)s' %
+        {
+            "asctime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'name': name,
+            'levelname': level.upper(),
+            'message': msg
+        },
+        flush=True
+    )
 
 
 def su_make_dir(path, mode=0o777):

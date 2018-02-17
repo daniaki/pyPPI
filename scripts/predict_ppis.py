@@ -46,7 +46,7 @@ from joblib import Parallel, delayed
 from datetime import datetime
 from docopt import docopt
 
-from pyppi.base import parse_args, su_make_dir, chunk_list
+from pyppi.base import parse_args, su_make_dir, chunk_list, log_message
 from pyppi.base import P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
 from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import full_training_network_path, generic_io
@@ -59,6 +59,7 @@ from pyppi.database import make_session
 from pyppi.database.models import Interaction
 from pyppi.database.managers import InteractionManager, ProteinManager
 from pyppi.database.managers import format_interactions_for_sklearn
+from pyppi.database.utilities import update_interaction
 
 from pyppi.data_mining.tools import xy_from_interaction_frame
 from pyppi.data_mining.generic import edgelist_func, generic_to_dataframe
@@ -74,16 +75,6 @@ from sklearn.model_selection import StratifiedKFold
 
 
 MAX_SEED = 1000000
-logger = logging.getLogger("scripts")
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    '%(asctime)s %(name)-8s %(levelname)-8s %(message)s'
-)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
-logger.propagate = False
-
 
 if __name__ == "__main__":
     args = parse_args(docopt(__doc__))
@@ -110,7 +101,7 @@ if __name__ == "__main__":
         indent=4, sort_keys=True
     )
 
-    logger.info("Starting new database session.")
+    log_message("Starting new database session.")
     session = make_session(db_path=default_db_path)
     i_manager = InteractionManager(verbose=verbose, match_taxon_id=9606)
     p_manager = ProteinManager(verbose=verbose, match_taxon_id=9606)
@@ -124,14 +115,14 @@ if __name__ == "__main__":
     )
 
     if input_file == None:
-        logger.info("Loading interactome data.")
+        log_message("Loading interactome data.")
         testing = i_manager.interactome_interactions(
             session=session,
             keep_holdout=True,
             keep_training=True
         )
     else:
-        logger.info("Loading custom ppi data.")
+        log_message("Loading custom ppi data.")
         testing = generic_to_dataframe(
             f_input=generic_io(input_file),
             parsing_func=edgelist_func,
@@ -164,7 +155,7 @@ if __name__ == "__main__":
             if i_manager.get_by_source_target(session, a, b) is None
         ]
 
-        logger.info("Computing features.")
+        log_message("Computing features.")
         features = Parallel(n_jobs=n_jobs, backend="multiprocessing")(
             delayed(compute_interaction_features)(source, target)
             for (source, target) in ppis
@@ -172,31 +163,45 @@ if __name__ == "__main__":
         for (source, target), features in zip(ppis, features):
             feature_map[(source.uniprot_id, target.uniprot_id)] = features
 
+        existing_interactions = {}
+        for interaction in session.query(Interaction).all():
+            a = p_manager.get_by_id(session, id=interaction.source)
+            b = p_manager.get_by_id(session, id=interaction.target)
+            existing_interactions[(a.uniprot_id, b.uniprot_id)] = interaction
+
         for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET]):
-            entry = i_manager.get_by_source_target(session, a, b)
-            if entry is None:
-                logger.info(
-                    "Creating new Interaction ({},{}).".format(a, b)
-                )
-                entry = Interaction(
-                    source=protein_map[a],
-                    target=protein_map[b],
-                    is_interactome=False,
-                    is_training=False,
-                    is_holdout=False,
-                    label=None,
-                    **feature_map[(a, b)]
-                )
-                entry.save(session, commit=True)
+            class_kwargs = feature_map[(a, b)]
+            class_kwargs["source"] = protein_map[a]
+            class_kwargs["target"] = protein_map[b]
+            class_kwargs["label"] = None
+            class_kwargs["is_training"] = False
+            class_kwargs["is_holdout"] = False
+            class_kwargs["is_interactome"] = False
+            entry = update_interaction(
+                session=session,
+                commit=False,
+                psimi_ls=[],
+                pmid_ls=[],
+                replace_fields=False,
+                override_boolean=False,
+                create_if_not_found=True,
+                match_taxon_id=9606,
+                verbose=False,
+                update_features=False,
+                existing_interactions=existing_interactions,
+                **class_kwargs
+            )
+            existing_interactions[(a, b)] = entry
             testing.append(entry)
+        session.commit()
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
-    logger.info("Preparing training and testing data.")
+    log_message("Preparing training and testing data.")
     X_train, y_train = format_interactions_for_sklearn(training, selection)
     X_test, _ = format_interactions_for_sklearn(testing, selection)
 
-    logger.info("Computing usable feature proportions in testing samples.")
+    log_message("Computing usable feature proportions in testing samples.")
 
     def separate_features(row):
         features = row[0].upper().split(',')
@@ -275,20 +280,20 @@ if __name__ == "__main__":
         clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
 
         # Fit the complete training data and make predictions.
-        logger.info("Fitting data.")
+        log_message("Fitting data.")
         clf.fit(X_train, y_train)
         joblib.dump(clf, classifier_path)
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
-    logger.info("Making predictions.")
+    log_message("Making predictions.")
     clf = joblib.load(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
     # -------------------------------------------------------------------- #
-    logger.info("Writing results to file.")
+    log_message("Writing results to file.")
     usable_go_term_props = [go for (go, _, _) in X_test_useable_props]
     usable_ipr_term_props = [ipr for (_, ipr, _) in X_test_useable_props]
     usable_pf_term_props = [pf for (_, _, pf) in X_test_useable_props]
@@ -351,7 +356,7 @@ if __name__ == "__main__":
 
     # Calculate the proportion of the interactome classified at a threshold
     # value, t.
-    logger.info("Computing threshold curve.")
+    log_message("Computing threshold curve.")
     thresholds = np.arange(0.0, 1.05, 0.05)
     proportions = np.zeros_like(thresholds)
     for i, t in enumerate(thresholds):
@@ -364,7 +369,7 @@ if __name__ == "__main__":
             fp.write("{},{}\n".format(t, p))
 
     # Compute some basic statistics and numbers and save as a json object
-    logger.info("Computing dataset statistics.")
+    log_message("Computing dataset statistics.")
     num_in_training = sum(
         1 for entry in testing if (entry.is_training or entry.is_holdout)
     )
@@ -397,7 +402,7 @@ if __name__ == "__main__":
         json.dump(data, fp, indent=4, sort_keys=True)
 
     # Save and close session
-    logger.info("Commiting changes to database.")
+    log_message("Commiting changes to database.")
     try:
         session.commit()
         session.close()
