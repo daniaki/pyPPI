@@ -77,7 +77,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 MAX_SEED = 1000000
-RANDOM_STATE = 42
+RANDOM_STATE = 9371
 logger = create_logger("scripts", logging.INFO)
 
 
