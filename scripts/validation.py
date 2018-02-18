@@ -259,6 +259,11 @@ if __name__ == "__main__":
         )
         cv = list(cv.split(X_train, y_train))
 
+        for a, b in cv:
+            print(list(a))
+            print(list(b))
+            print("")
+
         fit_results = []
         for fold_iter, (train_idx, _) in enumerate(cv):
             estimators, vectorizer, requires_dense = train_fold(
