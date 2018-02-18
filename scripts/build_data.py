@@ -22,6 +22,7 @@ from docopt import docopt
 from pyppi.base import delete_cache
 from pyppi.base import parse_args, SOURCE, TARGET, LABEL
 from pyppi.base import PUBMED, EXPERIMENT_TYPE, is_null
+from pyppi.base.logging import create_logger
 
 from pyppi.data import bioplex_network_path, pina2_network_path
 from pyppi.data import bioplex_v4, pina2, innate_curated, innate_imported
@@ -56,15 +57,7 @@ from pyppi.data_mining.psimi import get_active_instance as load_mi_ontology
 from pyppi.data_mining.features import compute_interaction_features
 
 
-logger = logging.getLogger("scripts")
-logger.setLevel(logging.INFO)
-logger.propagate = False
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-handler.setFormatter(formatter)
+logger = create_logger("scripts", logging.INFO)
 
 
 if __name__ == "__main__":

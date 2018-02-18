@@ -45,6 +45,7 @@ from docopt import docopt
 from numpy.random import RandomState
 
 from pyppi.base import parse_args, su_make_dir
+from pyppi.base.logging import create_logger
 from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import testing_network_path, training_network_path
 from pyppi.data import get_term_description, ipr_name_map, pfam_name_map
@@ -80,16 +81,7 @@ from sklearn.metrics import (
 
 MAX_SEED = 1000000
 RANDOM_STATE = 42
-
-logger = logging.getLogger("scripts")
-logger.setLevel(logging.INFO)
-logger.propagate = False
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-handler.setFormatter(formatter)
+logger = create_logger("scripts", logging.INFO)
 
 
 def train_fold(X, y, labels, fold_iter, use_binary, model,

@@ -49,6 +49,7 @@ from docopt import docopt
 
 from pyppi.base import parse_args, su_make_dir, chunk_list
 from pyppi.base import P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
+from pyppi.base.logging import create_logger
 from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import full_training_network_path, generic_io
 from pyppi.data import interactome_network_path, classifier_path
@@ -77,16 +78,7 @@ from sklearn.model_selection import StratifiedKFold
 
 MAX_SEED = 1000000
 RANDOM_STATE = 42
-
-logger = logging.getLogger("scripts")
-logger.setLevel(logging.INFO)
-logger.propagate = False
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-handler.setFormatter(formatter)
+logger = create_logger("scripts", logging.INFO)
 
 
 if __name__ == "__main__":
