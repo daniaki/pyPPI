@@ -44,7 +44,7 @@ from datetime import datetime
 from docopt import docopt
 from numpy.random import RandomState
 
-from pyppi.base import parse_args, su_make_dir, log_message
+from pyppi.base import parse_args, su_make_dir
 from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import testing_network_path, training_network_path
 from pyppi.data import get_term_description, ipr_name_map, pfam_name_map
@@ -78,14 +78,23 @@ from sklearn.metrics import (
     hamming_loss
 )
 
-
 MAX_SEED = 1000000
 RANDOM_STATE = 42
 
+logger = logging.getLogger("scripts")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+handler = logging.StreamHandler()
+formatter = logging.Formatter(
+    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+handler.setFormatter(formatter)
+
 
 def train_fold(X, y, labels, fold_iter, use_binary, model,
-               hyperparam_iter, params):
-    log_message("Fitting fold {}.".format(fold_iter + 1))
+               hyperparam_iter, params, rng):
+    logger.info("Fitting fold {}.".format(fold_iter + 1))
 
     # Prepare all training and testing data
     vectorizer = CountVectorizer(
@@ -97,7 +106,7 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
     requires_dense = False
     estimators = []
     for i, label in enumerate(labels):
-        log_message("\tFitting label {}.".format(label))
+        logger.info("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
             random_state=rng.randint(MAX_SEED),
@@ -124,7 +133,7 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
                 clf.fit(X, y[:, i])
                 requires_dense = False
             except TypeError:
-                log_message(
+                logger.info(
                     "Error fitting sparse input. Converting to dense input."
                 )
                 X = X.todense()
@@ -162,7 +171,7 @@ if __name__ == "__main__":
 
     # Load all the training data, features etc.
     # ------------------------------------------------------------------- #
-    log_message("Loading training and testing data.")
+    logger.info("Loading training and testing data.")
     ipr_map = ipr_name_map()
     pfam_map = pfam_name_map()
     go_dag = get_active_instance()
@@ -177,7 +186,7 @@ if __name__ == "__main__":
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
-    log_message("Preparing training and testing data.")
+    logger.info("Preparing training and testing data.")
     X_train, y_train = format_interactions_for_sklearn(training, selection)
     X_test, y_test = format_interactions_for_sklearn(testing, selection)
 
@@ -204,8 +213,8 @@ if __name__ == "__main__":
 
     # Set up the numpy arrays and dictionarys for statistics etc
     # -------------------------------------------------------------------- #
-    log_message("Setting up preliminaries and the statistics arrays")
-    log_message("Found classes {}".format(', '.join(mlb.classes_)))
+    logger.info("Setting up preliminaries and the statistics arrays")
+    logger.info("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
     rng = RandomState(seed=RANDOM_STATE)
     top_features = {
@@ -252,7 +261,7 @@ if __name__ == "__main__":
     # Begin the main show!
     # ------------------------------------------------------------------- #
     for bs_iter in range(n_iter):
-        log_message("Fitting bootstrap iteration {}.".format(bs_iter + 1))
+        logger.info("Fitting bootstrap iteration {}.".format(bs_iter + 1))
         cv = IterativeStratifiedKFold(
             n_splits=n_splits, random_state=rng.randint(MAX_SEED)
         )
@@ -268,14 +277,15 @@ if __name__ == "__main__":
                 use_binary=use_binary,
                 model=model,
                 hyperparam_iter=hyperparam_iter,
-                params=params
+                params=params,
+                rng=rng
             )
             fit_results.append((estimators, vectorizer, requires_dense))
 
         for fold_iter, (
             (_, validation_idx), (estimators, vectorizer, requires_dense)
         ) in enumerate(zip(cv, fit_results)):
-            log_message(
+            logger.info(
                 "Computing binary performance for fold {}.".format(
                     fold_iter + 1)
             )
@@ -285,7 +295,7 @@ if __name__ == "__main__":
             y_test_f_proba = []
 
             for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes_)):
-                log_message(
+                logger.info(
                     "\tComputing binary performance for label {}.".format(
                         label)
                 )
@@ -357,7 +367,7 @@ if __name__ == "__main__":
                 top_features["absolute"][label][bs_iter][fold_iter].extend(
                     top_n_abs)
 
-            log_message("Computing fold multi-label performance.")
+            logger.info("Computing fold multi-label performance.")
             # True scores in multi-label indicator format
             y_valid_f = y_train[validation_idx]
             y_test_f = y_test
@@ -399,7 +409,7 @@ if __name__ == "__main__":
 
     # Write out all the statistics to a multi-indexed dataframe
     # -------------------------------------------------------------------- #
-    log_message("Writing statistics to file.")
+    logger.info("Writing statistics to file.")
 
     # Binary Statistics
     # -------------------------------------------------------------------- #
@@ -455,7 +465,7 @@ if __name__ == "__main__":
 
     # Top N Features, train/y-array index order
     # -------------------------------------------------------------------- #
-    log_message("Writing label training order.")
+    logger.info("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
         fp.write(",".join(mlb.classes_))
 

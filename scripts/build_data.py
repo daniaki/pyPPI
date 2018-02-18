@@ -19,7 +19,7 @@ from Bio import SwissProt
 from joblib import Parallel, delayed
 from docopt import docopt
 
-from pyppi.base import delete_cache, log_message
+from pyppi.base import delete_cache
 from pyppi.base import parse_args, SOURCE, TARGET, LABEL
 from pyppi.base import PUBMED, EXPERIMENT_TYPE, is_null
 
@@ -56,6 +56,17 @@ from pyppi.data_mining.psimi import get_active_instance as load_mi_ontology
 from pyppi.data_mining.features import compute_interaction_features
 
 
+logger = logging.getLogger("scripts")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+handler = logging.StreamHandler()
+formatter = logging.Formatter(
+    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+handler.setFormatter(formatter)
+
+
 if __name__ == "__main__":
     args = docopt(__doc__)
     args = parse_args(args)
@@ -68,14 +79,14 @@ if __name__ == "__main__":
     # Setup the protein table in the database
     # ----------------------------------------------------------------------- #
     if clear_cache:
-        log_message("Clearing Biopython/Bioservices cache.")
+        logger.info("Clearing Biopython/Bioservices cache.")
         delete_cache()
 
-    log_message("Clearing existing database tables.")
+    logger.info("Clearing existing database tables.")
     with begin_transaction(db_path=default_db_path) as session:
         delete_database(session=session)
 
-    log_message("Parsing UniProt and PSI-MI into database.")
+    logger.info("Parsing UniProt and PSI-MI into database.")
     records = list(SwissProt.parse(uniprot_sprot())) + \
         list(SwissProt.parse(uniprot_trembl()))
     with begin_transaction(db_path=default_db_path) as session:
@@ -93,12 +104,12 @@ if __name__ == "__main__":
             session.rollback()
             raise
 
-    log_message("Starting new database session.")
+    logger.info("Starting new database session.")
     session = make_session(db_path=default_db_path)
 
     # Construct all the networks
     # ----------------------------------------------------------------------- #
-    log_message("Building KEGG interactions.")
+    logger.info("Building KEGG interactions.")
     pathways = download_pathway_ids('hsa')
     kegg = pathways_to_dataframe(
         session=session,
@@ -109,7 +120,7 @@ if __name__ == "__main__":
         allow_duplicates=False
     )
 
-    log_message("Building HPRD interactions.")
+    logger.info("Building HPRD interactions.")
     hprd = hprd_to_dataframe(
         session=session,
         drop_nan='default',
@@ -117,7 +128,7 @@ if __name__ == "__main__":
         allow_duplicates=False
     )
 
-    log_message("Building Interactome interactions.")
+    logger.info("Building Interactome interactions.")
     bioplex = generic_to_dataframe(
         f_input=bioplex_v4(),
         parsing_func=bioplex_func,
@@ -150,7 +161,7 @@ if __name__ == "__main__":
         allow_duplicates=False
     )
 
-    log_message("Mapping to most recent uniprot accessions.")
+    logger.info("Mapping to most recent uniprot accessions.")
     # Get a set of all the unique uniprot accessions
     networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
     sources = set(p for df in networks for p in df.source.values)
@@ -165,7 +176,7 @@ if __name__ == "__main__":
     )
     save_uniprot_accession_map(accession_mapping)
 
-    log_message("Mapping each network to the most recent uniprot accessions.")
+    logger.info("Mapping each network to the most recent uniprot accessions.")
     kegg = map_network_accessions(
         interactions=kegg, accession_map=accession_mapping,
         drop_nan='default', allow_self_edges=True,
@@ -203,7 +214,7 @@ if __name__ == "__main__":
     )
     networks = [hprd, kegg, bioplex, pina2, innate_i, innate_c]
 
-    log_message("Saving raw networks.")
+    logger.info("Saving raw networks.")
     save_network_to_path(kegg, kegg_network_path)
     save_network_to_path(hprd, hprd_network_path)
     save_network_to_path(pina2, pina2_network_path)
@@ -211,7 +222,7 @@ if __name__ == "__main__":
     save_network_to_path(innate_i, innate_i_network_path)
     save_network_to_path(innate_c, innate_c_network_path)
 
-    log_message("Building and saving processed networks.")
+    logger.info("Building and saving processed networks.")
     hprd_test_labels = ['dephosphorylation', 'phosphorylation']
     hprd_train_labels = set(
         [l for l in hprd[LABEL] if l not in hprd_test_labels]
@@ -274,7 +285,7 @@ if __name__ == "__main__":
     save_network_to_path(testing, testing_network_path)
     save_network_to_path(full_training, full_training_network_path)
 
-    log_message("Saving Interaction records to database.")
+    logger.info("Saving Interaction records to database.")
     protein_map = p_manager.uniprotid_entry_map(session)
     ppis = [
         (protein_map[a], protein_map[b])
@@ -283,7 +294,7 @@ if __name__ == "__main__":
     ]
 
     feature_map = {}
-    log_message("Computing features.")
+    logger.info("Computing features.")
     features_ls = Parallel(n_jobs=n_jobs, backend='multiprocessing')(
         delayed(compute_interaction_features)(source, target)
         for (source, target) in ppis
@@ -296,7 +307,7 @@ if __name__ == "__main__":
 
     # Create and save all the psimi and pubmed objects if they don't already
     # exist in the database.
-    log_message("Updating Pubmed/PSI-MI database entries.")
+    logger.info("Updating Pubmed/PSI-MI database entries.")
     objects = []
     mi_ont = load_mi_ontology()
     networks = [full_training, interactome]
@@ -325,7 +336,7 @@ if __name__ == "__main__":
         session.rollback()
         raise
 
-    log_message("Creating Interaction database entries.")
+    logger.info("Creating Interaction database entries.")
     interactions = {}
     for interaction in session.query(Interaction).all():
         a = p_manager.get_by_id(session, id=interaction.source)
@@ -334,7 +345,7 @@ if __name__ == "__main__":
 
     # Training should only update the is_training to true and leave other
     # boolean fields alone.
-    log_message("Creating training interaction entries.")
+    logger.info("Creating training interaction entries.")
     generator = generate_interaction_tuples(training)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
         class_kwargs = feature_map[(uniprot_a, uniprot_b)]
@@ -362,7 +373,7 @@ if __name__ == "__main__":
 
     # Testing should only update the is_holdout to true and leave other
     # boolean fields alone.
-    log_message("Creating holdout interaction entries.")
+    logger.info("Creating holdout interaction entries.")
     generator = generate_interaction_tuples(testing)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
         class_kwargs = feature_map[(uniprot_a, uniprot_b)]
@@ -390,7 +401,7 @@ if __name__ == "__main__":
 
     # Common are in both kegg and hprd so should only update the is_training
     # and is_holdout to true and leave other boolean fields alone.
-    log_message("Creating training/holdout interaction entries.")
+    logger.info("Creating training/holdout interaction entries.")
     generator = generate_interaction_tuples(common)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
         class_kwargs = feature_map[(uniprot_a, uniprot_b)]
@@ -418,7 +429,7 @@ if __name__ == "__main__":
 
     # Training should only update the is_interactome to true and leave other
     # boolean fields alone.
-    log_message("Creating interactome interaction entries.")
+    logger.info("Creating interactome interaction entries.")
     generator = generate_interaction_tuples(interactome)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
         class_kwargs = feature_map[(uniprot_a, uniprot_b)]
@@ -445,7 +456,7 @@ if __name__ == "__main__":
         interactions[(uniprot_a, uniprot_b)] = entry
 
     # Batch commit might be quicker than calling save on each interaction.
-    log_message("Writing to database.")
+    logger.info("Writing to database.")
     try:
         session.commit()
         session.close()

@@ -47,7 +47,7 @@ from joblib import Parallel, delayed
 from datetime import datetime
 from docopt import docopt
 
-from pyppi.base import parse_args, su_make_dir, chunk_list, log_message
+from pyppi.base import parse_args, su_make_dir, chunk_list
 from pyppi.base import P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
 from pyppi.data import load_network_from_path, load_ptm_labels
 from pyppi.data import full_training_network_path, generic_io
@@ -78,6 +78,17 @@ from sklearn.model_selection import StratifiedKFold
 MAX_SEED = 1000000
 RANDOM_STATE = 42
 
+logger = logging.getLogger("scripts")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+handler = logging.StreamHandler()
+formatter = logging.Formatter(
+    fmt='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+handler.setFormatter(formatter)
+
+
 if __name__ == "__main__":
     args = parse_args(docopt(__doc__))
     n_jobs = args['n_jobs']
@@ -103,7 +114,7 @@ if __name__ == "__main__":
         indent=4, sort_keys=True
     )
 
-    log_message("Starting new database session.")
+    logger.info("Starting new database session.")
     session = make_session(db_path=default_db_path)
     i_manager = InteractionManager(verbose=verbose, match_taxon_id=9606)
     p_manager = ProteinManager(verbose=verbose, match_taxon_id=9606)
@@ -117,14 +128,14 @@ if __name__ == "__main__":
     )
 
     if input_file == None:
-        log_message("Loading interactome data.")
+        logger.info("Loading interactome data.")
         testing = i_manager.interactome_interactions(
             session=session,
             keep_holdout=True,
             keep_training=True
         )
     else:
-        log_message("Loading custom ppi data.")
+        logger.info("Loading custom ppi data.")
         testing = generic_to_dataframe(
             f_input=generic_io(input_file),
             parsing_func=edgelist_func,
@@ -157,7 +168,7 @@ if __name__ == "__main__":
             if i_manager.get_by_source_target(session, a, b) is None
         ]
 
-        log_message("Computing features.")
+        logger.info("Computing features.")
         features = Parallel(n_jobs=n_jobs, backend="multiprocessing")(
             delayed(compute_interaction_features)(source, target)
             for (source, target) in ppis
@@ -199,11 +210,11 @@ if __name__ == "__main__":
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
-    log_message("Preparing training and testing data.")
+    logger.info("Preparing training and testing data.")
     X_train, y_train = format_interactions_for_sklearn(training, selection)
     X_test, _ = format_interactions_for_sklearn(testing, selection)
 
-    log_message("Computing usable feature proportions in testing samples.")
+    logger.info("Computing usable feature proportions in testing samples.")
 
     def separate_features(row):
         features = row[0].upper().split(',')
@@ -282,20 +293,20 @@ if __name__ == "__main__":
         clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
 
         # Fit the complete training data and make predictions.
-        log_message("Fitting data.")
+        logger.info("Fitting data.")
         clf.fit(X_train, y_train)
         joblib.dump(clf, classifier_path)
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
-    log_message("Making predictions.")
+    logger.info("Making predictions.")
     clf = joblib.load(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
     # -------------------------------------------------------------------- #
-    log_message("Writing results to file.")
+    logger.info("Writing results to file.")
     usable_go_term_props = [go for (go, _, _) in X_test_useable_props]
     usable_ipr_term_props = [ipr for (_, ipr, _) in X_test_useable_props]
     usable_pf_term_props = [pf for (_, _, pf) in X_test_useable_props]
@@ -359,7 +370,7 @@ if __name__ == "__main__":
 
     # Calculate the proportion of the interactome classified at a threshold
     # value, t.
-    log_message("Computing threshold curve.")
+    logger.info("Computing threshold curve.")
     thresholds = np.arange(0.0, 1.05, 0.05)
     proportions = np.zeros_like(thresholds)
     for i, t in enumerate(thresholds):
@@ -372,7 +383,7 @@ if __name__ == "__main__":
             fp.write("{},{}\n".format(t, p))
 
     # Compute some basic statistics and numbers and save as a json object
-    log_message("Computing dataset statistics.")
+    logger.info("Computing dataset statistics.")
     num_in_training = sum(
         1 for entry in testing if (entry.is_training or entry.is_holdout)
     )
@@ -414,7 +425,7 @@ if __name__ == "__main__":
         json.dump(label_dist, fp, indent=4, sort_keys=True)
 
     # Save and close session
-    log_message("Commiting changes to database.")
+    logger.info("Commiting changes to database.")
     try:
         session.commit()
         session.close()

@@ -18,11 +18,9 @@ __all__ = [
     'base',
     'data',
     'data_mining',
+    'database',
     'model_selection',
     'models',
     'network_analysis',
-    'output',
     'tests'
-
-
 ]
