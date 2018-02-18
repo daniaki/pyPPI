@@ -35,12 +35,14 @@ import logging
 import pandas as pd
 import numpy as np
 import scipy as sp
+import warnings
+
 from itertools import product
 from operator import itemgetter
 from collections import Counter
 from datetime import datetime
 from docopt import docopt
-import warnings
+from numpy.random import RandomState
 
 from pyppi.base import parse_args, su_make_dir, log_message
 from pyppi.data import load_network_from_path, load_ptm_labels
@@ -78,7 +80,7 @@ from sklearn.metrics import (
 
 
 MAX_SEED = 1000000
-RANDOM_STATE = 100
+RANDOM_STATE = 42
 
 
 def train_fold(X, y, labels, fold_iter, use_binary, model,
@@ -98,7 +100,7 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
         log_message("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
-            random_state=RANDOM_STATE,
+            random_state=rng.randint(MAX_SEED),
             n_jobs=n_jobs
         )
         clf = RandomizedSearchCV(
@@ -108,12 +110,12 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
             cv=StratifiedKFold(
                 n_splits=3,
                 shuffle=True,
-                random_state=RANDOM_STATE
+                random_state=rng.randint(MAX_SEED)
             ),
             n_iter=hyperparam_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=RANDOM_STATE,
+            random_state=rng.randint(MAX_SEED),
             param_distributions=params,
         )
         with warnings.catch_warnings():
@@ -205,6 +207,7 @@ if __name__ == "__main__":
     log_message("Setting up preliminaries and the statistics arrays")
     log_message("Found classes {}".format(', '.join(mlb.classes_)))
     n_classes = len(mlb.classes_)
+    rng = RandomState(seed=RANDOM_STATE)
     top_features = {
         "absolute": {
             l: {
@@ -251,7 +254,7 @@ if __name__ == "__main__":
     for bs_iter in range(n_iter):
         log_message("Fitting bootstrap iteration {}.".format(bs_iter + 1))
         cv = IterativeStratifiedKFold(
-            n_splits=n_splits, random_state=RANDOM_STATE
+            n_splits=n_splits, random_state=rng.randint(MAX_SEED)
         )
         cv = list(cv.split(X_train, y_train))
 

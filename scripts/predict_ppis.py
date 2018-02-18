@@ -76,7 +76,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 MAX_SEED = 1000000
-RANDOM_STATE = 100
+RANDOM_STATE = 42
 
 if __name__ == "__main__":
     args = parse_args(docopt(__doc__))
@@ -259,24 +259,24 @@ if __name__ == "__main__":
 
     # Make the estimators and BR classifier
     # -------------------------------------------------------------------- #
-    rng = RandomState(seed=42)
+    rng = RandomState(seed=RANDOM_STATE)
     if retrain or not os.path.isfile(classifier_path):
         params = get_parameter_distribution_for_model(model)
         random_cv = RandomizedSearchCV(
             cv=StratifiedKFold(
                 n_splits=5,
                 shuffle=True,
-                random_state=RANDOM_STATE
+                random_state=rng.randint(MAX_SEED)
             ),
             n_iter=rcv_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=RANDOM_STATE,
+            random_state=rng.randint(MAX_SEED),
             scoring='f1',
             error_score=0.0,
             param_distributions=params,
             estimator=make_classifier(
-                model, random_state=RANDOM_STATE
+                model, random_state=rng.randint(MAX_SEED)
             )
         )
         clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
