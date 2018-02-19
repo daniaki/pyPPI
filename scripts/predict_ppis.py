@@ -319,6 +319,8 @@ if __name__ == "__main__":
         clfs.append(random_cv)
         print(label, random_cv.best_params_, random_cv.best_score_)
 
+    joblib.dump(clfs, '{}/classifier.pkl'.format(direc))
+
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
