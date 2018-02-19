@@ -18,10 +18,6 @@ Options:
   --bp          Use Biological Process Gene Ontology in features.
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
-  --binary      Use binary feature encoding instead of ternary.
-  --retrain     Re-train classifier instead of loading previous version. If
-                using a previous version, you must use the same selection of
-                features along with the same induce setting.
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression].
                     Ignored if using 'retrain'.
@@ -74,11 +70,36 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import StratifiedKFold
+from sklearn.pipeline import Pipeline
 
 
 MAX_SEED = 1000000
 RANDOM_STATE = 42
 logger = create_logger("scripts", logging.INFO)
+
+
+def get_model_for_label(label):
+    label_model_map = {
+        'Acetylation': 'RandomForestClassifier',
+        'Activation': 'RandomForestClassifier',
+        'Binding/association': 'RandomForestClassifier',
+        'Carboxylation': 'LogisticRegression',
+        'Deacetylation': 'RandomForestClassifier',
+        'Dephosphorylation': 'RandomForestClassifier',
+        'Dissociation': 'RandomForestClassifier',
+        'Glycosylation': 'LogisticRegression',
+        'Inhibition': 'RandomForestClassifier',
+        'Methylation': 'LogisticRegression',
+        'Myristoylation': 'LogisticRegression',
+        'Phosphorylation': 'RandomForestClassifier',
+        'Prenylation': 'LogisticRegression',
+        'Proteolytic-cleavage': 'RandomForestClassifier',
+        'State-change': 'RandomForestClassifier',
+        'Sulfation': 'RandomForestClassifier',
+        'Sumoylation': 'RandomForestClassifier',
+        'Ubiquitination': 'RandomForestClassifier'
+    }
+    return label_model_map[label]
 
 
 if __name__ == "__main__":
@@ -93,8 +114,6 @@ if __name__ == "__main__":
     out_file = args['output']
     input_file = args['input']
     direc = args['directory']
-    retrain = args['retrain']
-    use_binary = args['binary']
 
     # Set up the folder for each experiment run named after the current time
     # -------------------------------------------------------------------- #
@@ -249,52 +268,62 @@ if __name__ == "__main__":
         compute_proportions_shared, axis=1, arr=X_test_split_features
     )
 
-    mlb = MultiLabelBinarizer(classes=sorted(labels))
+    mlb = MultiLabelBinarizer(classes=sorted(labels), sparse_output=True)
     mlb.fit(y_train)
     y_train = mlb.transform(y_train)
 
-    vectorizer = CountVectorizer(
-        binary=True if use_binary else False,
-        lowercase=False, stop_words=[':', 'GO']
-    )
-    X_train = vectorizer.fit_transform(X_train)
-    X_test = vectorizer.transform(X_test)
-
     # Make the estimators and BR classifier
     # -------------------------------------------------------------------- #
+    logger.info("Fitting data.")
     rng = RandomState(seed=RANDOM_STATE)
-    if retrain or not os.path.isfile(classifier_path):
+
+    clfs = []
+    model_random_state = rng.randint(MAX_SEED)
+    cv_random_state = rng.randint(MAX_SEED)
+    rgs_random_state = rng.randint(MAX_SEED)
+
+    for i, label in enumerate(mlb.classes):
+        model = get_model_for_label(label)
         params = get_parameter_distribution_for_model(model)
+        keys = list(params.keys())
+        for key in keys:
+            value = params.pop(key)
+            params['estimator__{}'.format(key)] = value
+        params['vectorizer__binary'] = [False, True]
+
+        vectorizer = CountVectorizer(lowercase=False, stop_words=[':', 'GO'])
+        base_estimator = make_classifier(
+            model, random_state=model_random_state, n_jobs=n_jobs
+        )
+        pipeline = Pipeline(
+            steps=[('vectorizer', vectorizer), ('estimator', base_estimator)]
+        )
+
+        logger.info("Training {} for {}.".format(model, label))
         random_cv = RandomizedSearchCV(
             cv=StratifiedKFold(
-                n_splits=5,
+                n_splits=n_splits,
                 shuffle=True,
-                random_state=rng.randint(MAX_SEED)
+                random_state=cv_random_state
             ),
             n_iter=rcv_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=rng.randint(MAX_SEED),
+            random_state=rgs_random_state,
             scoring='f1',
             error_score=0.0,
             param_distributions=params,
-            estimator=make_classifier(
-                model, random_state=rng.randint(MAX_SEED)
-            )
+            estimator=pipeline
         )
-        clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
-
-        # Fit the complete training data and make predictions.
-        logger.info("Fitting data.")
-        clf.fit(X_train, y_train)
-        joblib.dump(clf, classifier_path)
+        random_cv.fit(X_train, y_train[:, i])
+        clfs.append(random_cv)
+        print(label, random_cv.best_params_, random_cv.best_score_)
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
     logger.info("Making predictions.")
-    clf = joblib.load(classifier_path)
-    predictions = clf.predict_proba(X_test)
+    predictions = np.vstack([e.predict_proba(X_test)[:, 1] for e in clfs]).T
 
     # Write the predictions to a tsv file
     # -------------------------------------------------------------------- #
