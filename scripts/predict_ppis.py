@@ -268,7 +268,7 @@ if __name__ == "__main__":
         compute_proportions_shared, axis=1, arr=X_test_split_features
     )
 
-    mlb = MultiLabelBinarizer(classes=sorted(labels), sparse_output=True)
+    mlb = MultiLabelBinarizer(classes=sorted(labels))
     mlb.fit(y_train)
     y_train = mlb.transform(y_train)
 
