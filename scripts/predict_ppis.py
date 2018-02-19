@@ -93,11 +93,11 @@ def get_model_for_label(label):
         'Myristoylation': 'LogisticRegression',
         'Phosphorylation': 'RandomForestClassifier',
         'Prenylation': 'LogisticRegression',
-        'Proteolytic-cleavage': 'RandomForestClassifier',
-        'State-change': 'RandomForestClassifier',
+        'Proteolytic-cleavage': 'LogisticRegression',
+        'State-change': 'LogisticRegression',
         'Sulfation': 'RandomForestClassifier',
         'Sumoylation': 'RandomForestClassifier',
-        'Ubiquitination': 'RandomForestClassifier'
+        'Ubiquitination': 'LogisticRegression'
     }
     return label_model_map[label]
 
