@@ -4,6 +4,7 @@ Collection of utility operations that don't go anywhere else.
 
 import os
 import sys
+import joblib
 import numpy as np
 import pandas as pd
 from itertools import islice
@@ -302,6 +303,17 @@ def parse_args(docopt_args, skip_label=False):
                 fp = open(docopt_args['--input'], 'r')
                 fp.close()
                 parsed['input'] = docopt_args['--input']
+            except IOError as e:
+                sys.stdout.write(e)
+                sys.exit(0)
+
+    if query_doctop_dict(docopt_args, '--classifier') is not None:
+        if query_doctop_dict(docopt_args, '--classifier') == 'None':
+            parsed['classifier'] = None
+        elif query_doctop_dict(docopt_args, '--classifier'):
+            try:
+                joblib.load(docopt_args['--classifier'])
+                parsed['classifier'] = docopt_args['--classifier']
             except IOError as e:
                 sys.stdout.write(e)
                 sys.exit(0)

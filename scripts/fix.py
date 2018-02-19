@@ -1,37 +1,3 @@
-"""
-This script runs classifier training over the entire training data and then
-output predictions over the interactome.
-
-Usage:
-  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-                  [--induce] [--verbose] [--classifier=FILE]
-                  [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
-                  [--input=FILE] [--output=FILE] [--directory=DIR] 
-  predict_ppis.py -h | --help
-
-Options:
-  -h --help     Show this screen.
-  --interpro    Use interpro domains in features.
-  --pfam        Use Pfam domains in features.
-  --mf          Use Molecular Function Gene Ontology in features.
-  --cc          Use Cellular Compartment Gene Ontology in features.
-  --bp          Use Biological Process Gene Ontology in features.
-  --induce      Use ULCA inducer over Gene Ontology.
-  --verbose     Print intermediate output for debugging.
-  --model=M         A binary classifier from Scikit-Learn implementing fit,
-                    predict and predict_proba [default: LogisticRegression].
-                    Ignored if using 'retrain'.
-  --n_jobs=J        Number of processes to run in parallel [default: 1]
-  --n_splits=S      Number of cross-validation splits used during randomized
-                    grid search [default: 5]
-  --n_iterations=I  Number of randomized grid search iterations [default: 60]
-  --classifier=FILE  Path to a pre-trained classifier [default: None]
-  --input=FILE      Uniprot edge-list, with a path directory that absolute or
-                    relative to this script. Entries must be tab separated with
-                    header columns 'source' and 'target'. [default: None]
-  --output=FILE     Output file name [default: predictions.tsv]
-  --directory=DIR   Absolute or relative output directory [default: ./results/]
-"""
 import os
 import json
 import logging
@@ -100,11 +66,12 @@ def get_model_for_label(label):
         'Sumoylation': 'RandomForestClassifier',
         'Ubiquitination': 'LogisticRegression'
     }
-    return 'LogisticRegression'  # label_model_map[label]
+    return label_model_map[label]
 
 
 if __name__ == "__main__":
-    args = parse_args(docopt(__doc__))
+    direc = ""
+    args = json.load(open("{}/settings.json".format(direc), 'rt'))
     n_jobs = args['n_jobs']
     n_splits = args['n_splits']
     rcv_iter = args['n_iterations']
@@ -114,18 +81,6 @@ if __name__ == "__main__":
     model = args['model']
     out_file = args['output']
     input_file = args['input']
-    direc = args['directory']
-    saved_classifier = args['classifier']
-
-    # Set up the folder for each experiment run named after the current time
-    # -------------------------------------------------------------------- #
-    folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
-    direc = "{}/{}/".format(direc, folder)
-    su_make_dir(direc)
-    json.dump(
-        args, fp=open("{}/settings.json".format(direc), 'w'),
-        indent=4, sort_keys=True
-    )
 
     logger.info("Starting new database session.")
     session = make_session(db_path=default_db_path)
@@ -140,86 +95,12 @@ if __name__ == "__main__":
         session, keep_holdout=True
     )
 
-    if input_file == None:
-        logger.info("Loading interactome data.")
-        testing = i_manager.interactome_interactions(
-            session=session,
-            keep_holdout=True,
-            keep_training=True
-        )
-    else:
-        logger.info("Loading custom ppi data.")
-        testing = generic_to_dataframe(
-            f_input=generic_io(input_file),
-            parsing_func=edgelist_func,
-            drop_nan=True,
-            allow_self_edges=True,
-            allow_duplicates=True
-        )
-        sources = set(p for p in testing.source.values)
-        targets = set(p for p in testing.target.values)
-        accessions = list(sources | targets)
-        accession_mapping = batch_map(
-            session=session,
-            accessions=accessions,
-            keep_unreviewed=True,
-            match_taxon_id=9606,
-            allow_download=True
-        )
-        testing_network = map_network_accessions(
-            interactions=testing, accession_map=accession_mapping,
-            drop_nan=True, allow_self_edges=True,
-            allow_duplicates=False, min_counts=None, merge=False
-        )
-
-        # Compute features for new ppis
-        testing = []
-        feature_map = {}
-        ppis = [
-            (protein_map[a], protein_map[b])
-            for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET])
-            if i_manager.get_by_source_target(session, a, b) is None
-        ]
-
-        logger.info("Computing features.")
-        features = Parallel(n_jobs=n_jobs, backend="multiprocessing")(
-            delayed(compute_interaction_features)(source, target)
-            for (source, target) in ppis
-        )
-        for (source, target), features in zip(ppis, features):
-            feature_map[(source.uniprot_id, target.uniprot_id)] = features
-
-        existing_interactions = {}
-        for interaction in session.query(Interaction).all():
-            a = p_manager.get_by_id(session, id=interaction.source)
-            b = p_manager.get_by_id(session, id=interaction.target)
-            existing_interactions[(a.uniprot_id, b.uniprot_id)] = interaction
-
-        for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET]):
-            class_kwargs = feature_map[(a, b)]
-            class_kwargs["source"] = protein_map[a]
-            class_kwargs["target"] = protein_map[b]
-            class_kwargs["label"] = None
-            class_kwargs["is_training"] = False
-            class_kwargs["is_holdout"] = False
-            class_kwargs["is_interactome"] = False
-            entry = update_interaction(
-                session=session,
-                commit=False,
-                psimi_ls=[],
-                pmid_ls=[],
-                replace_fields=False,
-                override_boolean=False,
-                create_if_not_found=True,
-                match_taxon_id=9606,
-                verbose=False,
-                update_features=False,
-                existing_interactions=existing_interactions,
-                **class_kwargs
-            )
-            existing_interactions[(a, b)] = entry
-            testing.append(entry)
-        session.commit()
+    logger.info("Loading interactome data.")
+    testing = i_manager.interactome_interactions(
+        session=session,
+        keep_holdout=True,
+        keep_training=True
+    )
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
@@ -274,57 +155,7 @@ if __name__ == "__main__":
     mlb.fit(y_train)
     y_train = mlb.transform(y_train)
 
-    # Make the estimators and BR classifier
-    # -------------------------------------------------------------------- #
-    logger.info("Fitting data.")
-    rng = RandomState(seed=RANDOM_STATE)
-
-    if not saved_classifier:
-        clfs = []
-        model_random_state = rng.randint(MAX_SEED)
-        cv_random_state = rng.randint(MAX_SEED)
-        rgs_random_state = rng.randint(MAX_SEED)
-
-        for i, label in enumerate(mlb.classes):
-            model = get_model_for_label(label)
-            params = get_parameter_distribution_for_model(model)
-            keys = list(params.keys())
-            for key in keys:
-                value = params.pop(key)
-                params['estimator__{}'.format(key)] = value
-            params['vectorizer__binary'] = [False, True]
-
-            vectorizer = CountVectorizer(
-                lowercase=False, stop_words=[':', 'GO'])
-            base_estimator = make_classifier(
-                model, random_state=model_random_state, n_jobs=n_jobs
-            )
-            pipeline = Pipeline(
-                steps=[('vectorizer', vectorizer),
-                       ('estimator', base_estimator)]
-            )
-
-            logger.info("Training {} for {}.".format(model, label))
-            random_cv = RandomizedSearchCV(
-                cv=StratifiedKFold(
-                    n_splits=n_splits,
-                    shuffle=True,
-                    random_state=cv_random_state
-                ),
-                n_iter=rcv_iter,
-                n_jobs=n_jobs,
-                refit=True,
-                random_state=rgs_random_state,
-                scoring='f1',
-                error_score=0.0,
-                param_distributions=params,
-                estimator=pipeline
-            )
-            random_cv.fit(X_train, y_train[:, i])
-            clfs.append(random_cv)
-        joblib.dump(clfs, '{}/classifier.pkl'.format(direc))
-    else:
-        clfs = joblib.load(saved_classifier)
+    clfs = joblib.load('{}/classifier.pkl'.format(direc))
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
