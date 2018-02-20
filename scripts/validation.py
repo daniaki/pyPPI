@@ -95,13 +95,17 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
     )
     X = vectorizer.fit_transform(X)
 
+    model_rs = rng.randint(MAX_SEED)
+    kf_rs = rng.randint(MAX_SEED)
+    rgs_rs = rng.randint(MAX_SEED)
+
     requires_dense = False
     estimators = []
     for i, label in enumerate(labels):
         logger.info("\tFitting label {}.".format(label))
         model_to_tune = make_classifier(
             algorithm=model,
-            random_state=rng.randint(MAX_SEED),
+            random_state=model_rs,
             n_jobs=n_jobs
         )
         clf = RandomizedSearchCV(
@@ -111,12 +115,12 @@ def train_fold(X, y, labels, fold_iter, use_binary, model,
             cv=StratifiedKFold(
                 n_splits=3,
                 shuffle=True,
-                random_state=rng.randint(MAX_SEED)
+                random_state=kf_rs
             ),
             n_iter=hyperparam_iter,
             n_jobs=n_jobs,
             refit=True,
-            random_state=rng.randint(MAX_SEED),
+            random_state=rgs_rs,
             param_distributions=params,
         )
         with warnings.catch_warnings():
@@ -551,3 +555,36 @@ if __name__ == "__main__":
         fname='{}/{}'.format(direc, 'd_t_similarity_matrix.csv'),
         header=header, delimiter=','
     )
+
+    # Compute some quick stats
+    # -------------------------------------------------------------------- #
+    with open('{}/{}'.format(direc, 'results_f1_ml.tsv'), 'wt') as fp:
+        for label in mlb.classes:
+            mean = binary_df.loc[(label, 'validation', 'Binary F1'), :].mean(
+                axis=0, level=[0]
+            ).mean()
+            stdev = binary_df.loc[(label, 'validation', 'Binary F1'), :].mean(
+                axis=0, level=[0]
+            ).stdev()
+            stderr = stdev / np.sqrt(n_iter)
+            fp.write("{}\t{:.2f}\t{:.4f}\n".format(label, mean, stderr))
+
+            if label in ("Phosphorylation", "Dephosphorylation"):
+                mean = binary_df.loc[(label, 'holdout', 'Binary F1'), :].mean(
+                    axis=0, level=[0]
+                ).mean()
+                stdev = binary_df.loc[(label, 'holdout', 'Binary F1'), :].mean(
+                    axis=0, level=[0]
+                ).stdev()
+                stderr = stdev / np.sqrt(n_iter)
+                fp.write("{} (HPRD)\t{:.2f}\t{:.4f}\n".format(label, mean, stderr))
+
+        for metric in ['Label Ranking Loss', 'Hamming Loss']:
+            mean = multilabel_df.loc[('validation', metric), :].mean(
+                axis=0, level=[0]
+            ).mean()
+            stdev = multilabel_df.loc[(label, metric), :].mean(
+                axis=0, level=[0]
+            ).stdev()
+            stderr = stdev / np.sqrt(n_iter)
+            fp.write("{}\t{:.2f}\t{:.4f}\n".format(metric, mean, stderr))

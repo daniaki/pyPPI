@@ -38,6 +38,7 @@ import logging
 import numpy as np
 import pandas as pd
 import joblib
+import warnings
 from collections import Counter
 from numpy.random import RandomState
 from joblib import Parallel, delayed
@@ -320,7 +321,9 @@ if __name__ == "__main__":
                 param_distributions=params,
                 estimator=pipeline
             )
-            random_cv.fit(X_train, y_train[:, i])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                random_cv.fit(X_train, y_train[:, i])
             clfs.append(random_cv)
         joblib.dump(clfs, '{}/classifier.pkl'.format(direc))
     else:

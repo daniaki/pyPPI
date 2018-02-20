@@ -1,3 +1,40 @@
+"""
+This script runs classifier training over the entire training data and then
+output predictions over the interactome.
+
+Usage:
+  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
+                  [--retrain] [--induce] [--verbose] [--binary]
+                  [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
+                  [--input=FILE] [--output=FILE] [--directory=DIR]
+  predict_ppis.py -h | --help
+
+Options:
+  -h --help     Show this screen.
+  --interpro    Use interpro domains in features.
+  --pfam        Use Pfam domains in features.
+  --mf          Use Molecular Function Gene Ontology in features.
+  --cc          Use Cellular Compartment Gene Ontology in features.
+  --bp          Use Biological Process Gene Ontology in features.
+  --induce      Use ULCA inducer over Gene Ontology.
+  --verbose     Print intermediate output for debugging.
+  --binary      Use binary feature encoding instead of ternary.
+  --retrain     Re-train classifier instead of loading previous version. If
+                using a previous version, you must use the same selection of
+                features along with the same induce setting.
+  --model=M         A binary classifier from Scikit-Learn implementing fit,
+                    predict and predict_proba [default: LogisticRegression].
+                    Ignored if using 'retrain'.
+  --n_jobs=J        Number of processes to run in parallel [default: 1]
+  --n_splits=S      Number of cross-validation splits used during randomized
+                    grid search [default: 5]
+  --n_iterations=I  Number of randomized grid search iterations [default: 60]
+  --input=FILE      Uniprot edge-list, with a path directory that absolute or
+                    relative to this script. Entries must be tab separated with
+                    header columns 'source' and 'target'. [default: None]
+  --output=FILE     Output file name [default: predictions.tsv]
+  --directory=DIR   Absolute or relative output directory [default: ./results/]
+"""
 import os
 import json
 import logging
@@ -37,41 +74,15 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import StratifiedKFold
-from sklearn.pipeline import Pipeline
 
 
 MAX_SEED = 1000000
-RANDOM_STATE = 42
+RANDOM_STATE = 100
 logger = create_logger("scripts", logging.INFO)
 
 
-def get_model_for_label(label):
-    label_model_map = {
-        'Acetylation': 'RandomForestClassifier',
-        'Activation': 'RandomForestClassifier',
-        'Binding/association': 'RandomForestClassifier',
-        'Carboxylation': 'LogisticRegression',
-        'Deacetylation': 'RandomForestClassifier',
-        'Dephosphorylation': 'RandomForestClassifier',
-        'Dissociation': 'RandomForestClassifier',
-        'Glycosylation': 'LogisticRegression',
-        'Inhibition': 'RandomForestClassifier',
-        'Methylation': 'LogisticRegression',
-        'Myristoylation': 'LogisticRegression',
-        'Phosphorylation': 'RandomForestClassifier',
-        'Prenylation': 'LogisticRegression',
-        'Proteolytic-cleavage': 'LogisticRegression',
-        'State-change': 'LogisticRegression',
-        'Sulfation': 'RandomForestClassifier',
-        'Sumoylation': 'RandomForestClassifier',
-        'Ubiquitination': 'LogisticRegression'
-    }
-    return label_model_map[label]
-
-
 if __name__ == "__main__":
-    direc = ""
-    args = json.load(open("{}/settings.json".format(direc), 'rt'))
+    args = parse_args(docopt(__doc__))
     n_jobs = args['n_jobs']
     n_splits = args['n_splits']
     rcv_iter = args['n_iterations']
@@ -81,6 +92,19 @@ if __name__ == "__main__":
     model = args['model']
     out_file = args['output']
     input_file = args['input']
+    direc = args['directory']
+    retrain = args['retrain']
+    use_binary = args['binary']
+
+    # Set up the folder for each experiment run named after the current time
+    # -------------------------------------------------------------------- #
+    folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
+    direc = "{}/{}/".format(direc, folder)
+    su_make_dir(direc)
+    json.dump(
+        args, fp=open("{}/settings.json".format(direc), 'w'),
+        indent=4, sort_keys=True
+    )
 
     logger.info("Starting new database session.")
     session = make_session(db_path=default_db_path)
@@ -95,12 +119,86 @@ if __name__ == "__main__":
         session, keep_holdout=True
     )
 
-    logger.info("Loading interactome data.")
-    testing = i_manager.interactome_interactions(
-        session=session,
-        keep_holdout=True,
-        keep_training=True
-    )
+    if input_file == None:
+        logger.info("Loading interactome data.")
+        testing = i_manager.interactome_interactions(
+            session=session,
+            keep_holdout=True,
+            keep_training=True
+        )
+    else:
+        logger.info("Loading custom ppi data.")
+        testing = generic_to_dataframe(
+            f_input=generic_io(input_file),
+            parsing_func=edgelist_func,
+            drop_nan=True,
+            allow_self_edges=True,
+            allow_duplicates=True
+        )
+        sources = set(p for p in testing.source.values)
+        targets = set(p for p in testing.target.values)
+        accessions = list(sources | targets)
+        accession_mapping = batch_map(
+            session=session,
+            accessions=accessions,
+            keep_unreviewed=True,
+            match_taxon_id=9606,
+            allow_download=True
+        )
+        testing_network = map_network_accessions(
+            interactions=testing, accession_map=accession_mapping,
+            drop_nan=True, allow_self_edges=True,
+            allow_duplicates=False, min_counts=None, merge=False
+        )
+
+        # Compute features for new ppis
+        testing = []
+        feature_map = {}
+        ppis = [
+            (protein_map[a], protein_map[b])
+            for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET])
+            if i_manager.get_by_source_target(session, a, b) is None
+        ]
+
+        logger.info("Computing features.")
+        features = Parallel(n_jobs=n_jobs, backend="multiprocessing")(
+            delayed(compute_interaction_features)(source, target)
+            for (source, target) in ppis
+        )
+        for (source, target), features in zip(ppis, features):
+            feature_map[(source.uniprot_id, target.uniprot_id)] = features
+
+        existing_interactions = {}
+        for interaction in session.query(Interaction).all():
+            a = p_manager.get_by_id(session, id=interaction.source)
+            b = p_manager.get_by_id(session, id=interaction.target)
+            existing_interactions[(a.uniprot_id, b.uniprot_id)] = interaction
+
+        for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET]):
+            class_kwargs = feature_map[(a, b)]
+            class_kwargs["source"] = protein_map[a]
+            class_kwargs["target"] = protein_map[b]
+            class_kwargs["label"] = None
+            class_kwargs["is_training"] = False
+            class_kwargs["is_holdout"] = False
+            class_kwargs["is_interactome"] = False
+            entry = update_interaction(
+                session=session,
+                commit=False,
+                psimi_ls=[],
+                pmid_ls=[],
+                replace_fields=False,
+                override_boolean=False,
+                create_if_not_found=True,
+                match_taxon_id=9606,
+                verbose=False,
+                update_features=False,
+                existing_interactions=existing_interactions,
+                **class_kwargs
+            )
+            existing_interactions[(a, b)] = entry
+            testing.append(entry)
+        session.commit()
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
@@ -155,13 +253,48 @@ if __name__ == "__main__":
     mlb.fit(y_train)
     y_train = mlb.transform(y_train)
 
-    clfs = joblib.load('{}/classifier.pkl'.format(direc))
+    vectorizer = CountVectorizer(
+        binary=True if use_binary else False,
+        lowercase=False, stop_words=[':', 'GO']
+    )
+    X_train = vectorizer.fit_transform(X_train)
+    X_test = vectorizer.transform(X_test)
+
+    # Make the estimators and BR classifier
+    # -------------------------------------------------------------------- #
+    rng = RandomState(seed=RANDOM_STATE)
+    if retrain or not os.path.isfile(classifier_path):
+        params = get_parameter_distribution_for_model(model)
+        random_cv = RandomizedSearchCV(
+            cv=StratifiedKFold(
+                n_splits=5,
+                shuffle=True,
+                random_state=rng.randint(MAX_SEED)
+            ),
+            n_iter=rcv_iter,
+            n_jobs=n_jobs,
+            refit=True,
+            random_state=rng.randint(MAX_SEED),
+            scoring='f1',
+            error_score=0.0,
+            param_distributions=params,
+            estimator=make_classifier(
+                model, random_state=rng.randint(MAX_SEED)
+            )
+        )
+        clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
+
+        # Fit the complete training data and make predictions.
+        logger.info("Fitting data.")
+        clf.fit(X_train, y_train)
+        joblib.dump(clf, classifier_path)
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
     logger.info("Making predictions.")
-    predictions = np.vstack([e.predict_proba(X_test)[:, 1] for e in clfs]).T
+    clf = joblib.load(classifier_path)
+    predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
     # -------------------------------------------------------------------- #

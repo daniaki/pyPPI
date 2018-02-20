@@ -38,12 +38,13 @@ def get_parameter_distribution_for_model(model):
         params['penalty'] = ['l1', 'l2']
 
     elif model == 'RandomForestClassifier':
-        params["n_estimators"] = np.arange(32, 528, step=16)
+        params["n_estimators"] = np.arange(10, 250, step=10)
         params["criterion"] = ["gini", "entropy"]
-        params['max_features'] = list(np.arange(0.0001, 0.001, step=0.0001)) + \
+        params['max_features'] = ['auto', 'log2'] +\
+            list(np.arange(0.0001, 0.001, step=0.0001)) + \
             list(np.arange(0.001, 0.01, step=0.001)) + \
-            list(np.arange(0.01, 0.1, step=0.01)) + \
-            list(np.arange(0.1, 1.05, step=0.05))
+            list(np.arange(0.01, 0.1, step=0.01))
+        # list(np.arange(0.1, 1.05, step=0.05))
         params["min_samples_leaf"] = np.arange(2, 21, step=1)
         params["class_weight"] = ['balanced', 'balanced_subsample']
         params["bootstrap"] = [False, True]
