@@ -1,7 +1,24 @@
+"""
+Use this module to import the `create_logger` function, which is simply
+a helper function automate a logger setup.
+"""
+
+
 import logging
+
+__all__ = [
+    'create_logger'
+]
 
 
 def create_logger(name, level):
+    """Create a logger with the given name and logging level
+
+    Returns
+    ------
+    logging.Logger
+        A logger instance.
+    """
     logger = logging.getLogger(name)
     logger.setLevel(level)
     logger.propagate = False
