@@ -24,23 +24,16 @@ import pandas as pd
 import logging
 
 from docopt import docopt
-from pyppi.base import parse_args
+from pyppi.base.log import create_logger
+from pyppi.base.arg_parsing import parse_args
 from pyppi.network_analysis import InteractionNetwork
 
 
-logger = logging.getLogger("scripts")
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    '%(asctime)s %(name)-12s %(levelname)-8s %(message)s'
-)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
-logger.propagate = False
+logger = create_logger("scripts", logging.INFO)
 
 
 if __name__ == "__main__":
-    args = parse_args(docopt(__doc__), skip_label=True)
+    args = parse_args(docopt(__doc__))
     interaction_path = args['input']
     directory = args['directory']
     threshold = args['threshold']

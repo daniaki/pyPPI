@@ -1,10 +1,12 @@
+#!/usr/bin/env python -W ignore::UndefinedMetricWarning
+
 """
 This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
   predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-                  [--retrain] [--induce] [--verbose] [--binary]
+                  [--retrain] [--chain] [--induce] [--verbose] [--binary]
                   [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
                   [--input=FILE] [--output=FILE] [--directory=DIR]
   predict_ppis.py -h | --help
@@ -19,6 +21,7 @@ Options:
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
   --binary      Use binary feature encoding instead of ternary.
+  --chain       Use Classifier chains to learn label dependencies.
   --retrain     Re-train classifier instead of loading previous version. If
                 using a previous version, you must use the same selection of
                 features along with the same induce setting.
@@ -35,39 +38,51 @@ Options:
   --output=FILE     Output file name [default: predictions.tsv]
   --directory=DIR   Absolute or relative output directory [default: ./results/]
 """
+import sys
 import os
 import json
+import csv
 import logging
 import numpy as np
 import pandas as pd
 import joblib
-from collections import Counter
+from collections import Counter, OrderedDict
 from numpy.random import RandomState
 from joblib import Parallel, delayed
 from datetime import datetime
 from docopt import docopt
+import warnings
 
-from pyppi.base import parse_args, su_make_dir, chunk_list
-from pyppi.base import P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
-from pyppi.base.logging import create_logger
-from pyppi.data import load_network_from_path, load_ptm_labels
-from pyppi.data import full_training_network_path, generic_io
-from pyppi.data import interactome_network_path, classifier_path
-from pyppi.data import default_db_path
+from pyppi.base.utilities import su_make_dir, chunk_list, is_null
+from pyppi.base.arg_parsing import parse_args
+from pyppi.base.constants import (
+    P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
+)
+from pyppi.base.log import create_logger
+from pyppi.base.io import generic_io, save_classifier, load_classifier
+from pyppi.base.file_paths import classifier_path, default_db_path
 
-from pyppi.models import make_classifier, get_parameter_distribution_for_model
+from pyppi.models.utilities import (
+    make_classifier, get_parameter_distribution_for_model,
+    publication_ensemble
+)
 
-from pyppi.database import make_session
-from pyppi.database.models import Interaction
-from pyppi.database.managers import InteractionManager, ProteinManager
-from pyppi.database.managers import format_interactions_for_sklearn
-from pyppi.database.utilities import update_interaction
+from pyppi.database import db_session
+from pyppi.database.models import Interaction, Protein
+from pyppi.database.models import Pubmed, Psimi, Reference
+from pyppi.database.utilities import create_interaction, uniprotid_entry_map
+from pyppi.database.utilities import full_training_network
+from pyppi.database.utilities import interactome_interactions
+from pyppi.database.utilities import labels_from_interactions
 
 from pyppi.data_mining.tools import xy_from_interaction_frame
 from pyppi.data_mining.generic import edgelist_func, generic_to_dataframe
 from pyppi.data_mining.tools import map_network_accessions
 from pyppi.data_mining.uniprot import batch_map
 from pyppi.data_mining.features import compute_interaction_features
+
+from pyppi.predict.utilities import interactions_to_Xy_format
+from pyppi.predict import parse_interactions
 
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.feature_extraction.text import CountVectorizer
@@ -95,6 +110,7 @@ if __name__ == "__main__":
     direc = args['directory']
     retrain = args['retrain']
     use_binary = args['binary']
+    chain = args['chain']
 
     # Set up the folder for each experiment run named after the current time
     # -------------------------------------------------------------------- #
@@ -107,25 +123,18 @@ if __name__ == "__main__":
     )
 
     logger.info("Starting new database session.")
-    session = make_session(db_path=default_db_path)
-    i_manager = InteractionManager(verbose=verbose, match_taxon_id=9606)
-    p_manager = ProteinManager(verbose=verbose, match_taxon_id=9606)
-    protein_map = p_manager.uniprotid_entry_map(session)
+    protein_map = uniprotid_entry_map()
+    testing = []
+    accession_mapping = {}
 
     # Get the input edge-list ready
     # -------------------------------------------------------------------- #
-    labels = i_manager.training_labels(session, include_holdout=True)
-    training = i_manager.training_interactions(
-        session, keep_holdout=True
-    )
+    training = full_training_network(taxon_id=9606)
+    labels = labels_from_interactions(training)
 
     if input_file == None:
         logger.info("Loading interactome data.")
-        testing = i_manager.interactome_interactions(
-            session=session,
-            keep_holdout=True,
-            keep_training=True
-        )
+        testing = interactome_interactions(taxon_id=9606)
     else:
         logger.info("Loading custom ppi data.")
         testing = generic_to_dataframe(
@@ -135,11 +144,12 @@ if __name__ == "__main__":
             allow_self_edges=True,
             allow_duplicates=True
         )
+
         sources = set(p for p in testing.source.values)
         targets = set(p for p in testing.target.values)
         accessions = list(sources | targets)
         accession_mapping = batch_map(
-            session=session,
+            session=db_session,
             accessions=accessions,
             keep_unreviewed=True,
             match_taxon_id=9606,
@@ -151,60 +161,35 @@ if __name__ == "__main__":
             allow_duplicates=False, min_counts=None, merge=False
         )
 
-        # Compute features for new ppis
-        testing = []
-        feature_map = {}
-        ppis = [
-            (protein_map[a], protein_map[b])
-            for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET])
-            if i_manager.get_by_source_target(session, a, b) is None
-        ]
-
-        logger.info("Computing features.")
-        features = Parallel(n_jobs=n_jobs, backend="multiprocessing")(
-            delayed(compute_interaction_features)(source, target)
-            for (source, target) in ppis
+        testing, invalid, new_upids = parse_interactions(
+            testing_network, session=db_session, taxon_id=9606,
+            verbose=verbose, n_jobs=n_jobs
         )
-        for (source, target), features in zip(ppis, features):
-            feature_map[(source.uniprot_id, target.uniprot_id)] = features
-
-        existing_interactions = {}
-        for interaction in session.query(Interaction).all():
-            a = p_manager.get_by_id(session, id=interaction.source)
-            b = p_manager.get_by_id(session, id=interaction.target)
-            existing_interactions[(a.uniprot_id, b.uniprot_id)] = interaction
-
-        for (a, b) in zip(testing_network[SOURCE], testing_network[TARGET]):
-            class_kwargs = feature_map[(a, b)]
-            class_kwargs["source"] = protein_map[a]
-            class_kwargs["target"] = protein_map[b]
-            class_kwargs["label"] = None
-            class_kwargs["is_training"] = False
-            class_kwargs["is_holdout"] = False
-            class_kwargs["is_interactome"] = False
-            entry = update_interaction(
-                session=session,
-                commit=False,
-                psimi_ls=[],
-                pmid_ls=[],
-                replace_fields=False,
-                override_boolean=False,
-                create_if_not_found=True,
-                match_taxon_id=9606,
-                verbose=False,
-                update_features=False,
-                existing_interactions=existing_interactions,
-                **class_kwargs
-            )
-            existing_interactions[(a, b)] = entry
-            testing.append(entry)
-        session.commit()
+        # Writing some additional data returned during the parsing process.
+        # Namely any invalid interactions and if old uniprot identifiers
+        # have been supplied, a mapping to the recent UniProt record used
+        # to calculate features from and to build an interaction instance with.
+        with open('{}/accession_map.json'.format(direc), 'wt') as fp:
+            for k, v in new_upids.items():
+                existing = accession_mapping.get(k, [v])
+                new = set(existing) | set([v])
+                accession_mapping[k] = list(new)
+            json.dump(accession_mapping, fp)
+        if invalid:
+            if verbose:
+                logger.info("Encountered invalid PPIs: {}".format(
+                    ', '.join(invalid)
+                ))
+            with open('{}/invalid.tsv'.format(direc), 'wt') as fp:
+                fp.write("{}\t{}".format(SOURCE, TARGET))
+                for (a, b) in invalid:
+                    fp.write("{}\t{}".format(a, b))
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
     logger.info("Preparing training and testing data.")
-    X_train, y_train = format_interactions_for_sklearn(training, selection)
-    X_test, _ = format_interactions_for_sklearn(testing, selection)
+    X_train, y_train = interactions_to_Xy_format(training, selection)
+    X_test, _ = interactions_to_Xy_format(testing, selection)
 
     logger.info("Computing usable feature proportions in testing samples.")
 
@@ -287,13 +272,13 @@ if __name__ == "__main__":
         # Fit the complete training data and make predictions.
         logger.info("Fitting data.")
         clf.fit(X_train, y_train)
-        joblib.dump(clf, classifier_path)
+        save_classifier(clf, selection, classifier_path)
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
     logger.info("Making predictions.")
-    clf = joblib.load(classifier_path)
+    clf, selection = load_classifier(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
@@ -314,17 +299,48 @@ if __name__ == "__main__":
     entryid_uniprotid_map = {
         entry.id: uniprot_id for (uniprot_id, entry) in protein_map.items()
     }
+
+    # Make a map so we can map back to the original input UniProt ids.
+    reverse_acc_map = {}
+    for k, vs in accession_mapping.items():
+        for v in vs:
+            reverse_acc_map[v] = k
+
+    # This block of code takes the references for each entry and turns
+    # then into pubmed and psimi accessions
+    pmids = []
+    psimis = []
+    pubmed_map = {p.id for p in Pubmed.query.all()}
+    psimi_map = {p.id for p in Psimi.query.all()}
+    for entry in testing:
+        refs = entry.references()
+        pmid_psimis = OrderedDict()
+        for ref in refs:
+            pmid = pubmed_map[ref.pubmed_id].accession
+            psimi = psimi_map[ref.psimi_id].accession
+            if pmid in pmid_psimis:
+                pmid_psimis[pmid].add(psimi)
+            else:
+                pmid_psimis[pmid] = set()
+        # Join all associated psimi annotations with a pmid with '|'
+        # to indicate a grouped collection.
+        for pmid, group in pmid_psimis:
+            pmid_psimis[pmid] = '|'.join(group) or str(None)
+        # Join all pmids and their assoicated groups with a comma.
+        joined_pmids = ','.join(pmid_psimis.keys()) or None
+        joined_psimis = ','.join(pmid_psimis.values()) or None
+        pmids.append(joined_pmids)
+        psimis.append(joined_psimis)
+
+    p1 = [entryid_uniprotid_map[entry.source] for entry in testing]
+    p2 = [entryid_uniprotid_map[entry.target] for entry in testing]
     data_dict = {
-        P1: [entryid_uniprotid_map[entry.source] for entry in testing],
-        P2: [entryid_uniprotid_map[entry.target] for entry in testing],
-        PUBMED: [
-            ','.join(pmid.accession for pmid in entry.pmid) or None
-            for entry in testing
-        ],
-        EXPERIMENT_TYPE: [
-            ','.join(psimi.accession for psimi in entry.psimi) or None
-            for entry in testing
-        ],
+        P1: p1,
+        P2: p2,
+        PUBMED: pmids,
+        EXPERIMENT_TYPE: psimis,
+        'input_%s' % SOURCE: [reverse_acc_map.get(upid, upid) for upid in p1],
+        'input_%s' % TARGET: [reverse_acc_map.get(upid, upid) for upid in p2],
         "sum-pr": np.sum(predictions, axis=1),
         "max-pr": np.max(predictions, axis=1),
         "classification": predicted_labels,
@@ -337,7 +353,7 @@ if __name__ == "__main__":
     for idx, label in enumerate(mlb.classes):
         data_dict['{}-pr'.format(label)] = predictions[:, idx]
 
-    columns = [P1, P2, G1, G2] + \
+    columns = [P1, P2, G1, G2, 'input_%s' % SOURCE, 'input_%s' % TARGET] + \
         ['{}-pr'.format(l) for l in mlb.classes] + \
         ['sum-pr', 'max-pr', 'classification', 'classification_at_max'] + \
         ['proportion_go_used', 'proportion_interpro_used'] + \
@@ -419,8 +435,8 @@ if __name__ == "__main__":
     # Save and close session
     logger.info("Commiting changes to database.")
     try:
-        session.commit()
-        session.close()
+        db_session.commit()
+        db_session.close()
     except:
-        session.rollback()
+        db_session.rollback()
         raise

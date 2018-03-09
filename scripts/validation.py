@@ -1,10 +1,12 @@
+#!/usr/bin/env python -W ignore::UndefinedMetricWarning
+
 """
 This script runs the bootstrap kfold validation experiments as used in
 the publication.
 
 Usage:
   validation.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-             [--induce] [--verbose] [--binary] [--top=T]
+             [--induce] [--chain] [--verbose] [--binary] [--top=T]
              [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
              [--h_iterations=H] [--directory=DIR]
   validation.py -h | --help
@@ -18,8 +20,8 @@ Options:
   --bp          Use Biological Process Gene Ontology in features.
   --binary      Use binary feature encoding instead of ternary.
   --induce      Use ULCA inducer over Gene Ontology.
+  --chain       Use Classifier chains to learn label dependencies.
   --verbose     Print intermediate output for debugging.
-  --top=T       Top T features for each label to log [default: 25]
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression]
   --n_jobs=J        Number of processes to run in parallel [default: 1]
@@ -36,6 +38,7 @@ import pandas as pd
 import numpy as np
 import scipy as sp
 import warnings
+import joblib
 
 from itertools import product
 from operator import itemgetter
@@ -44,100 +47,47 @@ from datetime import datetime
 from docopt import docopt
 from numpy.random import RandomState
 
-from pyppi.base import parse_args, su_make_dir
-from pyppi.base.logging import create_logger
-from pyppi.data import load_network_from_path, load_ptm_labels
-from pyppi.data import testing_network_path, training_network_path
-from pyppi.data import get_term_description, ipr_name_map, pfam_name_map
+from pyppi.base.utilities import su_make_dir
+from pyppi.base.arg_parsing import parse_args
+from pyppi.base.log import create_logger
+from pyppi.base.io import ipr_name_map, pfam_name_map
 
-from pyppi.models.utilities import get_coefs, top_n_features
-from pyppi.models import make_classifier, get_parameter_distribution_for_model
-from pyppi.models import supported_estimators
+from pyppi.models.utilities import (
+    make_classifier, get_parameter_distribution_for_model,
+)
+
+from pyppi.model_selection.k_fold import StratifiedKFoldCrossValidation
 from pyppi.model_selection.scoring import (
     fdr_score, specificity, positive_label_hammming_loss
 )
-from pyppi.model_selection.sampling import IterativeStratifiedKFold
+
+from pyppi.models.binary_relevance import MixedBinaryRelevanceClassifier
+from pyppi.models.classifier_chain import KRandomClassifierChains
+from pyppi.models.utilities import make_gridsearch_clf
 
 from pyppi.data_mining.ontology import get_active_instance
 
-from pyppi.database import begin_transaction
-from pyppi.database.models import Interaction
-from pyppi.database.managers import InteractionManager, format_interactions_for_sklearn
+from pyppi.predict.utilities import load_validation_dataset
+from pyppi.predict.utilities import interactions_to_Xy_format
 
+
+from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.base import clone
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.pipeline import Pipeline
-from sklearn.multiclass import OneVsRestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import StratifiedKFold
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.metrics import (
     label_ranking_average_precision_score,
-    label_ranking_loss,
-    hamming_loss
+    label_ranking_loss, hamming_loss,
+    f1_score, precision_score, recall_score
 )
 
-MAX_SEED = 1000000
 RANDOM_STATE = 42
 logger = create_logger("scripts", logging.INFO)
-
-
-def train_fold(X, y, labels, fold_iter, use_binary, model,
-               hyperparam_iter, params, rng):
-    logger.info("Fitting fold {}.".format(fold_iter + 1))
-
-    # Prepare all training and testing data
-    vectorizer = CountVectorizer(
-        binary=True if use_binary else False,
-        lowercase=False, stop_words=[':', 'GO']
-    )
-    X = vectorizer.fit_transform(X)
-
-    model_rs = rng.randint(MAX_SEED)
-    kf_rs = rng.randint(MAX_SEED)
-    rgs_rs = rng.randint(MAX_SEED)
-
-    requires_dense = False
-    estimators = []
-    for i, label in enumerate(labels):
-        logger.info("\tFitting label {}.".format(label))
-        model_to_tune = make_classifier(
-            algorithm=model,
-            random_state=model_rs,
-            n_jobs=n_jobs
-        )
-        clf = RandomizedSearchCV(
-            estimator=model_to_tune,
-            scoring='f1',
-            error_score=0,
-            cv=StratifiedKFold(
-                n_splits=3,
-                shuffle=True,
-                random_state=kf_rs
-            ),
-            n_iter=hyperparam_iter,
-            n_jobs=n_jobs,
-            refit=True,
-            random_state=rgs_rs,
-            param_distributions=params,
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            try:
-                clf.fit(X, y[:, i])
-                requires_dense = False
-            except TypeError:
-                logger.info(
-                    "Error fitting sparse input. Converting to dense input."
-                )
-                X = X.todense()
-                clf.fit(X, y[:, i])
-                requires_dense = True
-        estimators.append(clf)
-    return estimators, vectorizer, requires_dense
-
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 if __name__ == "__main__":
     args = docopt(__doc__)
@@ -151,8 +101,8 @@ if __name__ == "__main__":
     model = args['model']
     direc = args['directory']
     hyperparam_iter = args['h_iterations']
-    get_top_n = args['top']
     use_binary = args['binary']
+    chain = args['chain']
 
     # Set up the folder for each experiment run named after the current time
     folder = datetime.now().strftime("val_%y-%m-%d_%H-%M")
@@ -171,24 +121,19 @@ if __name__ == "__main__":
     ipr_map = ipr_name_map()
     pfam_map = pfam_name_map()
     go_dag = get_active_instance()
-    i_manager = InteractionManager(verbose=verbose, match_taxon_id=9606)
-
-    with begin_transaction() as session:
-        labels = i_manager.training_labels(session, include_holdout=False)
-        training = i_manager.training_interactions(
-            session, keep_holdout=False)
-        testing = i_manager.holdout_interactions(
-            session, keep_training=False)
 
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
     logger.info("Preparing training and testing data.")
-    X_train, y_train = format_interactions_for_sklearn(training, selection)
-    X_test, y_test = format_interactions_for_sklearn(testing, selection)
+    data = load_validation_dataset(selection=selection, taxon_id=9606)
+    labels = data['labels']
+    X_train, y_train = data["training"]
+    X_test, y_test = data["testing"]
+    mlb = data["binarizer"]
 
     logging.info("Computing class distributions.")
-    counter = Counter([l for ls in y_train for l in ls])
-    counter["n_samples"] = training.count()
+    counter = {l: int(c) for l, c in zip(mlb.classes, y_train.sum(axis=0))}
+    counter["n_samples"] = int(y_train.shape[0])
     json.dump(
         counter,
         fp=open("{}/training_distribution.json".format(direc), 'w'),
@@ -196,41 +141,19 @@ if __name__ == "__main__":
     )
 
     counter = Counter([l for ls in y_test for l in ls])
-    counter["n_samples"] = testing.count()
+    counter = {l: int(c) for l, c in zip(mlb.classes, y_test.sum(axis=0))}
+    counter["n_samples"] = int(y_test.shape[0])
     json.dump(
         counter,
         fp=open("{}/testing_distribution.json".format(direc), 'w'),
         indent=4, sort_keys=True
     )
 
-    mlb = MultiLabelBinarizer(classes=labels, sparse_output=False)
-    y_train = mlb.fit_transform(y_train)
-    y_test = mlb.transform(y_test)
-
     # Set up the numpy arrays and dictionarys for statistics etc
     # -------------------------------------------------------------------- #
     logger.info("Setting up preliminaries and the statistics arrays")
     logger.info("Found classes {}".format(', '.join(mlb.classes_)))
-    n_classes = len(mlb.classes_)
-    rng = RandomState(seed=RANDOM_STATE)
-    top_features = {
-        "absolute": {
-            l: {
-                i: {
-                    j: [] for j in range(n_splits)
-                } for i in range(n_iter)
-            } for l in mlb.classes_
-        },
-        "not_absolute": {
-            l: {
-                i: {
-                    j: [] for j in range(n_splits)
-                } for i in range(n_iter)
-            } for l in mlb.classes_
-        }
-    }
-    params = get_parameter_distribution_for_model(model)
-
+    n_labels = len(mlb.classes_)
     binary_scoring_funcs = [
         ('Binary F1', f1_score),
         ('Precision', precision_score),
@@ -240,9 +163,8 @@ if __name__ == "__main__":
     ]
     multilabel_scoring_funcs = [
         ('Label Ranking Loss', label_ranking_loss),
-        ('Label Ranking Average Precision',
-            label_ranking_average_precision_score),
         ('Macro (weighted) F1', f1_score),
+        ('Macro (unweighted) F1', f1_score),
         ('Samples F1', f1_score),
         ('Hamming Loss', hamming_loss),
         ('Positive Label Hamming Loss', positive_label_hammming_loss)
@@ -251,157 +173,78 @@ if __name__ == "__main__":
     n_ml_scorers = len(multilabel_scoring_funcs)
 
     # 2: position 0 is for validation, position 1 is for testing
-    binary_statistics = np.zeros((n_classes, 2, n_scorers, n_iter, n_splits))
+    binary_statistics = np.zeros((n_labels, 2, n_scorers, n_iter, n_splits))
     multilabel_statistics = np.zeros((2, n_ml_scorers, n_iter, n_splits))
 
     # Begin the main show!
     # ------------------------------------------------------------------- #
     for bs_iter in range(n_iter):
         logger.info("Fitting bootstrap iteration {}.".format(bs_iter + 1))
-        cv = IterativeStratifiedKFold(
-            n_splits=n_splits, random_state=rng.randint(MAX_SEED)
+        pipeline = make_gridsearch_clf(
+            model=model,
+            rcv_splits=3,
+            rcv_iter=hyperparam_iter,
+            scoring="f1",
+            binary=use_binary,
+            n_jobs_model=n_jobs,
+            n_jobs_gs=n_jobs,
+            random_state=42,
+            search_vectorizer=False
         )
-        cv = list(cv.split(X_train, y_train))
 
-        fit_results = []
-        for fold_iter, (train_idx, _) in enumerate(cv):
-            estimators, vectorizer, requires_dense = train_fold(
-                X=X_train[train_idx],
-                y=y_train[train_idx],
-                labels=mlb.classes_,
-                fold_iter=fold_iter,
-                use_binary=use_binary,
-                model=model,
-                hyperparam_iter=hyperparam_iter,
-                params=params,
-                rng=rng
+        estimators = [clone(pipeline) for _ in mlb.classes]
+        br_clf = MixedBinaryRelevanceClassifier(
+            estimators, n_jobs=1, verbose=verbose
+        )
+        clf = StratifiedKFoldCrossValidation(
+            estimator=br_clf,
+            n_folds=n_splits,
+            shuffle=True,
+            n_jobs=1,
+            random_state=42,
+            verbose=verbose
+        )
+        clf.fit(X_train, y_train)
+
+        logger.info("\tComputing cross-validation scores.")
+        for func_idx, (func_name, func) in enumerate(binary_scoring_funcs):
+            score_params = {
+                "scorer": func,
+                "average": "binary",
+                "use_proba": False
+            }
+            scores_v = clf.score(
+                X_train, y_train, avg_folds=False, validation=True,
+                **score_params
             )
-            fit_results.append((estimators, vectorizer, requires_dense))
-
-        for fold_iter, (
-            (_, validation_idx), (estimators, vectorizer, requires_dense)
-        ) in enumerate(zip(cv, fit_results)):
-            logger.info(
-                "Computing binary performance for fold {}.".format(
-                    fold_iter + 1)
+            scores_t = clf.score(
+                X_test, y_test, avg_folds=False, **score_params
             )
-            y_valid_f_pred = []
-            y_test_f_pred = []
-            y_valid_f_proba = []
-            y_test_f_proba = []
+            binary_statistics[:, 0, func_idx, bs_iter, :] = scores_v
+            binary_statistics[:, 1, func_idx, bs_iter, :] = scores_t
 
-            for clf, (label_idx, label) in zip(estimators, enumerate(mlb.classes_)):
-                logger.info(
-                    "\tComputing binary performance for label {}.".format(
-                        label)
-                )
+        for func_idx, (func_name, func) in enumerate(multilabel_scoring_funcs):
+            score_params = {
+                "scorer": func,
+                "use_proba": False
+            }
+            if func_name == 'Macro (weighted) F1':
+                score_params["average"] = "weighted"
+            if func_name == 'Macro (unweighted) F1':
+                score_params["average"] = "macro"
+            elif func_name == 'Samples F1':
+                score_params["average"] = "samples"
 
-                X_valid_l = vectorizer.transform(X_train[validation_idx])
-                y_valid_l = y_train[validation_idx, label_idx]
+            scores_v = clf.score(
+                X_train, y_train, avg_folds=False, validation=True,
+                **score_params
+            )
+            scores_t = clf.score(
+                X_test, y_test, avg_folds=False, **score_params
+            )
 
-                X_test_l = vectorizer.transform(X_test)
-                y_test_l = y_test[:, label_idx]
-
-                if requires_dense:
-                    X_valid_l = X_valid_l.todense()
-                    y_valid_l = y_valid_l.todense()
-                    X_test_l = X_test_l.todense()
-                    y_test_l = y_test_l.todense()
-
-                # Validation scores in binary and probability format
-                y_valid_l_pred = clf.predict(X_valid_l)
-                y_valid_l_proba = clf.predict_proba(X_valid_l)
-
-                # Held-out testing scores in binary and probability format
-                y_test_l_pred = clf.predict(X_test_l)
-                y_test_l_proba = clf.predict_proba(X_test_l)
-
-                # Store these per label results in a list which we will
-                # later use to stack into a multi-label array.
-                y_valid_f_pred.append([[x] for x in y_valid_l_pred])
-                y_valid_f_proba.append([[x[1]] for x in y_valid_l_proba])
-
-                y_test_f_pred.append([[x] for x in y_test_l_pred])
-                y_test_f_proba.append([[x[1]] for x in y_test_l_proba])
-
-                # Perform scoring on the validation set and the external testing set.
-                for func_idx, (func_name, func) in enumerate(binary_scoring_funcs):
-                    if func_name in ['Specificity', 'FDR']:
-                        scores_v = func(y_valid_l, y_valid_l_pred)
-                        scores_t = func(y_test_l, y_test_l_pred)
-                    else:
-                        scores_v = func(
-                            y_valid_l, y_valid_l_pred, average='binary')
-                        scores_t = func(
-                            y_test_l, y_test_l_pred, average='binary')
-                    binary_statistics[label_idx, 0, func_idx,
-                                      bs_iter, fold_iter] = scores_v
-                    binary_statistics[label_idx, 1, func_idx,
-                                      bs_iter, fold_iter] = scores_t
-
-                # Get the top 20 features for this labels's run.
-                top_n = top_n_features(
-                    clf=clf,
-                    go_dag=go_dag,
-                    ipr_map=ipr_map,
-                    pfam_map=pfam_map,
-                    n=get_top_n,
-                    absolute=False,
-                    vectorizer=vectorizer
-                )
-                top_n_abs = top_n_features(
-                    clf=clf,
-                    go_dag=go_dag,
-                    ipr_map=ipr_map,
-                    pfam_map=pfam_map,
-                    n=get_top_n,
-                    absolute=True,
-                    vectorizer=vectorizer
-                )
-                top_features["not_absolute"][label][bs_iter][fold_iter].extend(
-                    top_n)
-                top_features["absolute"][label][bs_iter][fold_iter].extend(
-                    top_n_abs)
-
-            logger.info("Computing fold multi-label performance.")
-            # True scores in multi-label indicator format
-            y_valid_f = y_train[validation_idx]
-            y_test_f = y_test
-
-            # Validation scores in multi-label indicator format
-            y_valid_f_pred = np.hstack(y_valid_f_pred)
-            y_valid_f_proba = np.hstack(y_valid_f_proba)
-
-            # Testing scores in multi-label probability format
-            y_test_f_pred = np.hstack(y_test_f_pred)
-            y_test_f_proba = np.hstack(y_test_f_proba)
-
-            for func_idx, (func_name, func) in enumerate(multilabel_scoring_funcs):
-                if func_name == 'Macro (weighted) F1':
-                    scores_v = func(
-                        y_valid_f, y_valid_f_pred, average='weighted'
-                    )
-                    scores_t = func(
-                        y_test_f, y_test_f_pred, average='weighted'
-                    )
-                elif func_name == 'Samples F1':
-                    scores_v = func(
-                        y_valid_f, y_valid_f_pred, average='samples'
-                    )
-                    scores_t = func(
-                        y_test_f, y_test_f_pred, average='samples'
-                    )
-                elif func_name == 'Label Ranking Average Precision':
-                    scores_v = func(y_valid_f, y_valid_f_proba)
-                    scores_t = func(y_test_f, y_test_f_proba)
-                else:
-                    scores_v = func(y_valid_f, y_valid_f_pred)
-                    scores_t = func(y_test_f, y_test_f_pred)
-
-                multilabel_statistics[0, func_idx,
-                                      bs_iter, fold_iter] = scores_v
-                multilabel_statistics[1, func_idx,
-                                      bs_iter, fold_iter] = scores_t
+            multilabel_statistics[0, func_idx, bs_iter, :] = scores_v
+            multilabel_statistics[1, func_idx, bs_iter, :] = scores_t
 
     # Write out all the statistics to a multi-indexed dataframe
     # -------------------------------------------------------------------- #
@@ -463,11 +306,11 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------- #
     logger.info("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
-        fp.write(",".join(mlb.classes_))
+        fp.write(",".join(mlb.classes))
 
-    logging.info("Writing top features to file.")
-    with open('{}/{}'.format(direc, 'top_features.json'), 'wt') as fp:
-        json.dump(top_features, fp, indent=4, sort_keys=True)
+    logger.info("Saving classifier")
+    classifier_path = "{}/{}".format(direc, "classifier.pickle")
+    joblib.dump(clf, classifier_path)
 
     # Compute label similarity heatmaps and label correlation heatmap
     # -------------------------------------------------------------------- #
@@ -565,7 +408,7 @@ if __name__ == "__main__":
             ).mean()
             stdev = binary_df.loc[(label, 'validation', 'Binary F1'), :].mean(
                 axis=0, level=[0]
-            ).stdev()
+            ).std()
             stderr = stdev / np.sqrt(n_iter)
             fp.write("{}\t{:.2f}\t{:.4f}\n".format(label, mean, stderr))
 
@@ -575,16 +418,18 @@ if __name__ == "__main__":
                 ).mean()
                 stdev = binary_df.loc[(label, 'holdout', 'Binary F1'), :].mean(
                     axis=0, level=[0]
-                ).stdev()
+                ).std()
                 stderr = stdev / np.sqrt(n_iter)
-                fp.write("{} (HPRD)\t{:.2f}\t{:.4f}\n".format(label, mean, stderr))
+                fp.write("{} (HPRD)\t{:.2f}\t{:.4f}\n".format(
+                    label, mean, stderr)
+                )
 
         for metric in ['Label Ranking Loss', 'Hamming Loss']:
             mean = multilabel_df.loc[('validation', metric), :].mean(
                 axis=0, level=[0]
             ).mean()
-            stdev = multilabel_df.loc[(label, metric), :].mean(
+            stdev = multilabel_df.loc[('validation', metric), :].mean(
                 axis=0, level=[0]
-            ).stdev()
+            ).std()
             stderr = stdev / np.sqrt(n_iter)
             fp.write("{}\t{:.2f}\t{:.4f}\n".format(metric, mean, stderr))

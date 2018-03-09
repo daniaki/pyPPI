@@ -3,13 +3,14 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  build_data.py [--clear_cache] [--n_jobs=J]
+  build_data.py [--clear_cache] [--n_jobs=J] [--verbose]
   build_data.py -h | --help
 
 Options:
   -h --help  Show this screen.
   --n_jobs=J  Number of processes to run in parallel [default: 1]
   --clear_cache  Delete previous bioservices KEGG/UniProt cache
+  --verbose  Log information and warning output to console.
 """
 
 import os
@@ -19,33 +20,33 @@ from Bio import SwissProt
 from joblib import Parallel, delayed
 from docopt import docopt
 
-from pyppi.base import delete_cache
-from pyppi.base import parse_args, SOURCE, TARGET, LABEL
-from pyppi.base import PUBMED, EXPERIMENT_TYPE, is_null
-from pyppi.base.logging import create_logger
+from pyppi.base.utilities import delete_cache, is_null
+from pyppi.base.utilities import generate_interaction_tuples
+from pyppi.base.arg_parsing import parse_args
+from pyppi.base.constants import SOURCE, TARGET, LABEL
+from pyppi.base.constants import PUBMED, EXPERIMENT_TYPE
+from pyppi.base.log import create_logger
 
-from pyppi.data import bioplex_network_path, pina2_network_path
-from pyppi.data import bioplex_v4, pina2, innate_curated, innate_imported
-from pyppi.data import innate_i_network_path, innate_c_network_path
-from pyppi.data import interactome_network_path, full_training_network_path
-from pyppi.data import kegg_network_path, hprd_network_path
-from pyppi.data import save_uniprot_accession_map
-from pyppi.data import testing_network_path, training_network_path
-from pyppi.data import save_network_to_path
-from pyppi.data import save_ptm_labels, save_features
-from pyppi.data import default_db_path
-from pyppi.data import uniprot_sprot, uniprot_trembl
+from pyppi.base.file_paths import bioplex_network_path, pina2_network_path
+from pyppi.base.file_paths import innate_i_network_path, innate_c_network_path
+from pyppi.base.file_paths import interactome_network_path, full_training_network_path
+from pyppi.base.file_paths import kegg_network_path, hprd_network_path
+from pyppi.base.file_paths import testing_network_path, training_network_path
+from pyppi.base.file_paths import default_db_path
 
-from pyppi.database import make_session, begin_transaction, delete_database
-from pyppi.database.models import Protein, Interaction, Pubmed, Psimi
-from pyppi.database.utilities import generate_interaction_tuples
-from pyppi.database.utilities import update_interaction
-from pyppi.database.utilities import psimi_string_to_list, pmid_string_to_list
-from pyppi.database.managers import InteractionManager, ProteinManager
+from pyppi.base.io import save_uniprot_accession_map, save_network_to_path
+from pyppi.base.io import bioplex_v4, pina2_mitab, innate_curated, innate_imported
+from pyppi.base.io import uniprot_sprot, uniprot_trembl
+
+from pyppi.database import delete_database, db_session, cleanup_module
+from pyppi.database.models import Protein, Interaction
+from pyppi.database.models import Pubmed, Psimi, Reference
+from pyppi.database.utilities import create_interaction, uniprotid_entry_map
 
 from pyppi.data_mining.uniprot import parse_record_into_protein
 from pyppi.data_mining.uniprot import batch_map
-from pyppi.data_mining.generic import bioplex_func, mitab_func, pina_func
+from pyppi.data_mining.generic import bioplex_func
+from pyppi.data_mining.generic import pina_mitab_func, innate_mitab_func
 from pyppi.data_mining.generic import generic_to_dataframe
 from pyppi.data_mining.hprd import hprd_to_dataframe
 from pyppi.data_mining.tools import process_interactions, make_interaction_frame
@@ -65,9 +66,7 @@ if __name__ == "__main__":
     args = parse_args(args)
     n_jobs = args['n_jobs']
     clear_cache = args['clear_cache']
-
-    i_manager = InteractionManager(verbose=True, match_taxon_id=9606)
-    p_manager = ProteinManager(verbose=True, match_taxon_id=9606)
+    verbose = args['verbose']
 
     # Setup the protein table in the database
     # ----------------------------------------------------------------------- #
@@ -76,46 +75,43 @@ if __name__ == "__main__":
         delete_cache()
 
     logger.info("Clearing existing database tables.")
-    with begin_transaction(db_path=default_db_path) as session:
-        delete_database(session=session)
+    delete_database(db_session)
 
     logger.info("Parsing UniProt and PSI-MI into database.")
     records = list(SwissProt.parse(uniprot_sprot())) + \
         list(SwissProt.parse(uniprot_trembl()))
-    with begin_transaction(db_path=default_db_path) as session:
-        proteins = [parse_record_into_protein(r) for r in records]
-        psimi_objects = []
-        mi_ont = load_mi_ontology()
-        for key, term in mi_ont.items():
-            obj = Psimi(accession=key, description=term.name)
-            psimi_objects.append(obj)
+    proteins = [parse_record_into_protein(r) for r in records]
 
-        try:
-            session.add_all(proteins + psimi_objects)
-            session.commit()
-        except:
-            session.rollback()
-            raise
+    psimi_objects = []
+    mi_ont = load_mi_ontology()
+    for key, term in mi_ont.items():
+        obj = Psimi(accession=key, description=term.name)
+        psimi_objects.append(obj)
 
-    logger.info("Starting new database session.")
-    session = make_session(db_path=default_db_path)
+    try:
+        db_session.add_all(proteins + psimi_objects)
+        db_session.commit()
+    except:
+        db_session.rollback()
+        raise
 
     # Construct all the networks
     # ----------------------------------------------------------------------- #
     logger.info("Building KEGG interactions.")
     pathways = download_pathway_ids('hsa')
     kegg = pathways_to_dataframe(
-        session=session,
         pathway_ids=pathways,
         map_to_uniprot=True,
         drop_nan='default',
         allow_self_edges=True,
-        allow_duplicates=False
+        allow_duplicates=False,
+        org='hsa',
+        cache=True,
+        verbose=verbose
     )
 
     logger.info("Building HPRD interactions.")
     hprd = hprd_to_dataframe(
-        session=session,
         drop_nan='default',
         allow_self_edges=True,
         allow_duplicates=False
@@ -130,9 +126,9 @@ if __name__ == "__main__":
         allow_duplicates=False
     )
 
-    pina2 = generic_to_dataframe(
-        f_input=pina2(),
-        parsing_func=pina_func,
+    pina2_mitab = generic_to_dataframe(
+        f_input=pina2_mitab(),
+        parsing_func=pina_mitab_func,
         drop_nan=[SOURCE, TARGET],
         allow_self_edges=True,
         allow_duplicates=False
@@ -140,7 +136,7 @@ if __name__ == "__main__":
 
     innate_c = generic_to_dataframe(
         f_input=innate_curated(),
-        parsing_func=mitab_func,
+        parsing_func=innate_mitab_func,
         drop_nan=[SOURCE, TARGET],
         allow_self_edges=True,
         allow_duplicates=False
@@ -148,7 +144,7 @@ if __name__ == "__main__":
 
     innate_i = generic_to_dataframe(
         f_input=innate_imported(),
-        parsing_func=mitab_func,
+        parsing_func=innate_mitab_func,
         drop_nan=[SOURCE, TARGET],
         allow_self_edges=True,
         allow_duplicates=False
@@ -156,12 +152,13 @@ if __name__ == "__main__":
 
     logger.info("Mapping to most recent uniprot accessions.")
     # Get a set of all the unique uniprot accessions
-    networks = [kegg, hprd, bioplex, pina2, innate_i, innate_c]
+    networks = [kegg, hprd, bioplex, pina2_mitab, innate_i, innate_c]
     sources = set(p for df in networks for p in df.source.values)
     targets = set(p for df in networks for p in df.target.values)
     accessions = list(sources | targets)
     accession_mapping = batch_map(
-        session=session,
+        cache=True,
+        verbose=verbose,
         allow_download=False,
         accessions=accessions,
         keep_unreviewed=True,
@@ -182,8 +179,8 @@ if __name__ == "__main__":
         allow_duplicates=False, min_counts=None, merge=False
     )
 
-    pina2 = map_network_accessions(
-        interactions=pina2, accession_map=accession_mapping,
+    pina2_mitab = map_network_accessions(
+        interactions=pina2_mitab, accession_map=accession_mapping,
         drop_nan=[SOURCE, TARGET], allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=False
     )
@@ -205,18 +202,18 @@ if __name__ == "__main__":
         drop_nan=[SOURCE, TARGET], allow_self_edges=True,
         allow_duplicates=False, min_counts=None, merge=False
     )
-    networks = [hprd, kegg, bioplex, pina2, innate_i, innate_c]
+    networks = [hprd, kegg, bioplex, pina2_mitab, innate_i, innate_c]
 
     logger.info("Saving raw networks.")
     save_network_to_path(kegg, kegg_network_path)
     save_network_to_path(hprd, hprd_network_path)
-    save_network_to_path(pina2, pina2_network_path)
+    save_network_to_path(pina2_mitab, pina2_network_path)
     save_network_to_path(bioplex, bioplex_network_path)
     save_network_to_path(innate_i, innate_i_network_path)
     save_network_to_path(innate_c, innate_c_network_path)
 
     logger.info("Building and saving processed networks.")
-    hprd_test_labels = ['dephosphorylation', 'phosphorylation']
+    hprd_test_labels = ['Dephosphorylation', 'Phosphorylation']
     hprd_train_labels = set(
         [l for l in hprd[LABEL] if l not in hprd_test_labels]
     )
@@ -262,11 +259,7 @@ if __name__ == "__main__":
         exclude_labels=None, min_counts=None, merge=True
     )
 
-    labels = list(full_training[LABEL])
-    ptm_labels = set(l for merged in labels for l in merged.split(','))
-    save_ptm_labels(ptm_labels)
-
-    interactome_networks = [bioplex, pina2, innate_i, innate_c]
+    interactome_networks = [bioplex, pina2_mitab, innate_i, innate_c]
     interactome = pd.concat(interactome_networks, ignore_index=True)
     interactome = process_interactions(
         interactions=interactome, drop_nan=[SOURCE, TARGET],
@@ -279,7 +272,7 @@ if __name__ == "__main__":
     save_network_to_path(full_training, full_training_network_path)
 
     logger.info("Saving Interaction records to database.")
-    protein_map = p_manager.uniprotid_entry_map(session)
+    protein_map = uniprotid_entry_map()
     ppis = [
         (protein_map[a], protein_map[b])
         for network in [full_training, interactome]
@@ -294,165 +287,190 @@ if __name__ == "__main__":
     )
     for (source, target), features in zip(ppis, features_ls):
         feature_map[(source.uniprot_id, target.uniprot_id)] = features
-    # save_features(
-    #     {','.join(sorted([a, b])): v for (a, b), v in feature_map.items()}
-    # )
 
     # Create and save all the psimi and pubmed objects if they don't already
-    # exist in the database.
+    # exist in the database. If the psi-mi obo parsed in the first step
+    # is up-to-date then the following code should not need to create any
+    # new entries.
     logger.info("Updating Pubmed/PSI-MI database entries.")
+    psimi_map = {p.accession: p for p in Psimi.query.all()}
     objects = []
-    mi_ont = load_mi_ontology()
     networks = [full_training, interactome]
+
+    # Get all pmids from the parsed networks.
     pmids = set([
-        p for ls in pd.concat(networks, ignore_index=True)[PUBMED]
-        for p in str(ls).split(',')
-        if not is_null(p)
-    ])
-    psimis = set([
-        p for ls in pd.concat(networks, ignore_index=True)[EXPERIMENT_TYPE]
-        for p in str(ls).split(',')
-        if not is_null(p)
+        p.upper()
+        for ls in pd.concat(networks, ignore_index=True)[PUBMED]
+        for p in str(ls).split(',') if not is_null(p)
     ])
     for pmid in pmids:
-        if not session.query(Pubmed).filter_by(accession=pmid).count():
+        if is_null(pmid):
+            continue
+        else:
             objects.append(Pubmed(accession=pmid))
-    for psimi in psimis:
-        if not session.query(Psimi).filter_by(accession=psimi).count():
-            objects.append(
-                Psimi(accession=psimi, description=mi_ont[psimi].name)
-            )
+
+    # Get all the psimi-groups from the parsed networks, then parse each
+    # group individually.
+    psimis = set([
+        p.upper()
+        for ls in pd.concat(networks, ignore_index=True)[EXPERIMENT_TYPE]
+        for p in str(ls).split(',') if not is_null(p)
+    ])
+    for psimi_group in psimis:
+        psimis = psimi_group.split('|')
+        for p in psimis:
+            if is_null(p):
+                continue
+            elif p not in psimi_map:
+                if verbose:
+                    logger.info("Creating new PSI-MI entry '{}'.".format(p))
+                desc = None if p not in mi_ont else mi_ont[p].name
+                if verbose and desc is None:
+                    logger.info(
+                        "No data found for PSI-MI entry '{}'. Try downloading "
+                        "the most recent releases using the setup "
+                        "script.".format(p)
+                    )
+                objects.append(Psimi(accession=p, description=desc))
+
     try:
-        session.add_all(objects)
-        session.commit()
+        db_session.add_all(objects)
+        db_session.commit()
     except:
-        session.rollback()
+        db_session.rollback()
         raise
 
     logger.info("Creating Interaction database entries.")
     interactions = {}
-    for interaction in session.query(Interaction).all():
-        a = p_manager.get_by_id(session, id=interaction.source)
-        b = p_manager.get_by_id(session, id=interaction.target)
-        interactions[(a.uniprot_id, b.uniprot_id)] = interaction
+    for interaction in Interaction.query.all():
+        a = Protein.query.get(interaction.source)
+        b = Protein.query.get(interaction.target)
+        uniprot_a, uniprot_b = sorted([a.uniprot_a, b.uniprot_b])
+        interactions[(uniprot_a, uniprot_b)] = interaction
 
     # Training should only update the is_training to true and leave other
     # boolean fields alone.
     logger.info("Creating training interaction entries.")
     generator = generate_interaction_tuples(training)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
+        uniprot_a, uniprot_b = sorted([uniprot_a, uniprot_b])
+        source = protein_map[uniprot_a]
+        target = protein_map[uniprot_b]
         class_kwargs = feature_map[(uniprot_a, uniprot_b)]
-        class_kwargs["source"] = protein_map[uniprot_a]
-        class_kwargs["target"] = protein_map[uniprot_b]
-        class_kwargs["label"] = label
         class_kwargs["is_training"] = True
-        class_kwargs["is_holdout"] = False
-        class_kwargs["is_interactome"] = False
-        entry = update_interaction(
-            session=session,
-            commit=False,
-            psimi_ls=psimi_string_to_list(session, psimi),
-            pmid_ls=pmid_string_to_list(session, pmids),
-            replace_fields=False,
-            override_boolean=False,
-            create_if_not_found=True,
-            match_taxon_id=9606,
-            verbose=False,
-            update_features=False,
-            existing_interactions=interactions,
-            **class_kwargs
+        entry = create_interaction(
+            source, target, label, session=db_session, save=False,
+            commit=False, verbose=verbose, **class_kwargs
         )
-        interactions[(uniprot_a, uniprot_b)] = entry
+        interactions[(uniprot_a, uniprot_b)] = (entry, pmids, psimis)
 
     # Testing should only update the is_holdout to true and leave other
     # boolean fields alone.
     logger.info("Creating holdout interaction entries.")
     generator = generate_interaction_tuples(testing)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
-        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
-        class_kwargs["source"] = protein_map[uniprot_a]
-        class_kwargs["target"] = protein_map[uniprot_b]
-        class_kwargs["label"] = label
-        class_kwargs["is_training"] = False
-        class_kwargs["is_holdout"] = True
-        class_kwargs["is_interactome"] = False
-        entry = update_interaction(
-            session=session,
-            commit=False,
-            psimi_ls=psimi_string_to_list(session, psimi),
-            pmid_ls=pmid_string_to_list(session, pmids),
-            replace_fields=False,
-            override_boolean=False,
-            create_if_not_found=True,
-            match_taxon_id=9606,
-            verbose=False,
-            update_features=False,
-            existing_interactions=interactions,
-            **class_kwargs
-        )
-        interactions[(uniprot_a, uniprot_b)] = entry
+        uniprot_a, uniprot_b = sorted([uniprot_a, uniprot_b])
+        entry = interactions.get((uniprot_a, uniprot_b), None)
+        if entry is None:
+            source = protein_map[uniprot_a]
+            target = protein_map[uniprot_b]
+            class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+            class_kwargs["is_holdout"] = True
+            entry = create_interaction(
+                source, target, label, session=db_session, save=False,
+                commit=False, verbose=verbose, **class_kwargs
+            )
+            interactions[(uniprot_a, uniprot_b)] = (entry, pmids, psimis)
+        else:
+            entry[0].is_holdout = True
+            entry[0].add_label(label)
+            pmids = entry[1] + pmids
+            psimis = entry[2] + psimis
+            interactions[(uniprot_a, uniprot_b)] = (entry[0], pmids, psimis)
 
     # Common are in both kegg and hprd so should only update the is_training
     # and is_holdout to true and leave other boolean fields alone.
     logger.info("Creating training/holdout interaction entries.")
     generator = generate_interaction_tuples(common)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
-        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
-        class_kwargs["source"] = protein_map[uniprot_a]
-        class_kwargs["target"] = protein_map[uniprot_b]
-        class_kwargs["label"] = label
-        class_kwargs["is_training"] = True
-        class_kwargs["is_holdout"] = True
-        class_kwargs["is_interactome"] = False
-        entry = update_interaction(
-            session=session,
-            commit=False,
-            psimi_ls=psimi_string_to_list(session, psimi),
-            pmid_ls=pmid_string_to_list(session, pmids),
-            replace_fields=False,
-            override_boolean=False,
-            create_if_not_found=True,
-            match_taxon_id=9606,
-            verbose=False,
-            update_features=False,
-            existing_interactions=interactions,
-            **class_kwargs
-        )
-        interactions[(uniprot_a, uniprot_b)] = entry
+        uniprot_a, uniprot_b = sorted([uniprot_a, uniprot_b])
+        entry = interactions.get((uniprot_a, uniprot_b), None)
+        if entry is None:
+            source = protein_map[uniprot_a]
+            target = protein_map[uniprot_b]
+            class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+            class_kwargs["is_holdout"] = True
+            class_kwargs["is_training"] = True
+            entry = create_interaction(
+                source, target, label, session=db_session, save=False,
+                commit=False, verbose=verbose, **class_kwargs
+            )
+            interactions[(uniprot_a, uniprot_b)] = (entry, pmids, psimis)
+        else:
+            entry[0].is_training = True
+            entry[0].is_holdout = True
+            entry[0].add_label(label)
+            pmids = entry[1] + pmids
+            psimis = entry[2] + psimis
+            interactions[(uniprot_a, uniprot_b)] = (entry[0], pmids, psimis)
 
     # Training should only update the is_interactome to true and leave other
     # boolean fields alone.
     logger.info("Creating interactome interaction entries.")
     generator = generate_interaction_tuples(interactome)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
-        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
-        class_kwargs["source"] = protein_map[uniprot_a]
-        class_kwargs["target"] = protein_map[uniprot_b]
-        class_kwargs["label"] = label
-        class_kwargs["is_training"] = False
-        class_kwargs["is_holdout"] = False
-        class_kwargs["is_interactome"] = True
-        entry = update_interaction(
-            session=session,
-            commit=False,
-            psimi_ls=psimi_string_to_list(session, psimi),
-            pmid_ls=pmid_string_to_list(session, pmids),
-            replace_fields=False,
-            override_boolean=False,
-            create_if_not_found=True,
-            match_taxon_id=9606,
-            verbose=False,
-            update_features=False,
-            existing_interactions=interactions,
-            **class_kwargs
-        )
-        interactions[(uniprot_a, uniprot_b)] = entry
+        uniprot_a, uniprot_b = sorted([uniprot_a, uniprot_b])
+        entry = interactions.get((uniprot_a, uniprot_b), None)
+        if entry is None:
+            source = protein_map[uniprot_a]
+            target = protein_map[uniprot_b]
+            class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+            class_kwargs["is_interactome"] = True
+            entry = create_interaction(
+                source, target, label, session=db_session, save=False,
+                commit=False, verbose=verbose, **class_kwargs
+            )
+            interactions[(uniprot_a, uniprot_b)] = (entry, pmids, psimis)
+        else:
+            entry[0].is_interactome = True
+            pmids = entry[1] + pmids
+            psimis = entry[2] + psimis
+            interactions[(uniprot_a, uniprot_b)] = (entry[0], pmids, psimis)
 
     # Batch commit might be quicker than calling save on each interaction.
-    logger.info("Writing to database.")
+    logger.info("Commiting interactions to database.")
     try:
-        session.commit()
-        session.close()
+        entries = [tup[0] for tup in interactions.values()]
+        db_session.add_all(entries)
+        db_session.commit()
     except:
-        session.rollback()
+        db_session.rollback()
+        raise
+
+    logger.info("Linking Pubmed/Psimi references.")
+    pubmed_map = {p.accession: p for p in Pubmed.query.all()}
+    psimi_map = {p.accession: p for p in Psimi.query.all()}
+    references = []
+    for entry, pmid_ls, psimi_ls in interactions.values():
+        for pmid, psimis in zip(pmid_ls, psimi_ls):
+            if pmid is None:
+                continue
+            if psimis is None:
+                ref = Reference(entry, pubmed_map[pmid], None)
+            else:
+                for psimi in psimis:
+                    if psimi is None:
+                        ref = Reference(
+                            entry, pubmed_map[pmid], None)
+                    else:
+                        ref = Reference(
+                            entry, pubmed_map[pmid], psimi_map[psimi])
+            references.append(ref)
+
+    try:
+        db_session.add_all(references)
+        db_session.commit()
+        cleanup_module()
+    except:
+        db_session.rollback()
         raise
