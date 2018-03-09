@@ -2,127 +2,43 @@
 
 import os
 import shutil
+from datetime import datetime
 
 from unittest import TestCase
-from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, Query
 
-from ..database import begin_transaction, Base
-from ..database.managers import ProteinManager
-from ..database.models import Protein, Interaction, Psimi, Pubmed
-from ..database.models import _check_annotations, _format_annotations
+from ..database import create_session, Base, delete_database
+from ..database import cleanup_database
+from ..database.models import Protein, Interaction, Psimi, Pubmed, Reference
 from ..database.exceptions import ObjectNotFound, ObjectAlreadyExists
+from ..database.exceptions import NonMatchingTaxonomyIds
 
 base_path = os.path.dirname(__file__)
-
-
-class TestAnnotationValidation(TestCase):
-
-    def test_removes_duplicate_annotations(self):
-        value = "1,1"
-        expected = ["1"]
-        result = _format_annotations(value, allow_duplicates=False)
-        self.assertEqual(result, expected)
-
-    def test_does_not_uppercase_when_upper_is_false(self):
-        value = "dog"
-        expected = ["dog"]
-        result = _format_annotations(value, upper=False)
-        self.assertEqual(result, expected)
-
-    def test_allows_duplicate_annotations(self):
-        value = "1,1"
-        expected = ["1", "1"]
-        result = _format_annotations(value, allow_duplicates=True)
-        self.assertEqual(result, expected)
-
-    def test_alpha_orders_annotations(self):
-        value = "2,1"
-        expected = ["1", "2"]
-        result = _format_annotations(value)
-        self.assertEqual(result, expected)
-
-    def test_uppercases_annotations(self):
-        value = "dog"
-        expected = ["DOG"]
-        result = _format_annotations(value)
-        self.assertEqual(result, expected)
-
-    def test_removes_blank(self):
-        value = "1,,"
-        expected = ["1"]
-        result = _format_annotations(value)
-        self.assertEqual(result, expected)
-
-    def test_strips_whitespace(self):
-        value = "   1   "
-        expected = ["1"]
-        result = _format_annotations(value)
-        self.assertEqual(result, expected)
-
-    def test_splits_on_comma(self):
-        value = "1;2, 3"
-        expected = ["1;2", "3"]
-        result = _format_annotations(value)
-        self.assertEqual(result, expected)
-
-    def test_valuerror_check_annotations_invalid_dbtype(self):
-        with self.assertRaises(ValueError):
-            _check_annotations(["IPR201", "GO:00001"], dbtype="HELLO")
-
-    def test_check_annotations_ignores_falsey_values(self):
-        _check_annotations([], dbtype="GO")
-        _check_annotations("", dbtype="GO")
-
-    def test_valueerror_not_go_annotations(self):
-        with self.assertRaises(ValueError):
-            _check_annotations(["IPR201", "GO:00001"], dbtype="GO")
-
-    def test_valueerror_not_interpro_annotations(self):
-        with self.assertRaises(ValueError):
-            _check_annotations(["IPR201", "GO:00001"], dbtype="IPR")
-
-    def test_valueerror_not_pfam_annotations(self):
-        with self.assertRaises(ValueError):
-            _check_annotations(["IPR201", "PF00001"], dbtype="PF")
-
-    # The following tests should pass without raising any errors
-    def test_check_go_annotations(self):
-        _check_annotations(["GO:00002", "GO:00001"], dbtype="GO")
-
-    def test_check_interpro_annotations(self):
-        _check_annotations(["GO:00002", "GO:00001"], dbtype="GO")
-
-    def test_check_pfam_annotations(self):
-        _check_annotations(["GO:00002", "GO:00001"], dbtype="GO")
 
 
 class TestProteinModel(TestCase):
 
     def setUp(self):
-        self.url = "sqlite:///" + os.path.normpath(
+        self.db_path = os.path.normpath(
             "{}/databases/test.db".format(base_path)
         )
-        self.engine = create_engine(self.url, echo=False)
-        Base.metadata.create_all(self.engine)
-        self.session = Session(bind=self.engine)
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
 
     def tearDown(self):
-        self.session.rollback()
-        self.session.query(Interaction).delete()
-        self.session.query(Protein).delete()
-        self.session.query(Pubmed).delete()
-        self.session.query(Psimi).delete()
-        self.session.execute("DROP TABLE pmid_interactions")
-        self.session.execute("DROP TABLE psimi_interactions")
-        self.session.commit()
-        self.session.close()
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
+
+    def test_get_by_uniprot_id(self):
+        protein_1 = Protein("A", taxon_id=9606, reviewed=False)
+        protein_1.save(self.session, commit=True)
+        self.assertEqual(Protein.get_by_uniprot_id('B'), None)
+        self.assertEqual(Protein.get_by_uniprot_id('a'), protein_1)
 
     def test_equality(self):
         protein_1 = Protein("A", taxon_id=9606, reviewed=False)
         protein_1.save(self.session, commit=True)
-        protein_2 = self.session.query(Protein).get(protein_1.id)
+        protein_2 = Protein.query.get(protein_1.id)
         self.assertEqual(protein_1, protein_2)
 
     def test_inequality(self):
@@ -132,1087 +48,428 @@ class TestProteinModel(TestCase):
         protein_2.save(self.session, commit=True)
         self.assertNotEqual(protein_1, protein_2)
 
-    def test_integrityerror_adding_duplicate_ids(self):
-        self.session.add(Protein(
-            uniprot_id="abc", taxon_id=1, reviewed=False)
-        )
-        self.session.commit()
-        with self.assertRaises(IntegrityError):
-            self.session.add(Protein(
-                uniprot_id="abc", taxon_id=1, reviewed=False)
-            )
-            self.session.commit()
+    def test_error_uniprot_id_already_exists(self):
+        obj1 = Protein(uniprot_id="abc", taxon_id=1, reviewed=False)
+        obj1.save(self.session, commit=True)
+        with self.assertRaises(ObjectAlreadyExists):
+            obj2 = Protein(uniprot_id="abc", taxon_id=1, reviewed=False)
 
-    def test_integrityerror_adding_null_id_field(self):
-        with self.assertRaises(IntegrityError):
-            self.session.add(
-                Protein(uniprot_id=None, taxon_id=1, reviewed=False)
-            )
-            self.session.commit()
-
-    def test_integrityerror_adding_null_taxonid(self):
-        with self.assertRaises(IntegrityError):
-            self.session.add(
-                Protein(uniprot_id='abc', taxon_id=None, reviewed=False)
-            )
-            self.session.commit()
-
-    def test_can_add_accession(self):
-        obj = Protein(
-            uniprot_id="abc", taxon_id=1,
-            pfam="pf002,PF001,PF001,", reviewed=False
-        )
-        self.session.add(obj)
-        self.session.commit()
-
-        obj = self.session.query(Protein).first()
-        self.assertEqual(self.session.query(Protein).count(), 1)
-        self.assertEqual(obj.pfam, "PF001,PF002")
-        self.assertEqual(obj.keywords, None)
-        self.assertEqual(obj.go_mf, None)
-
-    def test_setter_typeerror_not_str_list_or_set(self):
-        value = 1
+    def test_typeerr_adding_null_unirpotid_field(self):
         with self.assertRaises(TypeError):
-            obj = Protein(
-                uniprot_id="abc", taxon_id=1,
-                go_mf=value, go_cc=value, go_bp=value,
-                interpro=value, pfam=value, reviewed=False
-            )
-            self.session.commit()
+            obj1 = Protein(uniprot_id=None, taxon_id=1, reviewed=False)
 
-    def test_keywords_are_capitalized(self):
+    def test_datetime_correctly_initalised(self):
         obj = Protein(
-            uniprot_id="abc", taxon_id=1, reviewed=False,
-            keywords="dog,CAT,CAt"
+            uniprot_id='A', taxon_id=1, last_update='28-FEB-2018'
         )
-        self.session.commit()
-        self.assertEqual(obj.keywords, "Cat,Dog")
+        expected = datetime.strptime('28-FEB-2018', '%d-%b-%Y')
+        self.assertEqual(obj.last_update, expected)
 
-    def test_save_method_updates_fields(self):
+    def test_annotations_outdated_based_on_datetime(self):
         obj = Protein(
-            uniprot_id="abc", taxon_id=1,
-            pfam="pf002,PF001,PF001,", reviewed=False
+            uniprot_id='A', taxon_id=1, last_update='28-FEB-2018'
         )
-        obj.save(self.session, commit=True)
-        self.assertEqual(self.session.query(Protein).count(), 1)
+        new = datetime.strptime('1-JUN-2018', '%d-%b-%Y')
+        self.assertTrue(obj.annotations_outdated(new))
 
-        obj.pfam = "pf002"
-        obj.uniprot_id = "ab"
-        obj.save(self.session, commit=True)
+        same = datetime.strptime('28-FEB-2018', '%d-%b-%Y')
+        self.assertFalse(obj.annotations_outdated(same))
+        old = datetime.strptime('1-JUN-2017', '%d-%b-%Y')
+        self.assertFalse(obj.annotations_outdated(old))
 
-        obj = self.session.query(Protein).first()
-        self.assertEqual(self.session.query(Protein).count(), 1)
-        self.assertEqual(obj.pfam, "PF002")
-        self.assertEqual(obj.uniprot_id, "ab")
+        # Keep this last.
+        obj.last_update = None
+        self.assertTrue(obj.annotations_outdated(new))
 
-    def test_save_method_does_not_change_unaltered_fields(self):
+    def test_release_outdated(self):
         obj = Protein(
-            uniprot_id="abc", taxon_id=1,
-            pfam="pf002,PF001,PF001,", reviewed=False
+            uniprot_id='A', taxon_id=1, last_release=56
         )
-        obj.save(self.session, commit=True)
-        self.assertEqual(self.session.query(Protein).count(), 1)
+        self.assertTrue(obj.release_outdated(57))
+        self.assertFalse(obj.release_outdated(56))
+        self.assertFalse(obj.release_outdated(5))
 
-        obj.pfam = "pf002"
-        obj.save(self.session, commit=True)
-
-        obj = self.session.query(Protein).first()
-        self.assertEqual(self.session.query(Protein).count(), 1)
-        self.assertEqual(obj.pfam, "PF002")
-        self.assertEqual(obj.uniprot_id, "abc")
-
-    def test_save_method_update_doesnt_fail_unique_constraint(self):
+    def test_integration_of_validators(self):
         obj = Protein(
-            uniprot_id="abc", taxon_id=1,
-            pfam="pf002,PF001,PF001,", reviewed=False
+            uniprot_id='abc',
+            gene_id='gene1',
+            taxon_id=9606,
+            reviewed=None,
+            go_mf='go:001,go:001,GO:001',
+            go_cc=[None, ' '],
+            go_bp=['go:002', 'go:001'],
+            interpro='ipr1,',
+            pfam=[],
+            keywords='should be captialised,comma split',
+            function='    '
         )
         obj.save(self.session, commit=True)
-        self.assertEqual(self.session.query(Protein).count(), 1)
-
-        # Same object shouldn't fail constraint on unique uniprot_id
-        obj.pfam = "pf002"
-        obj.save(self.session, commit=True)
-
-        obj = self.session.query(Protein).first()
-        self.assertEqual(self.session.query(Protein).count(), 1)
-        self.assertEqual(obj.pfam, "PF002")
-        self.assertEqual(obj.uniprot_id, "abc")
+        self.assertEqual(obj.uniprot_id, "ABC")
+        self.assertEqual(obj.gene_id, "gene1")
+        self.assertEqual(obj.taxon_id, 9606)
+        self.assertEqual(obj.reviewed, False)
+        self.assertEqual(obj.go_mf, 'GO:001')
+        self.assertEqual(obj.go_cc, None)
+        self.assertEqual(obj.go_bp, 'GO:001,GO:002')
+        self.assertEqual(obj.interpro, 'IPR1')
+        self.assertEqual(obj.pfam, None)
+        self.assertEqual(obj.keywords, 'Comma split,Should be captialised')
+        self.assertEqual(obj.function, None)
 
 
 class TestInteractionModel(TestCase):
 
     def setUp(self):
-        self.url = "sqlite:///" + os.path.normpath(
+        self.db_path = os.path.normpath(
             "{}/databases/test.db".format(base_path)
         )
-        self.engine = create_engine(self.url, echo=False)
-        Base.metadata.create_all(self.engine)
-        self.session = Session(bind=self.engine, )
-
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
         self.a = Protein(uniprot_id="A", taxon_id=9606, reviewed=False)
         self.b = Protein(uniprot_id="B", taxon_id=9606, reviewed=False)
         self.c = Protein(uniprot_id="C", taxon_id=0, reviewed=False)
-        self.session.add_all([self.a, self.b, self.c])
-        self.session.commit()
+        self.a.save(self.session, commit=True)
+        self.b.save(self.session, commit=True)
+        self.c.save(self.session, commit=True)
 
     def tearDown(self):
-        self.session.rollback()
-        self.session.query(Interaction).delete()
-        self.session.query(Protein).delete()
-        self.session.query(Pubmed).delete()
-        self.session.query(Psimi).delete()
-        self.session.execute("DROP TABLE pmid_interactions")
-        self.session.execute("DROP TABLE psimi_interactions")
-        self.session.commit()
-        self.session.close()
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
 
-    def test_can_add_interaction(self):
+    def test_integration_of_validators(self):
         obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-            pfam="PF002,pf001,,"
+            source=2, target='A',
+            label=['Inhibition', None, ' ', 'activation', 'ACTIVATION  '],
+            go_mf='go:001,go:001,GO:001',
+            go_cc=[None, ' '],
+            go_bp=['go:002', 'go:001'],
+            ulca_go_mf=['go:001 ', None, 'go:001', 'GO:001'],
+            ulca_go_cc=[None, ' '],
+            ulca_go_bp='  ',
+            interpro='ipr1,',
+            pfam=[],
+            keywords='dog,,cat,cat ',
+            is_holdout=True, is_interactome=False, is_training=False
         )
         obj.save(self.session, commit=True)
-
-        obj = self.session.query(Interaction).first()
-        self.assertEqual(self.session.query(Interaction).count(), 1)
-        self.assertEqual(obj.source, self.a.id)
-        self.assertEqual(obj.target, self.b.id)
-        self.assertEqual(obj.pfam, "PF001,PF002")
-        self.assertEqual(obj.go_mf, None)
-        self.assertEqual(obj.label, None)
+        self.assertEqual(obj.source, 2)
+        self.assertEqual(obj.target, 1)
+        self.assertEqual(obj.taxon_id, 9606)
+        self.assertEqual(obj.joint_id, '1,2')
+        self.assertEqual(obj.label, 'Activation,Inhibition')
+        self.assertEqual(obj.is_holdout, True)
+        self.assertEqual(obj.is_interactome, False)
+        self.assertEqual(obj.is_training, False)
+        self.assertEqual(obj.go_mf, 'GO:001,GO:001,GO:001')
+        self.assertEqual(obj.go_cc, None)
+        self.assertEqual(obj.go_bp, 'GO:001,GO:002')
+        self.assertEqual(obj.ulca_go_mf, 'GO:001,GO:001,GO:001')
+        self.assertEqual(obj.ulca_go_cc, None)
+        self.assertEqual(obj.ulca_go_bp, None)
+        self.assertEqual(obj.interpro, 'IPR1')
+        self.assertEqual(obj.pfam, None)
+        self.assertEqual(obj.keywords, 'Cat,Cat,Dog')
 
     def test_can_add_new_label(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label=None
-        )
+        obj = Interaction(source=self.a, target=self.b)
         obj.add_label('activation')
         self.assertEqual(obj.label, 'Activation')
 
     def test_labels_as_list_is_sorted(self):
         obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation,inhibition'
+            source=self.a,
+            target=self.b,
+            label='inhibition,activation'
         )
-        self.assertEqual(
-            obj.labels_as_list, list(sorted(['Activation', 'Inhibition']))
-        )
-
-    def test_can_get_singleton_label_as_list(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
-        )
-        self.assertEqual(
-            obj.labels_as_list, ['Activation']
-        )
+        self.assertEqual(obj.labels_as_list, ['Activation', 'Inhibition'])
 
     def test_labels_as_list_empty_if_label_is_none(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label=None
-        )
-        self.assertEqual(
-            obj.labels_as_list, []
-        )
+        obj = Interaction(source=self.a, target=self.b, label=None)
+        self.assertEqual(obj.labels_as_list, [])
 
     def test_can_add_to_existing_label(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='Phosphorylation'
-        )
-        obj.add_label('activation')
+        obj = Interaction(source=self.a, target=self.b, label='activation')
+        obj.add_label('phosphorylation')
         self.assertEqual(obj.label, 'Activation,Phosphorylation')
 
     def test_can_add_an_existing_label_without_duplicating(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='Phosphorylation'
-        )
-        obj.add_label('Phosphorylation')
-        self.assertEqual(obj.label, 'Phosphorylation')
+        obj = Interaction(source=self.a, target=self.b, label='activation')
+        obj.add_label('activation')
+        self.assertEqual(obj.label, 'Activation')
 
-    def test_raises_typeerror_when_setting_nonstring_label(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label=None
-        )
-        with self.assertRaises(TypeError):
-            obj.add_label(['Activation'])
+    def test_setting_empty_string_does_nothing(self):
+        obj = Interaction(source=self.a, target=self.b, label='activation')
+        obj.add_label('')
+        self.assertEqual(obj.label, 'Activation')
 
-    def test_raises_value_when_setting_empty_string(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label=None
-        )
-        with self.assertRaises(ValueError):
-            obj.add_label('')
-
-    def test_raises_value_when_setting_multilabel(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label=None
-        )
-        with self.assertRaises(ValueError):
-            obj.add_label('activation,activation')
+    def test_can_set_multilabel(self):
+        obj = Interaction(source=self.a, target=self.b, label='activation')
+        obj.add_label('activation,phosphorylation')
+        self.assertEqual(obj.label, 'Activation,Phosphorylation')
 
     def test_can_remove_existing_label(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
-        )
+        obj = Interaction(source=self.a, target=self.b, label='activation')
         obj.remove_label('activation')
         self.assertEqual(obj.label, None)
 
-    def test_can_remove_existing_label_not_case_sensitive(self):
+    def test_can_remove_existing_labels_list(self):
         obj = Interaction(
             source=self.a.id,
             target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
+            label='activation,inhibition'
         )
+        obj.remove_label(['activation', 'inhibition'])
+        self.assertEqual(obj.label, None)
+
+    def test_can_remove_existing_label_not_case_sensitive(self):
+        obj = Interaction(source=self.a, target=self.b, label='activation')
         obj.remove_label('ACTIVATION')
         self.assertEqual(obj.label, None)
 
     def test_remove_label_does_nothing_if_label_not_found(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
-        )
+        obj = Interaction(source=self.a, target=self.b, label='activation')
         obj.remove_label('hello')
         self.assertEqual(obj.label, 'Activation')
 
-    def test_can_remove_existing_duplicated_label(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation,activation'
-        )
-        obj.remove_label('activation')
-        self.assertEqual(obj.label, None)
-
-    def test_raises_typeerror_when_removing_nonstring_label(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
-        )
-        with self.assertRaises(TypeError):
-            obj.remove_label(['Activation'])
-
-    def test_raises_value_when_removing_empty_string(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
-        )
-        with self.assertRaises(ValueError):
-            obj.remove_label('')
-
-    def test_raises_value_when_removing_multilabel(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=True,
-            is_interactome=False,
-            label='activation'
-        )
-        with self.assertRaises(ValueError):
-            obj.remove_label('activation,activation')
-
-    def test_combined_attr_is_a_string_of_sorted_ids_comma_separated(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        expected = ','.join(sorted([str(self.a.id), str(self.b.id)]))
-        self.assertEqual(obj.combined, expected)
-
-    def test_can_retrieve_interaction_from_accession(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        obj.save(self.session, commit=True)
-        self.assertEqual(self.a.interactions[0], obj)
-
-    def test_filters_out_nones_from_label_list(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False,
-            label=[None, None, 'Label']
-        )
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.label, 'Label')
+    def test_does_nothing_removing_empty_string_or_none(self):
+        obj = Interaction(source=self.a, target=self.b, label='activation')
+        obj.remove_label('')
+        self.assertEqual(obj.label, 'Activation')
+        obj.remove_label(None)
+        self.assertEqual(obj.label, 'Activation')
 
     def test_interaction_equality(self):
-        obj1 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        obj2 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
+        obj1 = Interaction(source=self.b, target=self.a)
+        obj2 = Interaction(source=self.b, target=self.a)
         self.assertEqual(obj1, obj2)
 
     def test_interaction_equal_reversed_source_target(self):
-        obj1 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        obj2 = Interaction(
-            source=self.b.id,
-            target=self.a.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
+        obj1 = Interaction(source=self.a, target=self.b)
+        obj2 = Interaction(source=self.b, target=self.a)
         self.assertEqual(obj1, obj2)
 
     def test_interaction_inequality(self):
-        obj1 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        obj2 = Interaction(
-            source=self.a.id,
-            target=self.a.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
+        obj1 = Interaction(source=self.b, target=self.a)
+        obj2 = Interaction(source=self.b, target=self.a, label='activation')
         self.assertNotEqual(obj1, obj2)
 
     def test_objectexists_error_when_switching_source_target(self):
-        obj1 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        obj2 = Interaction(
-            source=self.b.id,
-            target=self.a.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
+        obj1 = Interaction(source=self.a, target=self.b)
+        obj1.save(self.session, commit=True)
         with self.assertRaises(ObjectAlreadyExists):
-            obj1.save(self.session, commit=True)
-            obj2.save(self.session, commit=True)
+            obj2 = Interaction(source=self.b, target=self.a)
 
-    def test_objectexists_error_raised(self):
-        obj1 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        obj2 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        with self.assertRaises(ObjectAlreadyExists):
-            obj1.save(self.session, commit=True)
-            obj2.save(self.session, commit=True)
-
-    def test_integrityerror_null_source(self):
-        obj = Interaction(
-            source=None,
-            target=self.b.id,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        with self.assertRaises(IntegrityError):
-            obj.save(self.session, commit=True)
-
-    def test_integrityerror_null_target(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=None,
-            is_holdout=False,
-            is_interactome=False,
-            is_training=False
-        )
-        with self.assertRaises(IntegrityError):
-            obj.save(self.session, commit=True)
-
-    def test_typeerror_null_holdout(self):
+    def test_typeerr_null_source_or_target(self):
         with self.assertRaises(TypeError):
-            obj = Interaction(
-                source=self.a.id,
-                target=self.b.id,
-                is_holdout=None,
-                is_interactome=False,
-                is_training=False
-            )
-            obj.save(self.session, commit=True)
-
-    def test_typeerror_null_training(self):
+            obj = Interaction(source=None, target=self.b)
         with self.assertRaises(TypeError):
-            obj = Interaction(
-                source=self.a.id,
-                target=self.b.id,
-                is_holdout=False,
-                is_interactome=False,
-                is_training=None
-            )
-            obj.save(self.session, commit=True)
+            obj = Interaction(source=self.a, target=None)
 
-    def test_typeerror_null_interactome(self):
-        with self.assertRaises(TypeError):
-            obj = Interaction(
-                source=self.a.id,
-                target=self.b.id,
-                is_holdout=False,
-                is_interactome=None,
-                is_training=False
-            )
-            obj.save(self.session, commit=True)
+    def test_attrerr_trying_to_change_source_or_target(self):
+        with self.assertRaises(AttributeError):
+            obj = Interaction(source=self.a, target=self.b)
+            obj.source = 'B'
+        with self.assertRaises(AttributeError):
+            obj = Interaction(source=self.a, target=self.b)
+            obj.target = 'A'
 
-    def test_cannot_create_interaction_linking_to_nonexistant_accession(self):
-        with self.assertRaises(ObjectNotFound):
-            obj = Interaction(
-                source=self.a.id,
-                target=99999,
-                is_holdout=False,
-                is_interactome=False,
-                is_training=False
-            )
-            obj.save(self.session, commit=True)
+    def test_constructor_accepts_uniprot_ids(self):
+        obj = Interaction(source='A', target='B')
+        self.assertEqual(obj.source, 1)
+        self.assertEqual(obj.target, 2)
 
-        with self.assertRaises(ObjectNotFound):
-            obj = Interaction(
-                source=99999,
-                target=self.a.id,
-                is_holdout=False,
-                is_interactome=False,
-                is_training=False
-            )
-            obj.save(self.session, commit=True)
-
-    def test_failed_save_rollsback(self):
-        with self.assertRaises(IntegrityError):
-            obj = Interaction(
-                source=self.a.id,
-                target=None,
-                is_holdout=False,
-                is_interactome=False,
-                is_training=False
-            )
-            obj.save(self.session, commit=True)
-        self.assertEqual(self.session.query(Interaction).count(), 0)
-
-    def test_has_missing_data(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            go_bp="GO:000001", go_cc="GO:000001", go_mf="GO:000001",
-            ulca_go_bp="GO:000001", ulca_go_cc="GO:000001",
-            ulca_go_mf="GO:000001", interpro="", pfam="PF001"
-        )
+    def test_boolean_is_fields_default_to_False(self):
+        obj = Interaction(source=self.a, target=self.b)
         obj.save(self.session, commit=True)
-        self.assertTrue(obj.has_missing_data)
-
-    def test_does_not_have_missing_data(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            go_bp="GO:000001", go_cc="GO:000001", go_mf="GO:000001",
-            ulca_go_bp="GO:000001", ulca_go_cc="GO:000001",
-            ulca_go_mf="GO:000001", interpro="IPR001", pfam="PF001",
-            keywords="hello"
-        )
-        obj.save(self.session, commit=True)
-        self.assertFalse(obj.has_missing_data)
+        self.assertEqual(obj.is_holdout, False)
+        self.assertEqual(obj.is_interactome, False)
+        self.assertEqual(obj.is_training, False)
 
     def test_valueerror_different_taxonomy_ids(self):
-        obj = Interaction(
-            source=self.a.id, target=self.c.id,
-            is_holdout=False, is_training=False, is_interactome=False
-        )
-        with self.assertRaises(ValueError):
-            obj.save(self.session, commit=True)
+        with self.assertRaises(NonMatchingTaxonomyIds):
+            obj = Interaction(source=self.a, target=self.c)
 
-    def test_valueerror_mixed_annotations(self):
-        obj = Interaction(
-            source=self.a.id, target=self.c.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            go_bp="GO:000001,IPR001"
-        )
-        with self.assertRaises(ValueError):
-            obj.save(self.session, commit=True)
-
-    def test_sorts_and_capitalizes_labels(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            label="inhibition,activation"
-        )
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.label, "Activation,Inhibition")
-
-    def test_no_duplicate_labels(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            label="activation,activation"
-        )
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.label, "Activation")
-
-    def test_keywords_are_capitalized_and_duplicated(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            keywords="dog,dog,cat"
-        )
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.keywords, "Cat,Dog,Dog")
-
-    def test_no_strip_whitespace_labels(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            label="activation , "
-        )
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.label, "Activation")
-
-    def test_interaction_assumes_source_target_taxonid(self):
-        obj = Interaction(
-            source=self.a.id, target=self.b.id,
-            is_holdout=False, is_training=False, is_interactome=False,
-            label="activation"
-        )
+    def test_interaction_assumes_source_taxonid(self):
+        obj = Interaction(source=self.a, target=self.b)
         obj.save(self.session, commit=True)
         self.assertEqual(obj.taxon_id, self.a.taxon_id)
 
-    def test_create_typeerror_label_not_string_list_or_set(self):
-        with self.assertRaises(TypeError):
-            obj = Interaction(
-                source=self.a.id, target=self.c.id,
-                is_holdout=False, is_training=False, is_interactome=False,
-                label=7
-            )
-
     def test_create_valueerror_training_must_be_labeled(self):
         with self.assertRaises(ValueError):
-            obj = Interaction(
-                source=self.a.id, target=self.c.id,
-                is_holdout=False, is_training=True, is_interactome=False,
-                label=None
-            )
-            obj.save(self.session, commit=True)
+            obj = Interaction(source=self.a, target=self.a)
+            obj.is_training = True
 
-    def test_create_valueerror_holdout_must_be_labeled(self):
+        with self.assertRaises(ValueError):
+            obj = Interaction(source=self.a, target=self.a)
+            obj.is_holdout = True
+
         with self.assertRaises(ValueError):
             obj = Interaction(
-                source=self.a.id, target=self.c.id,
-                is_holdout=True, is_training=False, is_interactome=False,
-                label=None
+                source=self.a, target=self.a, is_training=True,
+                label='activation'
             )
-            obj.save(self.session, commit=True)
+            obj.label = None
+
+    def test_can_add_reference(self):
+        obj = Interaction(source=self.a, target=self.a)
+        obj.save(self.session, commit=True)
+
+        pm1 = Pubmed('A')
+        pm1.save(self.session, commit=True)
+        ps1 = Psimi('A')
+        ps1.save(self.session, commit=True)
+        r1 = obj.add_reference(self.session, pm1, ps1, commit=True)
+
+        self.assertEqual(Reference.query.count(), 1)
+        self.assertEqual(obj.references().all()[0], r1)
+        self.assertEqual(obj.pmids().all()[0], pm1)
+        self.assertEqual(obj.experiment_types().all()[0], ps1)
+
+        self.assertEqual(pm1.interactions().all()[0], obj)
+        self.assertEqual(pm1.psimis().all()[0], ps1)
+
+        self.assertEqual(ps1.interactions().all()[0], obj)
+        self.assertEqual(ps1.pmids().all()[0], pm1)
+
+    def test_can_add_reference_with_null_psimi(self):
+        obj = Interaction(source=self.a, target=self.a)
+        obj.save(self.session, commit=True)
+
+        pm1 = Pubmed('A')
+        pm1.save(self.session, commit=True)
+        r1 = obj.add_reference(self.session, pm1, None, commit=True)
+
+        self.assertEqual(Reference.query.count(), 1)
+        self.assertEqual(obj.references().all()[0], r1)
+        self.assertEqual(obj.pmids().all()[0], pm1)
+        self.assertEqual(obj.experiment_types().all(), [])
+
+        self.assertEqual(pm1.interactions().all()[0], obj)
+        self.assertEqual(pm1.psimis().all(), [])
 
     def test_save_can_update_fields(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-            pfam="PF002,pf001"
-        )
+        obj = Interaction(source=self.a, target=self.a)
         obj.save(self.session, commit=True)
-        self.assertEqual(self.session.query(Interaction).count(), 1)
-
-        obj = self.session.query(Interaction).first()
-        self.assertEqual(obj.source, self.a.id)
-        self.assertEqual(obj.target, self.b.id)
-        self.assertEqual(obj.pfam, "PF001,PF002")
-        self.assertEqual(obj.go_mf, None)
-        self.assertEqual(obj.label, None)
 
         # Now update some fields
+        obj = Interaction.query.first()
         obj.pfam = "PF002"
         obj.go_mf = "GO:000001"
         obj.save(self.session, commit=True)
 
-        obj = self.session.query(Interaction).first()
+        obj = Interaction.query.first()
         self.assertEqual(obj.go_mf, "GO:000001")
         self.assertEqual(obj.pfam, "PF002")
 
-    def test_cannot_update_source_target_to_a_preexisting_source_target(self):
+    def test_can_get_by_interactors(self):
+        obj = Interaction(source=self.a, target=self.b, label=None)
+        obj.save(self.session, commit=True)
+        self.assertEqual(Interaction.get_by_interactors('A', 2), obj)
+        self.assertEqual(Interaction.get_by_interactors(0, 2), None)
+
+    def test_can_get_by_label(self):
         obj1 = Interaction(
-            source=self.b.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
+            source=self.a, target=self.b, label='Activation,Phosphorylation'
         )
         obj1.save(self.session, commit=True)
-
         obj2 = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
+            source=self.a, target=self.a, label='Phosphorylation'
         )
         obj2.save(self.session, commit=True)
 
-        # Change source/target to match obj1
-        obj2.source = self.b.id
-        with self.assertRaises(ObjectAlreadyExists):
-            obj2.save(self.session, commit=True)
+        self.assertEqual(Interaction.get_by_label('activation').count(), 1)
+        self.assertEqual(Interaction.get_by_label('activation').first(), obj1)
+        self.assertEqual(Interaction.get_by_label(' '), None)
 
-    def test_update_source_target_updates_taxonid(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-        obj.source = self.c.id
-        obj.target = self.c.id
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.taxon_id, 0)
-
-    def test_update_source_target_updates_combined(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-        obj.source = self.b.id
-        obj.save(self.session, commit=True)
-        self.assertEqual(obj.combined, '2,2')
-
-    def test_error_update_different_taxonid(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-        obj.source = self.c.id
-
-        with self.assertRaises(ValueError):
-            obj.save(self.session, commit=True)
-
-    def test_can_append_to_pmid_and_will_update_pmid_interactions(self):
-        pa = Pubmed(accession="A")
-        pa.save(self.session, commit=True)
-
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-
-        obj.add_pmid_reference(pa)
-        obj = self.session.query(Interaction).first()
-        pa = self.session.query(Pubmed).first()
-        self.assertEqual(obj.pmid, [pa])
-        self.assertEqual(pa.interactions, [obj])
-
-    def test_TE_add_or_remove_non_pubmed_reference(self):
-        pa = Psimi(accession="A", description="")
-        pa.save(self.session, commit=True)
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-
+    def test_can_get_by_source(self):
+        obj1 = Interaction(source=self.a, target=self.b)
+        obj2 = Interaction(source=self.b, target=self.b)
+        obj1.save(self.session, commit=True)
+        obj2.save(self.session, commit=True)
+        self.assertEqual(Interaction.get_by_source('A').count(), 1)
+        self.assertEqual(Interaction.get_by_source('C').count(), 0)
+        self.assertEqual(Interaction.get_by_source('D'), None)
         with self.assertRaises(TypeError):
-            obj.add_pmid_reference(pa)
+            Interaction.get_by_source(None)
+            Interaction.get_by_source([])
+
+    def test_can_get_by_target(self):
+        obj1 = Interaction(source=self.a, target=self.b)
+        obj2 = Interaction(source=self.b, target=self.b)
+        obj1.save(self.session, commit=True)
+        obj2.save(self.session, commit=True)
+        self.assertEqual(Interaction.get_by_target(2).count(), 2)
+        self.assertEqual(Interaction.get_by_target(1).count(), 0)
+        self.assertEqual(Interaction.get_by_target(45), None)
         with self.assertRaises(TypeError):
-            obj.remove_pmid_reference(pa)
-
-    def test_TE_add_or_remove_non_psimi_reference(self):
-        pa = Pubmed(accession="A")
-        pa.save(self.session, commit=True)
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-
-        with self.assertRaises(TypeError):
-            obj.add_psimi_reference(pa)
-        with self.assertRaises(TypeError):
-            obj.add_psimi_reference(pa)
-
-    def test_cannot_append_duplicate_pmids(self):
-        pa = Pubmed(accession="A")
-        pa.save(self.session, commit=True)
-
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-        obj.add_pmid_reference(pa)
-        obj.add_pmid_reference(pa)
-        self.assertEqual(obj.pmid, [pa])
-        self.assertEqual(pa.interactions, [obj])
-
-    def test_cannot_append_duplicate_psimis(self):
-        pa = Psimi(accession="A", description='blah')
-        pa.save(self.session, commit=True)
-
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-        obj.add_psimi_reference(pa)
-        obj.add_psimi_reference(pa)
-        self.assertEqual(obj.psimi, [pa])
-        self.assertEqual(pa.interactions, [obj])
-
-    def test_can_append_to_psimi_and_will_update_psimi_interactions(self):
-        pa = Psimi(accession="A", description='blah')
-        pa.save(self.session, commit=True)
-
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-        obj.add_psimi_reference(pa)
-
-        obj = self.session.query(Interaction).first()
-        pa = self.session.query(Psimi).first()
-        self.assertEqual(obj.psimi, [pa])
-        self.assertEqual(pa.interactions, [obj])
-
-    def test_can_remove_non_existing_pmid_or_psimi_without_error(self):
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-
-        psimi_1 = Psimi(accession="A", description='blah')
-        psimi_2 = Psimi(accession="B", description='blah')
-        psimi_1.save(self.session, commit=True)
-        psimi_2.save(self.session, commit=True)
-        obj.add_psimi_reference(psimi_1)
-        obj.remove_psimi_reference(psimi_2)
-        self.assertTrue(obj.psimi, [psimi_1])
-
-        pubmed_1 = Pubmed(accession="A")
-        pubmed_2 = Pubmed(accession="B")
-        pubmed_1.save(self.session, commit=True)
-        pubmed_2.save(self.session, commit=True)
-        obj.add_pmid_reference(pubmed_1)
-        obj.remove_pmid_reference(pubmed_2)
-        self.assertTrue(obj.pmid, [pubmed_1])
-
-    def test_remove_pmid_and_will_update_pmid_interactions(self):
-        pa = Pubmed(accession="A")
-        pa.save(self.session, commit=True)
-
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-
-        # Check everything has updated first
-        obj.pmid.append(pa)
-        self.assertEqual(obj.pmid, [pa])
-        self.assertEqual(pa.interactions, [obj])
-
-        # Now remove and refresh
-        obj.remove_pmid_reference(pa)
-        self.assertEqual(obj.pmid, [])
-        self.assertEqual(pa.interactions, [])
-
-    def test_remove_psimi_and_will_update_psimi_interactions(self):
-        pa = Psimi(accession="A", description='blah')
-        pa.save(self.session, commit=True)
-
-        obj = Interaction(
-            source=self.a.id,
-            target=self.b.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
-        obj.save(self.session, commit=True)
-
-        # Check everything has updated first
-        obj.psimi.append(pa)
-        self.assertEqual(obj.psimi, [pa])
-        self.assertEqual(pa.interactions, [obj])
-
-        # Now remove and refresh
-        obj.remove_psimi_reference(pa)
-        self.assertEqual(obj.psimi, [])
-        self.assertEqual(pa.interactions, [])
+            Interaction.get_by_target(None)
+            Interaction.get_by_target([])
 
 
 class TestPubmedModel(TestCase):
 
     def setUp(self):
-        self.url = "sqlite:///" + os.path.normpath(
+        self.db_path = os.path.normpath(
             "{}/databases/test.db".format(base_path)
         )
-        self.engine = create_engine(self.url, echo=False)
-        Base.metadata.create_all(self.engine)
-        self.session = Session(bind=self.engine, )
-
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
         self.pa = Protein(uniprot_id="A", taxon_id=9606, reviewed=False)
         self.pa.save(self.session, commit=True)
         self.pb = Protein(uniprot_id="B", taxon_id=9606, reviewed=False)
         self.pb.save(self.session, commit=True)
-        self.ia = Interaction(
-            source=self.pa.id,
-            target=self.pb.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
+        self.ia = Interaction(self.pa, self.pb)
         self.ia.save(self.session, commit=True)
 
     def tearDown(self):
-        self.session.rollback()
-        self.session.query(Interaction).delete()
-        self.session.query(Protein).delete()
-        self.session.query(Pubmed).delete()
-        self.session.query(Psimi).delete()
-        self.session.execute("DROP TABLE pmid_interactions")
-        self.session.execute("DROP TABLE psimi_interactions")
-        self.session.commit()
-        self.session.close()
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
 
     def test_cannot_save_two_pubmeds_with_same_accession(self):
         pa = Pubmed(accession="A")
-        pb = Pubmed(accession="A")
-        with self.assertRaises(IntegrityError):
-            pa.save(self.session, commit=True)
-            pb.save(self.session, commit=True)
+        pa.save(self.session, commit=True)
+        with self.assertRaises(ObjectAlreadyExists):
+            pb = Pubmed(accession="A")
 
     def test_cannot_update_two_pubmeds_with_same_accession(self):
         pa = Pubmed(accession="A")
         pb = Pubmed(accession="B")
         pa.save(self.session, commit=True)
         pb.save(self.session, commit=True)
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ObjectAlreadyExists):
             pb.accession = 'A'
-            pb.save(self.session, commit=True)
-
-    def test_append_to_interactions_and_will_update_interaction_pmid(self):
-        pa = Pubmed(accession="A")
-        pa.save(self.session, commit=True)
-        pa.interactions.append(self.ia)
-
-        ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.pmid, [pa])
-
-    def test_remove_interactions_and_will_update_interaction_pmid(self):
-        pa = Pubmed(accession="A")
-        pa.save(self.session, commit=True)
-
-        pa.interactions.append(self.ia)
-        ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.pmid, [pa])
-
-        pa.interactions.remove(self.ia)
-        ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.pmid, [])
 
 
 class TestPsimiModel(TestCase):
 
     def setUp(self):
-        self.url = "sqlite:///" + os.path.normpath(
+        self.db_path = os.path.normpath(
             "{}/databases/test.db".format(base_path)
         )
-        self.engine = create_engine(self.url, echo=False)
-        Base.metadata.create_all(self.engine)
-        self.session = Session(bind=self.engine, )
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
 
         self.pa = Protein(uniprot_id="A", taxon_id=9606, reviewed=False)
         self.pa.save(self.session, commit=True)
         self.pb = Protein(uniprot_id="B", taxon_id=9606, reviewed=False)
         self.pb.save(self.session, commit=True)
-        self.ia = Interaction(
-            source=self.pa.id,
-            target=self.pb.id,
-            is_holdout=False,
-            is_training=False,
-            is_interactome=False,
-        )
+        self.ia = Interaction(self.pa, self.pb)
         self.ia.save(self.session, commit=True)
 
     def tearDown(self):
-        self.session.rollback()
-        self.session.query(Interaction).delete()
-        self.session.query(Protein).delete()
-        self.session.query(Pubmed).delete()
-        self.session.query(Psimi).delete()
-        self.session.execute("DROP TABLE pmid_interactions")
-        self.session.execute("DROP TABLE psimi_interactions")
-        self.session.commit()
-        self.session.close()
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
 
     def test_cannot_save_two_psimis_with_same_accession(self):
         pa = Psimi(accession="A", description="blah")
-        pb = Psimi(accession="A", description="blah")
-        with self.assertRaises(IntegrityError):
-            pa.save(self.session, commit=True)
-            pb.save(self.session, commit=True)
+        pa.save(self.session, commit=True)
+        with self.assertRaises(ObjectAlreadyExists):
+            pb = Psimi(accession="A", description="blah")
 
     def test_cannot_update_two_psimis_with_same_accession(self):
         pa = Psimi(accession="A", description="blah")
         pb = Psimi(accession="B", description="blah")
         pa.save(self.session, commit=True)
         pb.save(self.session, commit=True)
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ObjectAlreadyExists):
             pb.accession = 'A'
-            pb.save(self.session, commit=True)
-
-    def test_can_append_to_interactions_and_will_update_interaction_psimis(self):
-        pa = Psimi(accession="A", description="blah")
-        pa.save(self.session, commit=True)
-        pa.interactions.append(self.ia)
-
-        ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.psimi, [pa])
-
-    def test_can_remove_interactions_and_will_update_interaction_psmi(self):
-        pa = Psimi(accession="A", description="blah")
-        pa.save(self.session, commit=True)
-
-        pa.interactions.append(self.ia)
-        ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.psimi, [pa])
-
-        pa.interactions.remove(self.ia)
-        ia = self.session.query(Interaction).first()
-        self.assertEqual(ia.psimi, [])
-

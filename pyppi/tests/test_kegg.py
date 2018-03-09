@@ -3,9 +3,9 @@ import os
 import pandas as pd
 from unittest import TestCase
 
-from ..base import LABEL, SOURCE, TARGET
-from ..database import begin_transaction
-from ..database.managers import ProteinManager
+from ..base.constants import LABEL, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
+from ..base.constants import NULL_VALUES
+from ..database import create_session, delete_database, cleanup_database
 from ..database.models import Protein
 from ..data_mining.kegg import (
     download_pathway_ids,
@@ -15,6 +15,12 @@ from ..data_mining.kegg import (
 )
 
 base_path = os.path.dirname(__file__)
+
+
+def dataframes_are_equal(df1: pd.DataFrame, df2: pd.DataFrame):
+    df1 = df1.replace(to_replace=NULL_VALUES, value=str(None), inplace=False)
+    df2 = df2.replace(to_replace=NULL_VALUES, value=str(None), inplace=False)
+    return df1.equals(df2)
 
 
 class TestKeggModule(TestCase):
@@ -29,11 +35,12 @@ class TestKeggModule(TestCase):
         self.pathway_iframe = pd.read_csv(
             "{}/test_data/hsa05202.csv".format(base_path)
         )
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
 
     def tearDown(self):
-        with begin_transaction(db_path=self.db_path) as session:
-            session.rollback()
-            session.execute("DROP TABLE {}".format(Protein.__tablename__))
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
         self.records.close()
 
     def test_download_human_pathways_all_strings(self):
@@ -43,7 +50,7 @@ class TestKeggModule(TestCase):
             all([isinstance(s, str) for s in pathways])
         )
 
-    def test_can_download_non_pathways(self):
+    def test_can_download_non_hsa_pathways(self):
         pathways = download_pathway_ids('mus')
         self.assertTrue(len(pathways) > 0)
         self.assertTrue(
@@ -51,28 +58,31 @@ class TestKeggModule(TestCase):
         )
 
     def test_can_parse_pathway(self):
-        pathways = download_pathway_ids('hsa')
-        for p in pathways:
-            if p == "path:hsa05202":
-                df = pathway_to_dataframe(p)
-        self.assertTrue(self.pathway_iframe.equals(df))
+        df = pathway_to_dataframe("path:hsa05202", org='hsa')
+        self.assertTrue(dataframes_are_equal(self.pathway_iframe, df))
+
+    def test_parse_pathway_filters_out_non_matching_ids(self):
+        df = pathway_to_dataframe("path:hsa05202", org='mus')
+        self.assertTrue(df.empty)
 
     def test_keggid_to_uniprot_maps_to_swissprot(self):
         protein = Protein('P43403', taxon_id=9606, reviewed=True)
         iframe = pd.DataFrame(
-            {SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1']},
-            columns=[SOURCE, TARGET, LABEL]
+            {
+                SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
         expected = pd.DataFrame(
-            {SOURCE: ['P43403'], TARGET: ['P43403'], LABEL: ['1']},
-            columns=[SOURCE, TARGET, LABEL]
+            {
+                SOURCE: ['P43403'], TARGET: ['P43403'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
-
-        with begin_transaction(self.db_path) as session:
-            protein.save(session, commit=True)
-            result = keggid_to_uniprot(
-                session, iframe, trembl=False
-            )
+        protein.save(self.session, commit=True)
+        result = keggid_to_uniprot(iframe, trembl=False)
         self.assertTrue(expected.equals(result))
 
     def test_keggid_to_uniprot_maps_to_multiple_uniprot(self):
@@ -80,55 +90,70 @@ class TestKeggModule(TestCase):
         protein2 = Protein('O95467', taxon_id=9606, reviewed=True)
         protein3 = Protein('A0A0S2Z3H8', taxon_id=9606, reviewed=False)
         iframe = pd.DataFrame(
-            {SOURCE: ['hsa:2778'], TARGET: ['hsa:2778'], LABEL: ['1']},
-            columns=[SOURCE, TARGET, LABEL]
+            {
+                SOURCE: ['hsa:2778'], TARGET: ['hsa:2778'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
         expected = pd.DataFrame(
             {
                 SOURCE: ['O95467', 'O95467', 'O95467', 'P63092'],
                 TARGET: ['O95467', 'P63092', 'P63092', 'P63092'],
-                LABEL: ['1', '1', '1', '1']
+                LABEL: ['1', '1', '1', '1'],
+                PUBMED: [None] * 4,
+                EXPERIMENT_TYPE: [None] * 4
             },
-            columns=[SOURCE, TARGET, LABEL]
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
 
-        with begin_transaction(self.db_path) as session:
-            protein1.save(session, commit=True)
-            protein2.save(session, commit=True)
-            protein3.save(session, commit=True)
-            result = keggid_to_uniprot(
-                session, iframe, trembl=False
-            )
+        protein1.save(self.session, commit=True)
+        protein2.save(self.session, commit=True)
+        protein3.save(self.session, commit=True)
+        result = keggid_to_uniprot(iframe, trembl=False)
         self.assertTrue(expected.equals(result))
 
     def test_keggid_to_uniprot_maps_filters_trembl(self):
         protein = Protein('P43403', taxon_id=9606, reviewed=False)
         iframe = pd.DataFrame(
-            {SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1']},
-            columns=[SOURCE, TARGET, LABEL]
+            {
+                SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
-        with begin_transaction(self.db_path) as session:
-            protein.save(session, commit=True)
-            result = keggid_to_uniprot(
-                session, iframe, trembl=False
-            )
+        protein.save(self.session, commit=True)
+        result = keggid_to_uniprot(iframe, trembl=False)
         self.assertTrue(result.empty)
 
     def test_keggid_to_uniprot_keeps_trembl_if_true(self):
         protein = Protein('P43403', taxon_id=9606, reviewed=False)
         iframe = pd.DataFrame(
-            {SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1']},
-            columns=[SOURCE, TARGET, LABEL]
+            {
+                SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
         expected = pd.DataFrame(
-            {SOURCE: ['P43403'], TARGET: ['P43403'], LABEL: ['1']},
-            columns=[SOURCE, TARGET, LABEL]
+            {
+                SOURCE: ['P43403'], TARGET: ['P43403'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
         )
 
-        with begin_transaction(self.db_path) as session:
-            protein.save(session, commit=True)
-            result = keggid_to_uniprot(
-                session, iframe, trembl=True
-            )
-
+        protein.save(self.session, commit=True)
+        result = keggid_to_uniprot(iframe, trembl=True)
         self.assertTrue(expected.equals(result))
+
+    def test_keggid_to_uniprot_ignores_accessions_not_in_database(self):
+        iframe = pd.DataFrame(
+            {
+                SOURCE: ['hsa:7535'], TARGET: ['hsa:7535'], LABEL: ['1'],
+                PUBMED: [None], EXPERIMENT_TYPE: [None]
+            },
+            columns=[SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
+        )
+        result = keggid_to_uniprot(iframe, verbose=True)
+        self.assertTrue(result.empty)

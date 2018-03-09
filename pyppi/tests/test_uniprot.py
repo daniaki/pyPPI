@@ -4,14 +4,14 @@ import time
 from unittest import TestCase
 from Bio import SwissProt
 
-from ..database import begin_transaction
+from ..database import create_session, delete_database, cleanup_database
 from ..database.models import Protein
 from ..data_mining.uniprot import (
     parallel_download, download_record,
     parse_record_into_protein,
     go_terms, interpro_terms, pfam_terms,
     keywords, gene_name, recent_accession, taxonid,
-    review_status, batch_map
+    review_status, batch_map, function
 )
 
 base_path = os.path.dirname(__file__)
@@ -23,14 +23,13 @@ class TestUniProtMethods(TestCase):
         self.records = open(os.path.normpath(
             "{}/test_data/test_sprot_records.dat".format(base_path)
         ), 'rt')
-        self.db_path = '{}/databases/{}'.format(base_path, 'test.db')
+        self.db_path = '{}/databases/test.db'.format(base_path)
+        self.session, self.engine = create_session(self.db_path)
 
     def tearDown(self):
         self.records.close()
-        with begin_transaction(db_path=self.db_path) as session:
-            session.rollback()
-            session.execute("DROP TABLE {}".format(Protein.__tablename__))
-            session.commit()
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
 
     def test_parses_gomf_correctly(self):
         for record in SwissProt.parse(self.records):
@@ -144,18 +143,32 @@ class TestUniProtMethods(TestCase):
         expected = 9606
         self.assertEqual(result, expected)
 
-    def test_parses_taxonid_correctly(self):
+    def test_parses_recent_accession_correctly(self):
         for record in SwissProt.parse(self.records):
             result = recent_accession(record)
             break
         expected = 'P31946'
         self.assertEqual(result, expected)
 
+    def test_parses_function_correctly(self):
+        for record in SwissProt.parse(self.records):
+            result = function(record)
+            break
+        self.assertIn("Adapter protein implicated in the regulation", result)
+
+    def test_parses_function_as_None_for_entry_with_no_comment(self):
+        for record in SwissProt.parse(self.records):
+            r = record
+            break
+        r.comments = [x for x in r.comments if "FUNCTION: " not in x]
+        result = function(r)
+        expected = None
+        self.assertEqual(result, expected)
+
     def test_can_parse_record_into_protein_objects(self):
         for record in SwissProt.parse(self.records):
             obj = parse_record_into_protein(record)
             break
-
         self.assertEqual(obj.uniprot_id, "P31946")
         self.assertEqual(obj.gene_id, "YWHAB")
         self.assertEqual(obj.reviewed, True)
@@ -180,91 +193,89 @@ class TestUniProtMethods(TestCase):
         self.assertEqual(entries[2].uniprot_id, accessions[2])
 
     def test_batch_map_keeps_unreviewed(self):
-        with begin_transaction(self.db_path) as session:
-            protein1 = Protein(
-                uniprot_id='P50224', taxon_id=9606, reviewed=False)
-            protein2 = Protein(
-                uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
-            protein3 = Protein(
-                uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
-            protein1.save(session, commit=True)
-            protein2.save(session, commit=True)
-            protein3.save(session, commit=True)
+        protein1 = Protein(
+            uniprot_id='P50224', taxon_id=9606, reviewed=False)
+        protein2 = Protein(
+            uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
+        protein3 = Protein(
+            uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
+        protein1.save(self.session, commit=True)
+        protein2.save(self.session, commit=True)
+        protein3.save(self.session, commit=True)
 
-            mapping = batch_map(
-                session, ['P50224'], keep_unreviewed=True, match_taxon_id=None
-            )
-            self.assertEqual(mapping, {"P50224": ['P0DMM9', 'P0DMN0']})
+        mapping = batch_map(
+            session=self.session, accessions=['P50224'], keep_unreviewed=True,
+            match_taxon_id=None
+        )
+        self.assertEqual(mapping, {"P50224": ['P0DMM9', 'P0DMN0']})
 
     def test_batch_map_filters_unreviewed(self):
-        with begin_transaction(self.db_path) as session:
-            protein1 = Protein(
-                uniprot_id='P50224', taxon_id=9606, reviewed=False)
-            protein2 = Protein(
-                uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
-            protein3 = Protein(
-                uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
-            protein1.save(session, commit=True)
-            protein2.save(session, commit=True)
-            protein3.save(session, commit=True)
+        protein1 = Protein(
+            uniprot_id='P50224', taxon_id=9606, reviewed=False)
+        protein2 = Protein(
+            uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
+        protein3 = Protein(
+            uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
+        protein1.save(self.session, commit=True)
+        protein2.save(self.session, commit=True)
+        protein3.save(self.session, commit=True)
 
-            mapping = batch_map(
-                session, ['P50224'], keep_unreviewed=False, match_taxon_id=None
-            )
-            self.assertEqual(mapping, {"P50224": ["P0DMN0"]})
+        mapping = batch_map(
+            session=self.session, accessions=['P50224'], keep_unreviewed=False,
+            match_taxon_id=None
+        )
+        self.assertEqual(mapping, {"P50224": ["P0DMN0"]})
 
     def test_batch_map_filters_non_matching_taxon_ids(self):
-        with begin_transaction(self.db_path) as session:
-            protein1 = Protein(
-                uniprot_id='P50224', taxon_id=9606, reviewed=False)
-            protein2 = Protein(
-                uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
-            protein3 = Protein(
-                uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
-            protein1.save(session, commit=True)
-            protein2.save(session, commit=True)
-            protein3.save(session, commit=True)
+        protein1 = Protein(
+            uniprot_id='P50224', taxon_id=9606, reviewed=False)
+        protein2 = Protein(
+            uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
+        protein3 = Protein(
+            uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
+        protein1.save(self.session, commit=True)
+        protein2.save(self.session, commit=True)
+        protein3.save(self.session, commit=True)
 
-            mapping = batch_map(
-                session, ['P50224'], keep_unreviewed=False, match_taxon_id=0
-            )
-            self.assertEqual(mapping, {"P50224": []})
+        mapping = batch_map(
+            session=self.session, accessions=['P50224'], keep_unreviewed=False,
+            match_taxon_id=0
+        )
+        self.assertEqual(mapping, {"P50224": []})
 
     def test_batch_map_filters_keeps_matching_taxon_ids(self):
-        with begin_transaction(self.db_path) as session:
-            protein1 = Protein(
-                uniprot_id='P50224', taxon_id=9606, reviewed=False)
-            protein2 = Protein(
-                uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
-            protein3 = Protein(
-                uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
-            protein1.save(session, commit=True)
-            protein2.save(session, commit=True)
-            protein3.save(session, commit=True)
+        protein1 = Protein(
+            uniprot_id='P50224', taxon_id=9606, reviewed=False)
+        protein2 = Protein(
+            uniprot_id='P0DMN0', taxon_id=9606, reviewed=True)
+        protein3 = Protein(
+            uniprot_id='P0DMM9', taxon_id=9606, reviewed=False)
+        protein1.save(self.session, commit=True)
+        protein2.save(self.session, commit=True)
+        protein3.save(self.session, commit=True)
 
-            mapping = batch_map(
-                session, ['P50224'], keep_unreviewed=True, match_taxon_id=9606
-            )
-            self.assertEqual(mapping, {"P50224": ['P0DMM9', 'P0DMN0']})
+        mapping = batch_map(
+            session=self.session, accessions=['P50224'], keep_unreviewed=True,
+            match_taxon_id=9606
+        )
+        self.assertEqual(mapping, {"P50224": ['P0DMM9', 'P0DMN0']})
 
     def test_batch_map_downloads_missing_records(self):
-        with begin_transaction(self.db_path) as session:
-            mapping = batch_map(
-                session, ['P50224'], keep_unreviewed=True, match_taxon_id=9606,
-                allow_download=True
-            )
-            self.assertEqual(mapping, {"P50224": ['P0DMM9', 'P0DMN0']})
+        mapping = batch_map(
+            session=self.session, accessions=['P50224'], keep_unreviewed=True,
+            match_taxon_id=9606, allow_download=True
+        )
+        self.assertEqual(mapping, {"P50224": ['P0DMM9', 'P0DMN0']})
 
     def test_batch_map_doesnt_save_invalid_record(self):
-        with begin_transaction(self.db_path) as session:
-            mapping = batch_map(
-                session, ['P50224'], match_taxon_id=0, allow_download=True
-            )
-            self.assertEqual(mapping, {"P50224": []})
+        mapping = batch_map(
+            session=self.session, accessions=['P50224'], match_taxon_id=0,
+            allow_download=True
+        )
+        self.assertEqual(mapping, {"P50224": []})
 
     def test_batch_return_empty_list_if_accession_maps_to_invalid_record(self):
-        with begin_transaction(self.db_path) as session:
-            mapping = batch_map(
-                session, ['Q02248'], match_taxon_id=9606
-            )
-            self.assertEqual(mapping, {"Q02248": []})
+        mapping = batch_map(
+            session=self.session, accessions=['Q02248'], match_taxon_id=9606
+        )
+        self.assertEqual(mapping, {"Q02248": []})
