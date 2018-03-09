@@ -1,8 +1,12 @@
-#!/usr/bin/python
+"""
+This module contains functions to parse MI obo files into a dictionary of
+:class:`Term` instances representing `PSI-MI` annotations.
+"""
 
 
 import gzip
-from pyppi.data import psimi_obo_file
+
+from ..base.file_paths import psimi_obo_file
 
 __PSIMI_GRAPH__ = None
 
@@ -24,6 +28,20 @@ MiOntology = dict
 
 
 class Term(object):
+    """A class representing subset of the Psi-Mi term properties.
+
+    Parameters
+    ----------
+    id : str
+        Accession of the term.
+
+    name : str
+        Text desctription of the term.
+
+    is_obsolete : bool
+        Boolean indicating if the term is obsolete or not.
+
+    """
 
     def __init__(self, id, name, is_obsolete):
         self.id = id
@@ -32,6 +50,7 @@ class Term(object):
 
 
 def process_term(fp):
+    """Parse obo entry into a :class:`Term` instance."""
     id_ = None
     term = None
     line = "[Term]"
@@ -63,9 +82,19 @@ def process_term(fp):
 
 def parse_miobo_file(filename):
     """
-    Parses all Term objects into a dictionary of GOTerms. Each GOTerm
+    Parses all Term objects into a dictionary of :class:`Term`s. Each term
     contains a small subset of the possible keys: id, name, namespace, is_a,
     part_of and is_obsolete.
+
+    Parameters
+    ----------
+    filename : str
+        Path for obo file.
+
+    Returns
+    -------
+    `dict`
+        Mapping from accession to :class:`Term`
     """
     graph = MiOntology()
     alt_id_map = {}

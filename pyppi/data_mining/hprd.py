@@ -1,22 +1,26 @@
-#!/usr/bin/env python
-
 """
-Author: Daniel Esposito
-Contact: danielce90@gmail.com
-
 This module provides functionality to mine interactions with labels from
-HPRD flat files
+HPRD flat files.
 """
+
 
 from itertools import product
 from collections import OrderedDict
 
-from ..base import SOURCE, TARGET, LABEL
-from .uniprot import UNIPROT_ORD_KEY
+from ..base.io import hprd_id_map, hprd_ptms
+from ..base.utilities import is_null
+from ..base.constants import SOURCE, TARGET, LABEL
 from ..data_mining.tools import make_interaction_frame, process_interactions
-from ..data import hprd_id_map, hprd_ptms
-from ..database import begin_transaction
-from ..database.managers import ProteinManager
+from ..database.models import Protein
+from .uniprot import UNIPROT_ORD_KEY
+
+__all__ = [
+    'hprd_to_dataframe',
+    'parse_hprd_mapping',
+    'parse_ptm',
+    'PTMEntry',
+    'HPRDXrefEntry'
+]
 
 SUBTYPES_TO_EXCLUDE = []
 
@@ -57,7 +61,7 @@ psimi_mapping = {
 
 class PTMEntry(object):
     """
-    Class to row data in the Post translational mod text file.
+    Class to hold row data from the Post translational mod text file.
     """
 
     def __init__(self, dictionary):
@@ -76,7 +80,7 @@ class PTMEntry(object):
 
 class HPRDXrefEntry(object):
     """
-    Class to row data in the HPRD text file.
+    Class to hold row data from the HPRD text file.
     """
 
     def __init__(self, dictionary):
@@ -97,9 +101,21 @@ def parse_ptm(file_input=None, header=False, col_sep='\t'):
     """
     Parse HPRD post_translational_modifications file.
 
-    :param header: If file has header. Default is False.
-    :param col_sep: Column separator.
-    :return: List of PTMEntry objects.
+    Parameters
+    ----------
+    file_input : :class:io.TextIOWrapper, optional.
+        Open file handle pointing to the HPRD PTM file to parse.
+
+    header : bool, default: False
+        True if file has header. Default is False.
+
+    col_sep : str, default: '\t'
+        Column separator value.
+
+    Returns
+    -------
+    `list`
+        List of PTMEntry objects.
     """
     ptms = []
     if file_input is None:
@@ -129,12 +145,23 @@ def parse_ptm(file_input=None, header=False, col_sep='\t'):
 
 
 def parse_hprd_mapping(file_input=None, header=False, col_sep='\t'):
-    """
-    Parse a hprd mapping file into HPRDXref Objects.
+    """Parse a hprd mapping file into HPRDXref Objects.
 
-    :param header: If file has header. Default is False.
-    :param col_sep: Column separator.
-    :return: Dict of HPRDXrefEntry objects indexed by hprd accession.
+    Parameters
+    ----------
+    file_input : :class:io.TextIOWrapper, optional.
+        Open file handle pointing to the HPRD mapping file to parse.
+
+    header : bool, default: False
+        True if file has header. Default is False.
+
+    col_sep : str, default: '\t'
+        Column separator value.
+
+    Returns
+    -------
+    `dict`
+        Dictionary of HPRDXrefEntry objects indexed by hprd accession.
     """
     xrefs = {}
     if file_input is None:
@@ -156,24 +183,53 @@ def parse_hprd_mapping(file_input=None, header=False, col_sep='\t'):
     return xrefs
 
 
-def hprd_to_dataframe(session, allow_self_edges=False, drop_nan='default',
+def hprd_to_dataframe(ptm_input=None, mapping_input=None,
+                      allow_self_edges=False, drop_nan='default',
                       allow_duplicates=False, exclude_labels=None,
-                      min_label_count=None, merge=False, ptm_input=None,
-                      mapping_input=None):
-    """
-    Parse the FLAT_FILES from HPRD into a dataframe.
+                      min_label_count=None, merge=False):
+    """Parse the FLAT_FILES from HPRD into a dataframe.
 
-    :param drop_nan: Drop entries containing NaN in any column.
-    :param allow_self_edges: Remove rows for which source is target.
-    :param allow_duplicates: Remove exact copies accross columns.
-    :param exclude_labels: List of labels to remove.
-    :param min_label_count: Remove labels below this count.
-    :param merge: Merge PPIs with the same source and target but different
-                  labels into the same entry.
-    :return: DataFrame with 'source', 'target' and 'label' columns.
+    Parameters
+    ----------
+    ptm_input : :class:io.TextIOWrapper, optional.
+        Open file handle pointing to the HPRD PTM file to parse.
+
+    mapping_input : :class:io.TextIOWrapper, optional.
+        Open file handle pointing to the HPRD mapping file to parse.
+
+    allow_self_edges : bool, default: False
+        Remove rows for which source is target.
+
+    drop_nan : bool, str or list, default: 'default'
+        Drop entries containing null values in any column. If 'default'
+        rows are dropped if null values occur in the `source`, `target` or 
+        `label` columns. If a list of column names are supplied, then 
+        rows are dropped if null values occur in either of those columns. If
+        False or None then no rows will be dropped. If True, rows with 
+        a null value in any column are dropped.
+
+    allow_duplicates : bool, default: False
+        Remove exact copies accross columns.
+
+    exclude_labels : list, optional
+        List of labels to remove from the dataframe.
+
+    min_label_count : int, optional
+        Remove labels with less than the specified count.
+
+    merge : bool, default: False
+        Merge entries with identical source and target columns
+        during filter.
+
+    Returns
+    -------
+    :class:`pandas.DataFrame`
+        With 'source', 'target' and 'label' columns.
     """
     ptms = parse_ptm(file_input=ptm_input)
     xrefs = parse_hprd_mapping(file_input=mapping_input)
+    if exclude_labels:
+        exclude_labels = [l.capitalize() for l in exclude_labels]
 
     sources = []
     targets = []
@@ -197,16 +253,14 @@ def hprd_to_dataframe(session, allow_self_edges=False, drop_nan='default',
         if has_nan and drop_nan:
             continue
 
-        invalid = ('-', '', 'na', 'None', None)
-        e_types = [x for x in ptm.experiment_type if x not in invalid]
-        unique = OrderedDict()
-        for e in e_types:
-            unique[psimi_mapping[e]] = True
-        e_types = ','.join(unique.keys())
-        if not e_types:
-            e_types = None
+        # e_types = [x for x in ptm.experiment_type if not is_null(x)]
+        # unique = OrderedDict()
+        # for e in e_types:
+        #     unique[psimi_mapping[e]] = True
+        # if not e_types:
+        #     e_types = None
 
-        reference_ids = [x for x in ptm.reference_id if x not in invalid]
+        reference_ids = [x for x in ptm.reference_id if not is_null(x)]
         unique = OrderedDict()
         for r in reference_ids:
             unique[r] = True
@@ -224,31 +278,37 @@ def hprd_to_dataframe(session, allow_self_edges=False, drop_nan='default',
         else:
             uniprot_targets = xrefs[ptm.substrate_hprd_id].swissprot_id
 
-        pm = ProteinManager(verbose=False, match_taxon_id=9606)
         for (s, t) in product(uniprot_sources, uniprot_targets):
-            s_entry = pm.get_by_uniprot_id(session, s)
-            if s_entry is None:
-                s = None
-            elif not s_entry.reviewed:
-                s = None
+            if s is not None:
+                s_entry = Protein.get_by_uniprot_id(s)
+                if s_entry is None:
+                    s = None
+                elif not s_entry.reviewed:
+                    s = None
 
-            t_entry = pm.get_by_uniprot_id(session, t)
-            if t_entry is None:
-                t = None
-            elif not t_entry.reviewed:
-                t = None
+            if t is not None:
+                t_entry = Protein.get_by_uniprot_id(t)
+                if t_entry is None:
+                    t = None
+                elif not t_entry.reviewed:
+                    t = None
 
             sources.append(s)
             targets.append(t)
             labels.append(label)
             pmids.append(reference_ids)
-            experiment_types.append(e_types)
+            if reference_ids is None:
+                experiment_types.append(None)
+            else:
+                n_refs = len(reference_ids.split(','))
+                if n_refs == 1:
+                    e_types = None
+                else:
+                    e_types = ','.join([str(None)] * n_refs)
+                experiment_types.append(e_types)
 
-    meta_columns = OrderedDict()
-    meta_columns['pubmed'] = pmids
-    meta_columns['experiment_type'] = experiment_types
     interactions = make_interaction_frame(
-        sources, targets, labels, **meta_columns
+        sources, targets, labels, pmids, experiment_types
     )
     interactions = process_interactions(
         interactions=interactions,

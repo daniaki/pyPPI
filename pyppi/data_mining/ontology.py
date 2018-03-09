@@ -1,11 +1,18 @@
-#!/usr/bin/python
+"""
+This module contains functions to parse GO obo files, group ontology terms
+into related namespaces and to and perform term induction as described in:
+
+Maetschke, S. R., Simonsen, M., Davis, M. J., & Ragan, M. A. (2011). 
+Gene Ontology-driven inference of protein–protein interactions using inducers. 
+Bioinformatics, 28(1), 69-75.
+"""
 
 
 import gzip
 from functools import reduce
 from operator import itemgetter
 
-from ..data import obo_file
+from ..base.file_paths import obo_file
 
 __GODAG__ = None
 
@@ -27,6 +34,41 @@ GODag = dict
 
 
 class GOTerm(object):
+    """A class representing subset of the Psi-Mi term properties.
+
+    Parameters
+    ----------
+    id : str
+        Accession of the term.
+
+    name : str
+        Text desctription of the term.
+
+    namespace : str
+        The namespace of the GO term. One of 'Molecular Function',
+        'Cellular Component' or 'Biological Process'
+
+    is_a : list
+        A list of parent terms with the `is_a` relationship.
+
+    part_of : list
+        A list of parent terms with the `part_of` relationship.
+
+    has_part : list
+        A list of child terms with the `part_of` relationship.
+
+    has_a : str
+        A list of child terms with the `is_a` relationship.
+
+    is_obsolete : bool
+        Boolean indicating if the term is obsolete or not.
+
+    Attributes
+    ----------
+    _depth : int
+        Depth in the tree computed as the longest path to the top.
+
+    """
 
     def __init__(self, id, name, namespace, is_a, part_of, is_obsolete):
         self.id = id
@@ -68,17 +110,21 @@ class GOTerm(object):
         return hash(self.id)
 
     def has_parent(self, p):
+        """Returns True if a is a parent of this node."""
         return p in self.parents
 
     def has_ancestor(self, a):
+        """Returns True if a is an ancestor of this node."""
         return a in self.all_parents
 
     @property
     def parents(self):
+        """Returns all immediate `is_a` and `part_of` parent nodes."""
         return self.is_a | self.part_of
 
     @property
     def all_parents(self):
+        """Computes all acnestor nodes of this nodes."""
         all_parents = set()
         queue = list(self.parents)
         while queue:
@@ -89,6 +135,7 @@ class GOTerm(object):
 
     @property
     def depth(self):
+        """Computes the depth as the longest path to the root node."""
         if self._depth is not None:
             return self._depth
         else:
@@ -99,6 +146,7 @@ class GOTerm(object):
 
 
 def process_go_term(fp):
+    """Parse obo entry into a :class:`GOTerm` instance."""
     id_ = None
     term = None
     part_of = []
@@ -147,9 +195,19 @@ def process_go_term(fp):
 
 def parse_obo12_file(filename):
     """
-    Parses all Term objects into a dictionary of GOTerms. Each GOTerm
+    Parses all Term objects into a dictionary of :class:`GOTerm`s. Each term
     contains a small subset of the possible keys: id, name, namespace, is_a,
     part_of and is_obsolete.
+
+    Parameters
+    ----------
+    filename : str
+        Path for obo file.
+
+    Returns
+    -------
+    `dict`
+        Mapping from accession to :class:`GOTerm`
     """
     dag = GODag()
     alt_id_map = {}
@@ -195,6 +253,23 @@ def parse_obo12_file(filename):
 
 
 def group_terms_by_ontology_type(term_ids, max_count=None):
+    """Groups GO terms by their ontology type.
+
+    Parameters:
+    ----------
+    term_ids : list
+        List of terms to group.
+
+    max_count : int, optional, default: None
+        Caps the duplicate count of terms in each ontology to `max_count`. 
+        Ignored if None.
+
+    Returns
+    -------
+    `dict`
+        Dictionary of each ontology type and their terms as values.
+    """
+
     dag = get_active_instance()
     cc_terms = []
     bp_terms = []
@@ -222,8 +297,25 @@ def group_terms_by_ontology_type(term_ids, max_count=None):
     return {'mf': mf_terms, 'bp': bp_terms, 'cc': cc_terms}
 
 
-def filter_obsolete_terms(term_ids):
-    dag = get_active_instance()
+def filter_obsolete_terms(term_ids, dag=None):
+    """Filters GO terms which are obsolete.
+
+    Parameters:
+    ----------
+    term_ids : list
+        List of term accessions.
+
+    dag : dict, optional, default: None
+        Dag dictionary containing :class:`GOTerm` instances. If None,
+        loads the default dag located at `~/.pyppi/go.obo.gz`
+
+    Returns
+    -------
+    `list`
+        List of non obsolete GO term accession strings.
+    """
+    if dag is None:
+        dag = get_active_instance()
     return [tid for tid in term_ids if dag[tid].is_obsolete is False]
 
 # ------------------------------------------------------ #
@@ -233,11 +325,29 @@ def filter_obsolete_terms(term_ids):
 # ------------------------------------------------------ #
 
 
-def get_lca_of_terms(terms):
+def get_lca_of_terms(terms, dag=None):
+    """Computes the `lowest common ancestors` (LCAs) of a list of terms.
+
+    Parameters:
+    ----------
+    terms : list
+        List of :class:`GOTerm`s.
+
+    dag : dict, optional, default: None
+        Dag dictionary containing :class:`GOTerm` instances. If None,
+        loads the default dag located at `~/.pyppi/go.obo.gz`
+
+    Returns
+    -------
+    `list`
+        List of LCA as instances of :class:`GOTerm`.
+    """
+    if dag is None:
+        dag = get_active_instance()
+
     if not terms:
         return None
 
-    dag = get_active_instance()
     parents = [t.all_parents for t in terms]
     common_parents = reduce(lambda x, y: x & y, parents)
     if not common_parents:
@@ -248,11 +358,30 @@ def get_lca_of_terms(terms):
     return list(lcas)
 
 
-def get_up_to_lca(p1, p2):
+def get_up_to_lca(p1, p2, dag=None):
+    """Computes the `lowest common ancestor` of a list of terms.
+
+    Parameters
+    ----------
+    p1 : list or set
+        List or set of term accessions from the first protein.
+    p2 : list or set
+        List or set of term accessions from the second protein.
+
+    dag : dict, optional, default: None
+        Dag dictionary containing :class:`GOTerm` instances. If None,
+        loads the default dag located at `~/.pyppi/go.obo.gz`
+
+    Returns
+    -------
+    list
+        List of GO term accession strings.        
+    """
     if not p1 or not p2:
         return p1 + p2
+    if dag is None:
+        dag = get_active_instance()
 
-    dag = get_active_instance()
     p1 = [dag[t] for t in p1]
     p2 = [dag[t] for t in p2]
     lcas = get_lca_of_terms([t for ts in [p1, p2] for t in ts])

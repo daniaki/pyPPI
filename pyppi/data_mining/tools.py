@@ -16,63 +16,72 @@ import pandas as pd
 import numpy as np
 from numpy import NaN
 
-from ..base import SOURCE, TARGET, LABEL, NULL_VALUES
-from ..base import PPI
+from ..base.constants import SOURCE, TARGET, LABEL, NULL_VALUES
+from ..base.constants import PUBMED, EXPERIMENT_TYPE
+from ..base.utilities import remove_duplicates as remove_duplicates_seq
+from ..base.utilities import is_null
 
 logger = logging.getLogger("pyppi")
 
 
+def concat_dataframes(dfs, reset_index=False):
+    """
+    Concatenate a list of dataframes.
+    """
+    combined = pd.DataFrame()
+    for df in dfs:
+        combined = pd.concat([combined, df], ignore_index=True)
+    if reset_index:
+        combined.reset_index(drop=True, inplace=True)
+    return combined
+
+
 def _null_to_none(value):
-    if str(value) in NULL_VALUES:
+    if is_null(value):
         return None
-    elif value in NULL_VALUES:
-        return None
-    else:
-        return value
+    return value
 
 
-def _make_ppi_tuples(sources, targets):
+def _make_ppi_tuples(sources, targets, sort=True):
     sources = [_null_to_none(x) for x in sources]
     targets = [_null_to_none(x) for x in targets]
-    ppis = [
-        tuple(sorted((str(a), str(b))))
-        for a, b in zip(sources, targets)
-    ]
+    if sort:
+        ppis = [
+            tuple(sorted((str(a), str(b))))
+            for a, b in zip(sources, targets)
+        ]
+    else:
+        ppis = [(a, b) for a, b in zip(sources, targets)]
     return ppis
 
 
 def _split_label(label, sep=','):
-    return [l.strip() for l in str(_null_to_none(label)).strip().split(sep)]
+    if is_null(label):
+        return [None]
+    values = [l.strip() for l in label.split(sep) if not is_null(l)]
+    return [None] if not values else values
 
 
 def _format_label(label):
-    if _null_to_none(label) is None:
-        return str(None).lower()
-    return label.strip().lower().replace(" ", "-")
+    if is_null(label):
+        return None
+    return label.strip().capitalize().replace(" ", "-")
 
 
-def _format_labels(label_ls, sort_after_split=True, rejoin_after_split=False,
-                   remove_duplicates_after_split=True, sep=','):
+def _format_labels(label_ls, sep=',', join=False):
     labels = []
     for ls in label_ls:
-        labels.append([_format_label(l) for l in _split_label(ls, sep)])
-
-    if remove_duplicates_after_split:
-        labels_ = []
-        for ls in labels:
-            ls_ = []
-            for l in ls:
-                if l not in ls_:
-                    ls_.append(l)
-            labels_.append(ls_)
-        labels = labels_
-
-    if sort_after_split:
-        labels = [list(sorted(ls)) for ls in labels]
-
-    if rejoin_after_split:
-        labels = [sep.join(ls) for ls in labels]
-
+        values = [_format_label(l) for l in _split_label(ls, sep)]
+        if not values or values == [None]:
+            if join:
+                labels.append(None)
+            else:
+                labels.append([None])
+        else:
+            if join:
+                labels.append(','.join(list(sorted(set(values)))))
+            else:
+                labels.append(list(sorted(set(values))))
     return labels
 
 
@@ -105,9 +114,7 @@ def labels_from_interaction_frame(interactions):
         List or Set of string objects.
     """
     df = interactions
-    labels = _format_labels(
-        df[LABEL], sort_after_split=True, remove_duplicates_after_split=True
-    )
+    labels = _format_labels(df[LABEL])
     labels = [[_null_to_none(l) for l in ls] for ls in labels]
     return labels
 
@@ -133,7 +140,8 @@ def ppis_from_interaction_frame(interactions):
     return ppis
 
 
-def make_interaction_frame(sources, targets, labels, **additional_columns):
+def make_interaction_frame(sources, targets, labels, pmids=None, psimis=None,
+                           sort=True):
     """
     Wrapper to construct a non-directional PPI dataframe.
 
@@ -142,21 +150,24 @@ def make_interaction_frame(sources, targets, labels, **additional_columns):
     :param labels: Edge label for the interaction.
     :return: DataFrame with SOURCE, TARGET and LABEL columns.
     """
-    ppis = _make_ppi_tuples(sources, targets)
+    ppis = _make_ppi_tuples(sources, targets, sort=sort)
     sources = [a for a, _ in ppis]
     targets = [b for _, b in ppis]
-    labels = [_format_label(l) for l in labels]
+    labels = _format_labels(labels, join=True)
+    if pmids is None or not len(pmids):
+        pmids = [None] * len(sources)
+    if psimis is None or not len(psimis):
+        psimis = [None] * len(sources)
+
     interactions = {
         SOURCE: sources,
         TARGET: targets,
-        LABEL: labels
+        LABEL: labels,
+        PUBMED: pmids,
+        EXPERIMENT_TYPE: psimis
     }
 
-    df_columns = [SOURCE, TARGET, LABEL]
-    for column_key in sorted(additional_columns.keys()):
-        interactions[column_key] = additional_columns[column_key]
-        df_columns.append(column_key)
-
+    df_columns = [SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
     return normalise_nan(
         pd.DataFrame(data=interactions, columns=df_columns)
     )
@@ -182,27 +193,25 @@ def map_network_accessions(interactions, accession_map, drop_nan,
     """
     ppis = []
     labels = []
+    pmids = []
+    psimis = []
     df = interactions
-    base_columns = [SOURCE, TARGET, LABEL]
-    meta_columns = [col for col in df.columns if col not in base_columns]
-    metadata = {c: [] for c in meta_columns}
+    base_columns = [SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
 
-    zipped = zip(
-        df[SOURCE], df[TARGET], df[LABEL], *[df[c] for c in meta_columns]
-    )
-    for a, b, l, *extra in zipped:
+    zipped = zip(*[df[c] for c in base_columns])
+    for a, b, l, pmid, psimi in zipped:
         sources = accession_map.get(a, [])
         targets = accession_map.get(b, [])
         for (s, t) in product(sources, targets):
             ppis.append(tuple(sorted((str(s), str(t)))))
             labels.append(l)
-            for i, col in enumerate(meta_columns):
-                metadata[col].append(extra[i])
+            pmids.append(pmid)
+            psimis.append(psimi)
 
     sources = [a for a, _ in ppis]
     targets = [b for _, b in ppis]
     new_interactions = make_interaction_frame(
-        sources, targets, labels, **metadata
+        sources, targets, labels, pmids, psimis
     )
     new_interactions = process_interactions(
         interactions=new_interactions,
@@ -250,50 +259,6 @@ def remove_nan(interactions, subset=[SOURCE, TARGET, LABEL]):
     selector = df.index.values
     new_df = interactions.loc[selector, ].reset_index(drop=True, inplace=False)
     return new_df
-
-
-def remove_intersection(interactions, other, use_label=True):
-    """
-    Remove any interaction from `interactions` appearing in `other`.
-
-    :param interactions: DataFrame with 'source', 'target' and 'label' columns.
-    :param other: DataFrame with 'source', 'target' and 'label' columns.
-    :param use_label: By default only look for (source, target, label) in the 
-                      `other` dataframe. Otherwise look for (source, target).
-    :return: DataFrame with 'source', 'target' and 'label' columns.
-    """
-    selector = []
-    ppis_in_other = OrderedDict()
-    other_ppis = list(zip(other[SOURCE], other[TARGET], other[LABEL]))
-    for (source, target, label) in other_ppis:
-        a, b = sorted([str(source), str(target)])
-        if use_label:
-            for (s, t, l) in product([a], [b], _split_label(label)):
-                ppis_in_other[(s, t, l)] = True
-        else:
-            ppis_in_other[(a, b)] = True
-
-    df = interactions.reset_index(drop=True, inplace=False)
-    interactions_ppis = list(zip(df[SOURCE], df[TARGET], df[LABEL]))
-    for i, (source, target, label) in enumerate(interactions_ppis):
-        a, b = sorted([str(source), str(target)])
-        if use_label:
-            for (s, t, l) in product([a], [b], _split_label(label)):
-                if ppis_in_other.get((s, t, l)) is None:
-                    selector.append(True)
-                else:
-                    selector.append(False)
-        else:
-            if ppis_in_other.get((a, b)) is None:
-                selector.append(True)
-            else:
-                selector.append(False)
-
-    selector = np.asarray(selector)
-    df = interactions.loc[selector, ].reset_index(drop=True, inplace=False)
-    removed = interactions.loc[~selector, ].reset_index(
-        drop=True, inplace=False)
-    return df, removed
 
 
 def remove_labels(interactions, labels_to_exclude):
@@ -358,57 +323,77 @@ def merge_labels(interactions):
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     df = interactions.reset_index(drop=True, inplace=False)
-    base_columns = [SOURCE, TARGET, LABEL]
-    extra_columns = [col for col in df.columns if col not in base_columns]
-
+    base_columns = [SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
+    columns_to_parse = [LABEL, PUBMED, EXPERIMENT_TYPE]
     merged_ppis = OrderedDict()
-    ppis = [
-        tuple(sorted((str(s), str(t))))
-        for (s, t) in zip(df[SOURCE], df[TARGET])
-    ]
-    zipped = zip(
-        ppis, df[LABEL], *[df[c] for c in extra_columns]
-    )
+    zipped = zip(*[df[c] for c in base_columns])
+    for s, t, label, pmid, psimi in zipped:
+        s, t = sorted([str(s), str(t)])
+        if merged_ppis.get((s, t), None) is None:
+            merged_ppis[(s, t)] = {}
+            for column in columns_to_parse:
+                if column == PUBMED:
+                    # Dictionary @PUBMED will store a dict with
+                    # keys being the pmids and the values being a list of
+                    # psimis from the merged interactions.
+                    merged_ppis[(s, t)][column] = OrderedDict()
+                elif column == LABEL:
+                    merged_ppis[(s, t)][column] = []
 
-    for (s, t), label, *extra in zipped:
-        if merged_ppis.get((s, t)) is None:
-            merged_ppis[(s, t)] = {k: [] for k in extra_columns + [LABEL]}
         # Some labels might be merged already, so split them first before
         # formatting.
         merged_ppis[(s, t)][LABEL].extend(
             [
                 _format_label(l) for l in _split_label(label)
-                if _format_label(l) not in NULL_VALUES
+                if not is_null(_format_label(l))
             ]
         )
-        # Same as above, some additional data may have already been merged.
-        for i, column in enumerate(extra_columns):
-            merged_ppis[(s, t)][column].extend(
-                [
-                    e.strip() for e in _split_label(extra[i])
-                    if e.strip() not in NULL_VALUES
-                ]
-            )
+        # Pmids and psimis are grouped together using '|'. Hence, the psimis
+        # for a single pmis will look like 'psimi1|psimi2|pismi3|...'. Groups
+        # delimited by commas so we have pmid1,pmid2
+        # psimi1|psimi2,psimi1|psimi3. Assert that of pmids after split by
+        # comma equals length of the psimis after split. Additionally,
+        # pmids can have no psimis associated represented with str(None).
+        # so we could have something like pmid1,pmid2 -> None,psimi1|psimi2
+        if is_null(str(pmid).strip()):
+            continue  # don't add it to the dictionary.
+        else:
+            pmids = str(pmid).strip().split(',')
+            psimis = str(psimi).strip().split(',')
+            assert len(pmids) == len(psimis)
+            for pmid_, psimi_group in zip(pmids, psimis):
+                pmid_ = pmid_.strip().upper()
+                if pmid_ not in merged_ppis[(s, t)][PUBMED]:
+                    merged_ppis[(s, t)][PUBMED][pmid_] = set()
+
+                psimis_for_pmid = psimi_group.split('|')
+                for psimi_ in psimis_for_pmid:
+                    if not is_null(str(psimi_).strip()):
+                        psimi_ = psimi_.strip().upper()
+                        merged_ppis[(s, t)][PUBMED][pmid_].add(psimi_)
 
     # Format the labels by set, sorted and then comma delimiting.
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
+
     labels = [
         ','.join(list(sorted(set(_format_label(l) for l in ls)))) or None
         for ls in [row[LABEL] for row in merged_ppis.values()]
     ]
+    pmids = [
+        ','.join([p for p in ppi_pmids.keys()]) or None
+        for ppi_pmids in [row[PUBMED] for row in merged_ppis.values()]
+    ]
 
-    # Format the additonal columns by set and sorting.
-    additional = {c: [] for c in extra_columns}
-    for column in extra_columns:
-        data = [
-            ','.join(list(sorted(set(d.strip() for d in ls)))) or None
-            for ls in [row[column] for row in merged_ppis.values()]
-        ]
-        additional[column] = data
+    psimis = []
+    for (s, t) in merged_ppis:
+        psimi_groups = []
+        for psimi_group in merged_ppis[(s, t)][PUBMED].values():
+            psimi_groups.append('|'.join(sorted(psimi_group)) or str(None))
+        psimis.append(','.join(psimi_groups))
 
     interactions = make_interaction_frame(
-        sources, targets, labels, **additional
+        sources, targets, labels, pmids, psimis
     )
     return interactions
 
@@ -422,11 +407,11 @@ def remove_common_ppis(df_1, df_2):
     Note: Expected the SOURCE and TARGET columns to be pre-sorted, otherwise
     this method will not detect permuted ppis (A, B)/(B, A).
 
-    :param df_1: 
+    :param df_1:
         DataFrame with 'source', 'target' and 'label' columns.
-    :param df_2: 
+    :param df_2:
         DataFrame with 'source', 'target' and 'label' columns.
-    :return: 
+    :return:
         tuple of DataFrames (df_1_unique, df_2_unique, common)
     """
     ppis_df_1 = list(zip(df_1[SOURCE], df_1[TARGET]))
@@ -470,62 +455,101 @@ def remove_duplicates(interactions):
     """
     df = interactions
     merged_ppis = OrderedDict()
-    ppis = [
-        tuple(sorted((str(s), str(t))))
-        for (s, t) in zip(df[SOURCE], df[TARGET])
-    ]
     merged = any([len(_split_label(l)) > 1 for l in df[LABEL]])
-    base_columns = [SOURCE, TARGET, LABEL]
-    extra_columns = [col for col in df.columns if col not in base_columns]
-    zipped = zip(
-        ppis, df[LABEL], *[df[c] for c in extra_columns]
-    )
+    base_columns = [SOURCE, TARGET, LABEL, PUBMED, EXPERIMENT_TYPE]
+    zipped = zip(*[df[c] for c in base_columns])
 
     if merged:
-        assert len(ppis) == len(df[LABEL].values)
-        for (s, t), label, *extra in zipped:
+        for s, t, label, pmid, psimi in zipped:
+            s, t = sorted([str(s), str(t)])
             for l in set(_split_label(label)):
-                if merged_ppis.get((s, t, l)) is None:
-                    merged_ppis[(s, t, l)] = {c: [] for c in extra_columns}
-                for i, column in enumerate(extra_columns):
-                    merged_ppis[(s, t, l)][column].extend(
-                        [
-                            e.strip() for e in _split_label(extra[i])
-                            if e.strip() not in NULL_VALUES
-                        ]
-                    )
+                if merged_ppis.get((s, t, l), None) is None:
+                    # Dictionary @PUBMED will store a dict with keys
+                    # being the pmids and the values being a list of
+                    # psimis from the merged interactions.
+                    merged_ppis[(s, t, l)] = {}
+                    merged_ppis[(s, t, l)][PUBMED] = OrderedDict()
+
+                # Pmids and psimis are grouped together using '|'. Hence, the psimis
+                # for a single pmis will look like 'psimi1|psimi2|pismi3|...'. Groups
+                # delimited by commas so we have pmid1,pmid2
+                # psimi1|psimi2,psimi1|psimi3. Assert that of pmids after split by
+                # comma equals length of the psimis after split. Additionally,
+                # pmids can have no psimis associated represented with str(None).
+                # so we could have something like pmid1,pmid2 -> None,psimi1|psimi2
+                if is_null(str(pmid).strip()):
+                    continue  # don't add it to the dictionary.
+                else:
+                    pmids = str(pmid).strip().split(',')
+                    psimis = str(psimi).strip().split(',')
+                    assert len(pmids) == len(psimis)
+                    for pmid_, psimi_group in zip(pmids, psimis):
+                        pmid_ = pmid_.strip().upper()
+                        if pmid_ not in merged_ppis[(s, t, l)][PUBMED]:
+                            merged_ppis[(s, t, l)][PUBMED][pmid_] = set()
+
+                        psimis_for_pmid = psimi_group.split('|')
+                        for psimi_ in psimis_for_pmid:
+                            if not is_null(str(psimi_).strip()):
+                                psimi_ = psimi_.strip().upper()
+                                merged_ppis[(s, t, l)][PUBMED][pmid_].add(
+                                    psimi_)
     else:
-        assert len(ppis) == len(df.label.values)
-        for (s, t), label, *extra in zipped:
+        for s, t, label, pmid, psimi in zipped:
+            s, t = sorted([str(s), str(t)])
             if label in NULL_VALUES or str(label) in NULL_VALUES:
                 label = str(None)
             if merged_ppis.get((s, t, label)) is None:
-                merged_ppis[(s, t, label)] = {c: [] for c in extra_columns}
-            for i, column in enumerate(extra_columns):
-                merged_ppis[(s, t, label)][column].extend(
-                    [
-                        e.strip() for e in _split_label(extra[i])
-                        if e.strip() not in NULL_VALUES
-                    ]
-                )
+                # Dictionary @PUBMED will store a dict with keys
+                # being the pmids and the values being a list of
+                # psimis from the merged interactions.
+                merged_ppis[(s, t, label)] = {}
+                merged_ppis[(s, t, label)][PUBMED] = OrderedDict()
+
+            # Pmids and psimis are grouped together using '|'. Hence, the psimis
+            # for a single pmis will look like 'psimi1|psimi2|pismi3|...'. Groups
+            # delimited by commas so we have pmid1,pmid2
+            # psimi1|psimi2,psimi1|psimi3. Assert that of pmids after split by
+            # comma equals length of the psimis after split. Additionally,
+            # pmids can have no psimis associated represented with str(None).
+            # so we could have something like pmid1,pmid2 -> None,psimi1|psimi2
+            if is_null(str(pmid).strip()):
+                continue  # don't add it to the dictionary.
+            else:
+                pmids = str(pmid).strip().split(',')
+                psimis = str(psimi).strip().split(',')
+                assert len(pmids) == len(psimis)
+                for pmid_, psimi_group in zip(pmids, psimis):
+                    pmid_ = pmid_.strip().upper()
+                    if pmid_ not in merged_ppis[(s, t, label)][PUBMED]:
+                        merged_ppis[(s, t, label)][PUBMED][pmid_] = set()
+
+                    psimis_for_pmid = psimi_group.split('|')
+                    for psimi_ in psimis_for_pmid:
+                        if not is_null(str(psimi_).strip()):
+                            psimi_ = psimi_.strip().upper()
+                            merged_ppis[(s, t, label)][PUBMED][pmid_].add(
+                                psimi_)
 
     sources = [ppi[0] for ppi in merged_ppis.keys()]
     targets = [ppi[1] for ppi in merged_ppis.keys()]
     labels = [ppi[2] for ppi in merged_ppis.keys()]
 
-    # Format the additonal columns by set and sorting.
-    additional = {c: [] for c in extra_columns}
-    for column in extra_columns:
-        data = [
-            ','.join(list(sorted(set(d.strip() for d in ls)))) or None
-            for ls in [row[column] for row in merged_ppis.values()]
-        ]
-        additional[column] = data
+    pmids = [
+        ','.join([p for p in ppi_pmids.keys()]) or None
+        for ppi_pmids in [row[PUBMED] for row in merged_ppis.values()]
+    ]
+
+    psimis = []
+    for (s, t, l) in merged_ppis:
+        psimi_groups = []
+        for psimi_group in merged_ppis[(s, t, l)][PUBMED].values():
+            psimi_groups.append('|'.join(sorted(psimi_group)) or str(None))
+        psimis.append(','.join(psimi_groups))
 
     interactions = make_interaction_frame(
-        sources, targets, labels, **additional
+        sources, targets, labels, pmids, psimis
     )
-
     if merged:
         interactions = merge_labels(interactions)
     assert sum(interactions.duplicated()) == 0
@@ -552,6 +576,11 @@ def process_interactions(interactions, drop_nan, allow_self_edges,
     )
     if drop_nan == 'default':
         drop_nan = [SOURCE, TARGET, LABEL]
+    elif drop_nan == True:
+        drop_nan = 'all'
+    elif drop_nan == False:
+        drop_nan = None
+
     elif (not isinstance(drop_nan, list)) and (not drop_nan is None):
         raise TypeError(
             "`drop_nan` must be either a list of columns to search for None "
