@@ -64,6 +64,8 @@ def plot_heatmaps(path, labels, correlation_matrix, similarity_matrix,
     plt.savefig(
         path, format=format, dpi=dpi, bbox_inches='tight', pad_inches=0)
 
+    return fig, ax1, ax2
+
 
 def plot_threshold_curve(path, thresholds, proportions, dpi=350, format='jpg'):
     plt.style.use('default')
@@ -81,3 +83,4 @@ def plot_threshold_curve(path, thresholds, proportions, dpi=350, format='jpg'):
         path, format=format, dpi=dpi,
         bbox_inches='tight', pad_inches=0
     )
+    return fig, ax
