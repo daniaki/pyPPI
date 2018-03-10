@@ -279,7 +279,7 @@ class KRandomClassifierChains(object):
 
         Returns
         -------
-        score : float
+        `float`
             Mean score of self.predict(X) wrt. y.
         """
         self._check_fitted()
