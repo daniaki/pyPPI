@@ -1,4 +1,15 @@
+# import atexit
 import logging
+
+__all__ = [
+    'base',
+    'data_mining',
+    'database',
+    'model_selection',
+    'models',
+    'network_analysis',
+    'predict'
+]
 
 logger = logging.getLogger("pyppi")
 logger.setLevel(logging.INFO)
@@ -14,13 +25,10 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 
-__all__ = [
-    'base',
-    'data',
-    'data_mining',
-    'database',
-    'model_selection',
-    'models',
-    'network_analysis',
-    'tests'
-]
+# atexit.register(cleanup_module)
+def wrap_init():
+    from .database import init_database, cleanup_module, db_engine
+    init_database(db_engine)
+
+
+wrap_init()

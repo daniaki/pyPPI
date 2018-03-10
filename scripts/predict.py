@@ -6,7 +6,7 @@ output predictions over the interactome.
 
 Usage:
   predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-                  [--retrain] [--chain] [--induce] [--verbose] [--binary]
+                  [--retrain] [--chain] [--induce] [--verbose]
                   [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
                   [--input=FILE] [--output=FILE] [--directory=DIR]
   predict_ppis.py -h | --help
@@ -20,7 +20,6 @@ Options:
   --bp          Use Biological Process Gene Ontology in features.
   --induce      Use ULCA inducer over Gene Ontology.
   --verbose     Print intermediate output for debugging.
-  --binary      Use binary feature encoding instead of ternary.
   --chain       Use Classifier chains to learn label dependencies.
   --retrain     Re-train classifier instead of loading previous version. If
                 using a previous version, you must use the same selection of
@@ -83,17 +82,19 @@ from pyppi.data_mining.features import compute_interaction_features
 
 from pyppi.predict.utilities import interactions_to_Xy_format
 from pyppi.predict import parse_interactions
+from pyppi.predict.plotting import plot_threshold_curve
+from pyppi.models.utilities import make_gridsearch_clf
+from pyppi.predict.utilities import paper_model, validation_model
+from pyppi.models.binary_relevance import MixedBinaryRelevanceClassifier
 
+from sklearn.base import clone
+from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.model_selection import RandomizedSearchCV
-from sklearn.multiclass import OneVsRestClassifier
-from sklearn.model_selection import StratifiedKFold
 
-
-MAX_SEED = 1000000
-RANDOM_STATE = 100
+RANDOM_STATE = 42
 logger = create_logger("scripts", logging.INFO)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 
 if __name__ == "__main__":
@@ -109,7 +110,6 @@ if __name__ == "__main__":
     input_file = args['input']
     direc = args['directory']
     retrain = args['retrain']
-    use_binary = args['binary']
     chain = args['chain']
 
     # Set up the folder for each experiment run named after the current time
@@ -185,9 +185,18 @@ if __name__ == "__main__":
                 for (a, b) in invalid:
                     fp.write("{}\t{}".format(a, b))
 
+        # Save and close session
+        logger.info("Commiting changes to database.")
+        try:
+            db_session.commit()
+            db_session.close()
+        except:
+            db_session.rollback()
+            raise
+
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
-    logger.info("Preparing training and testing data.")
+    logger.info("Preparing training and input interactions.")
     X_train, y_train = interactions_to_Xy_format(training, selection)
     X_test, _ = interactions_to_Xy_format(testing, selection)
 
@@ -234,51 +243,51 @@ if __name__ == "__main__":
         compute_proportions_shared, axis=1, arr=X_test_split_features
     )
 
-    mlb = MultiLabelBinarizer(classes=sorted(labels))
-    mlb.fit(y_train)
-    y_train = mlb.transform(y_train)
-
-    vectorizer = CountVectorizer(
-        binary=True if use_binary else False,
-        lowercase=False, stop_words=[':', 'GO']
-    )
-    X_train = vectorizer.fit_transform(X_train)
-    X_test = vectorizer.transform(X_test)
-
     # Make the estimators and BR classifier
     # -------------------------------------------------------------------- #
-    rng = RandomState(seed=RANDOM_STATE)
     if retrain or not os.path.isfile(classifier_path):
-        params = get_parameter_distribution_for_model(model)
-        random_cv = RandomizedSearchCV(
-            cv=StratifiedKFold(
-                n_splits=5,
-                shuffle=True,
-                random_state=rng.randint(MAX_SEED)
-            ),
-            n_iter=rcv_iter,
-            n_jobs=n_jobs,
-            refit=True,
-            random_state=rng.randint(MAX_SEED),
-            scoring='f1',
-            error_score=0.0,
-            param_distributions=params,
-            estimator=make_classifier(
-                model, random_state=rng.randint(MAX_SEED)
-            )
-        )
-        clf = OneVsRestClassifier(estimator=random_cv, n_jobs=1)
+        mlb = MultiLabelBinarizer(classes=sorted(labels))
+        mlb.fit(y_train)
+        y_train = mlb.transform(y_train)
 
-        # Fit the complete training data and make predictions.
+        if model == 'paper':
+            clf = paper_model(
+                labels=mlb.classes,
+                rcv_splits=n_splits,
+                rcv_iter=rcv_iter,
+                scoring="f1",
+                n_jobs_model=n_jobs,
+                n_jobs_gs=n_jobs,
+                n_jobs_br=1,
+                random_state=RANDOM_STATE
+            )
+        else:
+            pipeline = make_gridsearch_clf(
+                model=model,
+                rcv_splits=n_splits,
+                rcv_iter=rcv_iter,
+                scoring="f1",
+                n_jobs_model=n_jobs,
+                n_jobs_gs=n_jobs,
+                random_state=RANDOM_STATE,
+                search_vectorizer=True
+            )
+            estimators = [clone(pipeline) for _ in mlb.classes]
+            clf = MixedBinaryRelevanceClassifier(
+                estimators, n_jobs=1, verbose=verbose
+            )
+
+        # Saved to both the home directory and the output directory.
         logger.info("Fitting data.")
         clf.fit(X_train, y_train)
-        save_classifier(clf, selection, classifier_path)
+        save_classifier(clf, selection, mlb, classifier_path)
+        save_classifier(clf, selection, mlb, "{}/classifier.pkl".format(direc))
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
     logger.info("Making predictions.")
-    clf, selection = load_classifier(classifier_path)
+    clf, selection, mlb = load_classifier(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file
@@ -310,21 +319,25 @@ if __name__ == "__main__":
     # then into pubmed and psimi accessions
     pmids = []
     psimis = []
-    pubmed_map = {p.id for p in Pubmed.query.all()}
-    psimi_map = {p.id for p in Psimi.query.all()}
+    pubmed_map = {p.id: p for p in Pubmed.query.all()}
+    psimi_map = {p.id: p for p in Psimi.query.all()}
     for entry in testing:
         refs = entry.references()
         pmid_psimis = OrderedDict()
         for ref in refs:
             pmid = pubmed_map[ref.pubmed_id].accession
-            psimi = psimi_map[ref.psimi_id].accession
-            if pmid in pmid_psimis:
-                pmid_psimis[pmid].add(psimi)
+            if ref.psimi_id is not None:
+                psimi = psimi_map[ref.psimi_id].accession
             else:
+                psimi = None
+            if pmid not in pmid_psimis:
                 pmid_psimis[pmid] = set()
+            if psimi is not None:
+                pmid_psimis[pmid].add(psimi)
+
         # Join all associated psimi annotations with a pmid with '|'
         # to indicate a grouped collection.
-        for pmid, group in pmid_psimis:
+        for pmid, group in pmid_psimis.items():
             pmid_psimis[pmid] = '|'.join(group) or str(None)
         # Join all pmids and their assoicated groups with a comma.
         joined_pmids = ','.join(pmid_psimis.keys()) or None
@@ -386,6 +399,14 @@ if __name__ == "__main__":
         proportion = classified / predictions.shape[0]
         proportions[i] = proportion
 
+    # ------------- Rise and shine, it's plotting time! -------------------- #
+    plot_threshold_curve(
+        '{}/threshold.jpg'.format(direc),
+        thresholds=thresholds,
+        proportions=proportions,
+        dpi=350
+    )
+
     with open("{}/thresholds.csv".format(direc), 'wt') as fp:
         for (t, p) in zip(thresholds, proportions):
             fp.write("{},{}\n".format(t, p))
@@ -407,7 +428,8 @@ if __name__ == "__main__":
         "number of samples classified at 0.5": num_classified,
         "proportion of samples classified at 0.5": prop_classified,
 
-        "number of samples not classified at 0.5": X_test.shape[0] - num_classified,
+        "number of samples not classified at 0.5": (
+            X_test.shape[0] - num_classified),
         "proportion of samples not classified at 0.5": 1.0 - prop_classified,
 
         "samples with go usability >= 0.5": sum(
@@ -431,12 +453,3 @@ if __name__ == "__main__":
     )
     with open("{}/prediction_distribution.json".format(direc), 'wt') as fp:
         json.dump(label_dist, fp, indent=4, sort_keys=True)
-
-    # Save and close session
-    logger.info("Commiting changes to database.")
-    try:
-        db_session.commit()
-        db_session.close()
-    except:
-        db_session.rollback()
-        raise

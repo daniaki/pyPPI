@@ -10,9 +10,9 @@ from collections import OrderedDict as Od
 import numpy as np
 import pandas as pd
 
-from ..base import P1, P2, G1, G2, SOURCE, TARGET
-from ..database import begin_transaction
-from ..database.managers import InteractionManager, ProteinManager
+from ..base.constants import P1, P2, G1, G2, SOURCE, TARGET
+from ..database.models import Protein
+from ..database.utilities import full_training_network
 
 
 class InteractionNetwork(object):
@@ -28,17 +28,33 @@ class InteractionNetwork(object):
 
     Attributes
     -----------
-    interactions_: pd.DataFrame
+    interactions_: :class:`pd.DataFrame`
         The dataframe from the input parameter or loaded from the input
         parameter. Contains columns p1, p2, g1, g2 for the accession, and
         a series of ptm labels for each predicted label.
 
-    columns_: List[str]
+    columns_: list[str]
         List of columns in `interactions_`
 
-    gene_names_: Dictionary[str, str]
+    gene_names_: dict[str, str]
         A mapping of protein accession to gene accession
         found in `interactions_`
+
+    edges_ : list
+        List of tuples of `UniProt` accession parsed from the `source`
+        and `target` columns
+
+    output_dir_ : str
+        Output directory.
+
+    training_edges : set
+        Edges that are part of the training network according the 
+        database. These are the :class:`Interaction`s in the parsed file that
+        have instances with `is_training` set to True.
+
+    training_nodes : set
+        All :class:`Protein`s in the supplied interactions which appear in 
+        :class:`Interaction`s with `is_training` set to True.
     """
 
     def __init__(self, interactions, sep='\t', output_dir='./'):
@@ -62,17 +78,12 @@ class InteractionNetwork(object):
             if ('-pr' in c) and ('sum' not in c) and ('max' not in c)
         ]
 
-        i_manager = InteractionManager(verbose=False, match_taxon_id=None)
-        p_manager = ProteinManager(verbose=False, match_taxon_id=None)
-        with begin_transaction() as session:
-            training_edges = i_manager.training_interactions(
-                session, keep_holdout=True
-            )
-            for interaction in training_edges:
-                a = p_manager.get_by_id(session, interaction.source).uniprot_id
-                b = p_manager.get_by_id(session, interaction.target).uniprot_id
-                a, b = sorted((a, b))
-                self.training_edges.add((a, b))
+        training_edges = full_training_network(taxon_id=None)
+        for interaction in training_edges:
+            a = Protein.query.get(interaction.source).uniprot_id
+            b = Protein.query.get(interaction.target).uniprot_id
+            a, b = sorted((a, b))
+            self.training_edges.add((a, b))
 
         for (a, b) in self.training_edges:
             self.training_nodes.add(a)
@@ -104,12 +115,18 @@ class InteractionNetwork(object):
         Filter the interactions to contain those with predicted `label` at or
         over the `threshold`.
 
-        :param label: string
-            A ptm label.
-        :param threshold: float, optional
+        Parameters
+        ----------
+        label: string
+            A PTM label seen in `interactions_`
+
+        threshold: float, optional, default: 0.5
             Minimum prediction probability.
 
-        :return: Self
+        Returns
+        -------
+        :class:`InteractionNetwork`
+            Returns self
         """
         if label not in self.labels:
             raise ValueError(
@@ -140,15 +157,23 @@ class InteractionNetwork(object):
         accessions in `accesion_list` and with predictions at or
         over the `threshold`.
 
-        :param accesion_list: string
+        Parameters
+        ----------
+        accesion_list: string
             A list of uniprot/gene accessions to induce a network from.
             Network will induce all edges incident upon these accessions.
-        :param threshold: float, optional
-            Minimum prediction probability.
-        :param genes: boolean, optional
-            Use gene identifier accessions.
 
-        :return: Self
+        threshold: float
+            Minimum prediction probability.
+
+        genes: boolean, optional, default: False
+            Use gene identifier accessions in `interactions_` instead. Set this
+            to True if your `accession_list` is a list of gene names.
+
+        Returns
+        -------
+        :class:`InteractionNetwork`
+            Returns self
         """
         df = self.interactions_
         accesion_list = set(accession_list)

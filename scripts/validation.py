@@ -50,7 +50,7 @@ from numpy.random import RandomState
 from pyppi.base.utilities import su_make_dir
 from pyppi.base.arg_parsing import parse_args
 from pyppi.base.log import create_logger
-from pyppi.base.io import ipr_name_map, pfam_name_map
+from pyppi.base.io import ipr_name_map, pfam_name_map, save_classifier
 
 from pyppi.models.utilities import (
     make_classifier, get_parameter_distribution_for_model,
@@ -69,17 +69,12 @@ from pyppi.data_mining.ontology import get_active_instance
 
 from pyppi.predict.utilities import load_validation_dataset
 from pyppi.predict.utilities import interactions_to_Xy_format
+from pyppi.predict.plotting import plot_heatmaps
 
 
 from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.base import clone
-from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.pipeline import Pipeline
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.model_selection import RandomizedSearchCV
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import (
-    label_ranking_average_precision_score,
     label_ranking_loss, hamming_loss,
     f1_score, precision_score, recall_score
 )
@@ -310,7 +305,7 @@ if __name__ == "__main__":
 
     logger.info("Saving classifier")
     classifier_path = "{}/{}".format(direc, "classifier.pickle")
-    joblib.dump(clf, classifier_path)
+    save_classifier(clf, selection, mlb, classifier_path)
 
     # Compute label similarity heatmaps and label correlation heatmap
     # -------------------------------------------------------------------- #
@@ -433,3 +428,12 @@ if __name__ == "__main__":
             ).std()
             stderr = stdev / np.sqrt(n_iter)
             fp.write("{}\t{:.2f}\t{:.4f}\n".format(metric, mean, stderr))
+
+    # ---------------- Rise and shine, it's plotting time! ----------------- #
+    plot_heatmaps(
+        "{}/heat_maps.jpg".format(direc),
+        labels=mlb.classes,
+        correlation_matrix=s_label_correlation,
+        similarity_matrix=j_v_similarity_matrix,
+        dpi=350
+    )

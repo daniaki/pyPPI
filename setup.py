@@ -101,7 +101,7 @@ class InstallCache(PassThroughCommand):
         _install_cache()
 
 
-class RunTests(PassThroughCommand):
+class RunTests (PassThroughCommand):
     def run(self):
         os.system("python test.py")
 

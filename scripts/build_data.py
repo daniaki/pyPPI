@@ -345,7 +345,7 @@ if __name__ == "__main__":
     for interaction in Interaction.query.all():
         a = Protein.query.get(interaction.source)
         b = Protein.query.get(interaction.target)
-        uniprot_a, uniprot_b = sorted([a.uniprot_a, b.uniprot_b])
+        uniprot_a, uniprot_b = sorted([a.uniprot_id, b.uniprot_id])
         interactions[(uniprot_a, uniprot_b)] = interaction
 
     # Training should only update the is_training to true and leave other
@@ -457,15 +457,14 @@ if __name__ == "__main__":
                 continue
             if psimis is None:
                 ref = Reference(entry, pubmed_map[pmid], None)
+                references.append(ref)
             else:
                 for psimi in psimis:
                     if psimi is None:
-                        ref = Reference(
-                            entry, pubmed_map[pmid], None)
-                    else:
-                        ref = Reference(
-                            entry, pubmed_map[pmid], psimi_map[psimi])
-            references.append(ref)
+                        ref = Reference(entry, pubmed_map[pmid], None)
+                        continue
+                    ref = Reference(entry, pubmed_map[pmid], psimi_map[psimi])
+                    references.append(ref)
 
     try:
         db_session.add_all(references)

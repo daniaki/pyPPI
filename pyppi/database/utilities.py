@@ -1,252 +1,425 @@
 """
-The two methods `init_protein_database` and `init_interaction_database`
-are two utility functions to set up the local database tables with the data
-from the uniprot dumps and with interactions from the parsed networks.
+This module contains a collection of functions that perform common tasks 
+related to the database.
 """
 
 import logging
+from collections import OrderedDict
 
-from Bio import SwissProt
-from joblib import Parallel, delayed
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_, or_
+from sqlalchemy.orm.query import Query
 
-from ..base import SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED
-from ..base import is_null
-
-from ..data import uniprot_sprot, uniprot_trembl
+from ..base.constants import SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED
+from ..base.utilities import is_null, remove_duplicates
 from ..data_mining.features import compute_interaction_features
-from ..data_mining.uniprot import parse_record_into_protein
 
-from . import begin_transaction
+from . import db_session
 from .models import Interaction, Psimi, Protein, Pubmed
-from .managers import InteractionManager
-from .exceptions import ObjectAlreadyExists, ObjectNotFound
+from .exceptions import ObjectNotFound
+from .validators import (
+    validate_interaction_does_not_exist, validate_same_taxonid,
+    validate_source_and_target, validate_joint_id
+)
+
 
 logger = logging.getLogger("pyppi")
 
 
-def init_protein_table(record_handle=None, db_path=None):
+def uniprotid_entry_map():
+    """Creates a `dict` mapping from UniProt accession to it's 
+    :class:`Protein` for all instances in the database.
+
+    Returns
+    -------
+    dict[str, :class:`Protein`]
+        A dictionary mapping from UniProt accession to it's Protein instance.
     """
-    Create entries for each uniprot accession in `accessions` matching
-    the taxonomy id if `taxon_id` is not `None`.
+    proteins = Protein.query.all()
+    protein_map = {p.uniprot_id: p for p in proteins}
+    return protein_map
+
+
+def accession_entry_map(klass):
+    """Creates a `dict` mapping from accessions to the owning instance.
+    for all instances in the database represented by `klass`.
+
+    Parameters
+    ----------
+    klass : :class:`Pubmed` or :class:`Psimi`
+        A class having the accession attribute.
+
+    Returns
+    -------
+    dict[str, object]
+        A dictionary mapping from accession to the associated instance.
     """
-    if not record_handle:
-        records = list(SwissProt.parse(uniprot_sprot())) + \
-            list(SwissProt.parse(uniprot_trembl()))
+    if not hasattr(klass, 'accession'):
+        raise AttributeError(
+            "`{}` does not have the attribute `accession`." % klass.__name__
+        )
+    items = klass.query.all()
+    mapping = {e.accession: e for e in items}
+    return mapping
+
+
+def filter_matching_taxon_ids(query_set, taxon_id=None):
+    """Filters out all instances with a taxonomy id that does not match
+    `taxon_id` if taxon_id is not None. Taxonomy id must be one supported by
+    `UniProt`.
+
+    Parameters
+    ----------
+    query_set : :class:`Query`
+        A query instance from `sqlalchemy`
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`
+
+    Returns
+    -------
+    :class:`Query`
+        Filtered query instance.
+    """
+    if taxon_id is not None:
+        return query_set.filter_by(taxon_id=taxon_id)
     else:
-        records = list(SwissProt.parse(record_handle))
-    proteins = [parse_record_into_protein(r) for r in records]
-    with begin_transaction(db_path=db_path) as session:
-        for protein in proteins:
-            protein.save(session, commit=True)
-    return
+        return query_set
 
 
-def add_interaction(session, commit=False, verbose=False, psimi_ls=(),
-                    pmid_ls=(), existing_interactions=None,
-                    match_taxon_id=None, **class_kwargs):
-    try:
-        i_manager = InteractionManager(
-            verbose=verbose, match_taxon_id=match_taxon_id
+def training_interactions(strict=False, taxon_id=None):
+    """Return all :class:`Interaction` instances with `is_training` set
+    to `True`.
+
+    Parameters
+    ----------
+    strict : bool, optional, default: False
+        If strict, fiters out instances that also have `is_holdout` set to
+        True.
+
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id. Ignored if `None`.
+
+    Returns
+    -------
+    :class:`Query`
+        An sqlalchemy :class:`Query` instances containing 
+        :class:`Interaction` instances.
+    """
+    qs = Interaction.query.filter_by(is_training=True)
+    if strict:
+        qs = qs.filter_by(is_holdout=False)
+    return filter_matching_taxon_ids(qs, taxon_id)
+
+
+def holdout_interactions(strict=False, taxon_id=None):
+    """Return all :class:`Interaction` instances with `is_holdout` set
+    to `True`.
+
+    Parameters
+    ----------
+    strict : bool, optional, default: False
+        If strict, fiters out instances that also have `is_training` set to
+        True.
+
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id. Ignored if `None`.
+
+    Returns
+    -------
+    :class:`Query`
+        An sqlalchemy :class:`Query` instances containing 
+        :class:`Interaction` instances.
+    """
+    qs = Interaction.query.filter_by(is_holdout=True)
+    if strict:
+        qs = qs.filter_by(is_training=False)
+    return filter_matching_taxon_ids(qs, taxon_id)
+
+
+def full_training_network(taxon_id=None):
+    """Return all :class:`Interaction` instances with `is_holdout` and 
+    `is_training` set to `True`.
+
+    Parameters
+    ----------
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id. Ignored if `None`.
+
+    Returns
+    -------
+    :class:`Query`
+        An sqlalchemy :class:`Query` instances containing 
+        :class:`Interaction` instances.
+    """
+    qs = Interaction.query.filter(
+        or_(
+            Interaction.is_holdout == True,
+            Interaction.is_training == True
         )
-        source = class_kwargs["source"]
-        target = class_kwargs["target"]
-        if isinstance(source, Protein):
-            source = source.uniprot_id
-        if isinstance(target, Protein):
-            target = target.uniprot_id
+    )
+    return filter_matching_taxon_ids(qs, taxon_id)
 
-        if existing_interactions is not None:
-            entry = existing_interactions.get((source, target), None)
-        else:
-            entry = i_manager.get_by_source_target(session, source, target)
 
-        if entry is not None:
-            raise ObjectAlreadyExists(
-                "Interaction ({}, {}) already exists.".format(
-                    source, target)
+def interactome_interactions(taxon_id=None):
+    """Return all :class:`Interaction` instances with `is_interaction` 
+    set to `True`.
+
+    Parameters
+    ----------
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id. Ignored if `None`.
+
+    Returns
+    -------
+    :class:`Query`
+        An sqlalchemy :class:`Query` instances containing 
+        :class:`Interaction` instances.
+    """
+    qs = Interaction.query.filter_by(is_interactome=True)
+    return filter_matching_taxon_ids(qs, taxon_id)
+
+
+def labels_from_interactions(interactions=None, taxon_id=None):
+    """Return all labels from an iterable of :class:`Interaction` instances.
+    By default, :func:`full_training_network` will be called to obtain
+    all training and holdout instances.
+
+    Parameters
+    ----------
+    interactions : iterable, optional.
+        An iterable of :class:`Interaction` objects. If `None`, 
+        :func:`full_training_network` is called to obtain interactions.
+
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id before collecting labels. 
+        Ignored if `None`.
+
+    Returns
+    -------
+    `list`
+        A list of sorted labels.
+    """
+    if interactions is None:
+        interactions = full_training_network(taxon_id).all()
+    labels = set()
+    for interaction in interactions:
+        labels |= set(interaction.labels_as_list)
+    return list(sorted(labels))
+
+
+def get_upid_to_protein_map(uniprot_ids, taxon_id=None):
+    """Builds a `dict` mapping from the given UniProt accession strings
+    to their instances stored in the database, if it exists.
+
+    Parameters:
+    ----------
+    uniprot_ids : `list`
+        List of UniProt accession.
+
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id before collecting labels. 
+        Ignored if `None`.
+
+    Returns
+    -------
+    `OrderedDict`
+        Mapping from UniProt accession to :class:`Protein` or None.
+    """
+    uniprot_ids = remove_duplicates(
+        [upid for upid in uniprot_ids if upid is not None]
+    )
+    mapping = OrderedDict()
+
+    if taxon_id is not None:
+        matches = Protein.query.filter(
+            and_(
+                Protein.uniprot_id.in_(uniprot_ids),
+                Protein.taxon_id == taxon_id
             )
-        else:
-            entry = Interaction(
-                source=class_kwargs["source"],
-                target=class_kwargs["target"],
-                label=class_kwargs["label"],
-                is_interactome=class_kwargs["is_interactome"],
-                is_training=class_kwargs["is_training"],
-                is_holdout=class_kwargs["is_holdout"],
-                go_mf=class_kwargs["go_mf"],
-                go_bp=class_kwargs["go_bp"],
-                go_cc=class_kwargs["go_cc"],
-                ulca_go_mf=class_kwargs["ulca_go_mf"],
-                ulca_go_bp=class_kwargs["ulca_go_bp"],
-                ulca_go_cc=class_kwargs["ulca_go_cc"],
-                interpro=class_kwargs["interpro"],
-                pfam=class_kwargs["pfam"],
-                keywords=class_kwargs["keywords"],
-            )
-            entry.save(session, commit=commit)
-            for psimi in psimi_ls:
-                entry.add_psimi_reference(psimi)
-            for pmid in pmid_ls:
-                entry.add_pmid_reference(pmid)
-            return entry
-    except Exception as e:
-        logger.exception(e)
-        raise
-
-
-def update_interaction(session, commit=False, psimi_ls=(), pmid_ls=(),
-                       replace_fields=False, override_boolean=False,
-                       create_if_not_found=False, match_taxon_id=None,
-                       verbose=False, update_features=True,
-                       existing_interactions=None, **class_kwargs):
-    try:
-        i_manager = InteractionManager(
-            verbose=verbose, match_taxon_id=match_taxon_id
         )
-        source = class_kwargs["source"]
-        target = class_kwargs["target"]
-        if isinstance(source, Protein):
-            source = source.uniprot_id
-        if isinstance(target, Protein):
-            target = target.uniprot_id
+    else:
+        matches = Protein.query.filter(
+            Protein.uniprot_id.in_(uniprot_ids)
+        )
 
-        if existing_interactions is not None:
-            entry = existing_interactions.get((source, target), None)
-        else:
-            entry = i_manager.get_by_source_target(session, source, target)
+    for p in matches.all():
+        mapping[p.uniprot_id] = p
+    for upid in uniprot_ids:
+        if upid not in mapping:
+            mapping[upid] = None
+    return mapping
 
-        if entry is None and not create_if_not_found:
-            raise ObjectNotFound(
-                "Interaction ({}, {}) doesn't exist.".format(source, target)
+
+def get_source_taget_to_interactions_map(id_ppis, taxon_id=None):
+    """Builds a `dict` mapping from a tuple of integer ids representing
+    the :class:`Protein` source and target primary keys to the associtated 
+    :class:`Interaction` instance if it exists.
+
+    Parameters:
+    ----------
+    id_ppis : `list`
+        List of `tuples` of integer ids representing the source and target
+        :class:`Protein`. The ids should be the protein's integer primary key.
+
+    taxon_id : int, optional
+        An integer taxonomy id supported by `UniProt`. Filter out interactions
+        with a non-matching taxonomy id before collecting labels. 
+        Ignored if `None`.
+
+    Returns
+    -------
+    `OrderedDict`
+        Mapping from (int, int) source, target tuple to  :class:`Interaction` 
+        or None.
+    """
+    id_ppis = remove_duplicates(id_ppis)
+    sources = [s for s, _ in id_ppis]
+    targets = [t for _, t in id_ppis]
+    mapping = OrderedDict()
+
+    if taxon_id is not None:
+        matches = Interaction.query.filter(
+            and_(
+                Interaction.source_.in_(sources),
+                Interaction.target_.in_(targets),
+                Interaction.taxon_id == taxon_id
             )
-        elif entry is None and create_if_not_found:
-            return add_interaction(
-                session, commit=commit,
-                existing_interactions=existing_interactions,
-                psimi_ls=psimi_ls, pmid_ls=pmid_ls,
-                **class_kwargs
+        )
+    else:
+        matches = Interaction.query.filter(
+            and_(
+                Interaction.source_.in_(sources),
+                Interaction.target_.in_(targets)
             )
+        )
 
-        if replace_fields:
-            entry.label = class_kwargs["label"]
-            entry.is_interactome = class_kwargs["is_interactome"]
-            entry.is_training = class_kwargs["is_training"]
-            entry.is_holdout = class_kwargs["is_holdout"]
-            entry.go_mf = class_kwargs["go_mf"]
-            entry.go_bp = class_kwargs["go_bp"]
-            entry.go_cc = class_kwargs["go_cc"]
-            entry.ulca_go_mf = class_kwargs["ulca_go_mf"]
-            entry.ulca_go_bp = class_kwargs["ulca_go_bp"]
-            entry.ulca_go_cc = class_kwargs["ulca_go_cc"]
-            entry.interpro = class_kwargs["interpro"]
-            entry.pfam = class_kwargs["pfam"]
-            entry.keywords = class_kwargs["keywords"]
+    matches = {(m.source, m.target): m for m in matches.all()}
+    for (source, target) in id_ppis:
+        mapping[(source, target)] = matches.get((source, target), None)
+    return mapping
 
+
+def create_interaction(source, target, labels=None, session=None,
+                       save=False, commit=False, verbose=False, **kwargs):
+    """Create an :class:`Interaction` instance with `source` and `target`
+    as the interactors.
+
+    Parameters
+    ----------
+    source : int, str or :class:`Protein`
+        Source protein of the interaction. It can either be the int `id`
+        of the protein, the instance itself or the `uniprot_id` of the protein.
+        If creating many interactions, it will be much faster to pass
+        in the protein instance itself to avoid constant database queries
+        during validation.
+
+    target : int, str or :class:`Protein`
+        Target protein of the interaction. It can either be the int `id`
+        of the protein, the instance itself or the `uniprot_id` of the protein.
+        If creating many interactions, it will be much faster to pass
+        in the protein instance itself to avoid constant database queries
+        during validation.
+
+    label : str or list, optional, default: None
+        A label or list of labels for this interaction.
+
+    is_interactome : bool, optional, default: False
+        Indicates if this interaction belongs to an interactome dataset.
+
+    is_training : bool, optional, default: False
+        Indicates if this interaction belongs to a training dataset. Must
+        be labelled if this is set as True.
+
+    is_holdout : bool, optional, default: False
+        Indicates if this interaction belongs to a holdout dataset. Must
+        be labelled if this is set as True.
+
+    go_mf : str, optional, default: None
+        A comma delimited string of Gene Ontology: Molecular Function
+        annotations.
+
+    go_bp : str, optional, default: None
+        A comma delimited string of Gene Ontology: Biological Process
+        annotations.
+
+    go_cc : str, optional, default: None
+        A comma delimited string of Gene Ontology: Cellular Component
+        annotations.
+
+    ulca_go_mf : str, optional, default: None
+        A comma delimited string of Gene Ontology: Molecular Function
+        annotations computed using feature induction.
+
+    ulca_go_bp : str, optional, default: None
+        A comma delimited string of Gene Ontology: Biological Process
+        annotations computed using feature induction.
+
+    ulca_go_cc : str, optional, default: None
+        A comma delimited string of Gene Ontology: Cellular Component
+        annotations computed using feature induction.
+
+    interpro : str, optional, default: None
+        A comma delimited string of InterPro domain annotations.
+
+    pfam : str, optional, default: None
+        A comma delimited string of Pfam annotations.
+
+    keywords : str, optional, default: None
+        A comma delimited string of keyword annotations.
+
+    session : :class:`scoped_session`, optional.
+        A session instance to save to. Leave as None to use the default
+        session and save to the database located at `~/.pyppi/pyppi.db`
+
+    commit : bool, default: False
+        Commit attempts to save changes to the database, wrapped within
+        an atomic transaction. If an error occurs, any changes will be
+        rolledback. Ignored if `save` is False.
+
+    save : bool, optional, default: False
+        Save instance to the database.
+
+    verbose : bool, default: False
+        Log messages that occur during the call.
+
+    Returns
+    -------
+    :class:`Interaction`
+        The created interaction instance.
+    """
+    if session is None:
+        session = db_session
+    try:
+        is_interactome = kwargs.get('is_interactome', False)
+        is_holdout = kwargs.get('is_holdout', False)
+        is_training = kwargs.get('is_training', False)
+        go_mf = kwargs.get('go_mf', None)
+        go_bp = kwargs.get('go_bp', None)
+        go_cc = kwargs.get('go_cc', None)
+        ulca_go_mf = kwargs.get('ulca_go_mf', None)
+        ulca_go_bp = kwargs.get('ulca_go_bp', None)
+        ulca_go_cc = kwargs.get('ulca_go_cc', None)
+        pfam = kwargs.get('pfam', None)
+        interpro = kwargs.get('interpro', None)
+        keywords = kwargs.get('keywords', None)
+
+        entry = Interaction(
+            source=source, target=target, label=labels,
+            is_interactome=is_interactome, is_training=is_training,
+            is_holdout=is_holdout, go_mf=go_mf, go_bp=go_bp, go_cc=go_cc,
+            ulca_go_mf=ulca_go_mf, ulca_go_bp=ulca_go_bp,
+            ulca_go_cc=ulca_go_cc, interpro=interpro, pfam=pfam,
+            keywords=keywords
+        )
+        if save:
             entry.save(session, commit=commit)
-            current_psimis = entry.psimi
-            current_pmids = entry.pmid
-            for psimi in current_psimis:
-                entry.remove_psimi_reference(psimi)
-            for pmid in current_pmids:
-                entry.remove_pmid_reference(pmid)
-            for psimi in psimi_ls:
-                entry.add_psimi_reference(psimi)
-            for pmid in pmid_ls:
-                entry.add_pmid_reference(pmid)
-        else:
-            new_label = class_kwargs["label"]
-            if new_label:
-                entry.label = entry.labels_as_list + new_label.split(',')
-
-            if override_boolean:
-                entry.is_interactome = class_kwargs["is_interactome"]
-                entry.is_training = class_kwargs["is_training"]
-                entry.is_holdout = class_kwargs["is_holdout"]
-            else:
-                entry.is_interactome |= class_kwargs["is_interactome"]
-                entry.is_training |= class_kwargs["is_training"]
-                entry.is_holdout |= class_kwargs["is_holdout"]
-
-            if update_features:
-                annotation_keys = [
-                    "go_mf", "go_bp", "go_cc",
-                    "ulca_go_mf", "ulca_go_bp", "ulca_go_cc",
-                    "interpro", "pfam", "keywords"
-                ]
-                for key in annotation_keys:
-                    new_values = class_kwargs[key]
-                    if new_values:
-                        curr_values = getattr(entry, key)
-                        if curr_values is not None:
-                            value = curr_values.split(',') + \
-                                new_values.split(',')
-                            setattr(entry, key, value)
-                        else:
-                            setattr(entry, key, new_values)
-
-            entry.save(session, commit=commit)
-            for psimi in psimi_ls:
-                entry.add_psimi_reference(psimi)
-            for pmid in pmid_ls:
-                entry.add_pmid_reference(pmid)
-
         return entry
     except Exception as e:
-        logger.exception(e)
+        if verbose:
+            logger.exception(e)
         raise
-
-
-def pmid_string_to_list(session, pmids):
-    if is_null(pmids):
-        return []
-
-    entries = []
-    for pmid in pmids.split(','):
-        entry = session.query(Pubmed).filter_by(
-            accession=pmid
-        ).first()
-        if entry is None:
-            raise ObjectNotFound("Pubmed {} does not exist.".format(pmid))
-        else:
-            entries.append(entry)
-    return entries
-
-
-def psimi_string_to_list(session, psimis):
-    if is_null(psimis):
-        return []
-
-    entries = []
-    for psimi in psimis.split(','):
-        entry = session.query(Psimi).filter_by(
-            accession=psimi
-        ).first()
-        if entry is None:
-            raise ObjectNotFound("Psimi {} does not exist.".format(psimi))
-        else:
-            entries.append(entry)
-    return entries
-
-
-def generate_interaction_tuples(df):
-    zipped = zip(
-        df[SOURCE],
-        df[TARGET],
-        df[LABEL],
-        df[PUBMED],
-        df[EXPERIMENT_TYPE]
-    )
-    for (uniprot_a, uniprot_b, label, pmids, psimis) in zipped:
-        if is_null(uniprot_a):
-            raise ValueError("Source cannot be None")
-        if is_null(uniprot_b):
-            raise ValueError("Target cannot be None")
-        if is_null(label):
-            label = None
-        if is_null(pmids):
-            pmids = None
-        if is_null(psimis):
-            psimis = None
-
-        yield (uniprot_a, uniprot_b, label, pmids, psimis)

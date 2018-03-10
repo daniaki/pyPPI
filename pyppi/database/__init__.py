@@ -5,6 +5,7 @@ session that should be used for all transactions.
 """
 
 import os
+import atexit
 import logging
 from contextlib import contextmanager
 
@@ -12,106 +13,81 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 
-from ..data import default_db_path
+from ..base.file_paths import default_db_path
 
 logger = logging.getLogger("pyppi")
+db_engine = create_engine(
+    "sqlite:///" + os.path.normpath(default_db_path),
+    convert_unicode=True, connect_args={'check_same_thread': False}
+)
+db_session = scoped_session(
+    sessionmaker(autocommit=False, autoflush=False,  bind=db_engine)
+)
 Base = declarative_base()
+Base.query = db_session.query_property()
 
 
-def __init_database(engine):
+def init_database(engine):
     from .models import (
-        Protein, Interaction, Pubmed, Psimi,
-        psimi_interactions, pmid_interactions
+        Protein, Interaction, Pubmed, Psimi, Reference
     )
     Base.metadata.create_all(bind=engine, checkfirst=True)
-    psimi_interactions.create(bind=engine, checkfirst=True)
-    pmid_interactions.create(bind=engine, checkfirst=True)
 
 
-def create_default_engine():
+def create_session(db_path, echo=False):
+    from .models import (
+        Protein, Interaction, Pubmed, Psimi, Reference
+    )
     try:
         engine = create_engine(
-            "sqlite:///" + os.path.normpath(default_db_path)
+            "sqlite:///" + os.path.normpath(db_path),
+            convert_unicode=True, connect_args={'check_same_thread': False}
         )
-        return engine
-    except:
-        logger.exception(
-            "Could not create an engine for {}.".format(default_db_path)
+        session = scoped_session(
+            sessionmaker(autocommit=False, autoflush=False, bind=engine)
         )
-        raise
+        Base.query = session.query_property()
+        init_database(engine)
 
+        Protein.query = session.query_property()
+        Interaction.query = session.query_property()
+        Pubmed.query = session.query_property()
+        Psimi.query = session.query_property()
+        Reference.query = session.query_property()
 
-@contextmanager
-def begin_transaction(db_path=None, echo=False):
-    session = None
-    try:
-        if db_path is not None:
-            engine = create_engine("sqlite:///" + os.path.normpath(db_path))
-            __init_database(engine)
-        else:
-            engine = create_default_engine()
-            __init_database(engine)
-
-        session = Session(bind=engine)
-        yield session
-        session.commit()
-        session.close()
-    except:
-        if session is not None:
-            session.rollback()
-            session.close()
-        raise
-
-
-def make_session(db_path=None, echo=False):
-    try:
-        if db_path is not None and db_path != default_db_path:
-            engine = create_engine("sqlite:///" + os.path.normpath(db_path))
-            __init_database(engine)
-        else:
-            engine = create_default_engine()
-            __init_database(engine)
-
-        session = Session(bind=engine)
-        return session
+        return session, engine
     except:
         raise
 
 
-def delete_database(session=None, db_path=None):
+def cleanup_module():
+    logger.info("Closing database session.")
+    global db_session
+    global db_engine
+    db_session.remove()
+    db_session.close_all()
+    db_engine.dispose()
+
+
+def cleanup_database(session, engine):
+    session.remove()
+    session.close_all()
+    engine.dispose()
+
+
+def delete_database(session):
     from ..database.models import (
-        Protein, Interaction, Pubmed, Psimi,
-        psimi_interactions, pmid_interactions
+        Protein, Interaction, Pubmed, Psimi, Reference
     )
-    if db_path is None:
-        db_path = default_db_path
 
-    if session is None:
-        with begin_transaction(db_path=db_path) as session:
-            session.query(Protein).delete()
-            session.query(Interaction).delete()
-            session.query(Pubmed).delete()
-            session.query(Psimi).delete()
+    session.query(Protein).delete()
+    session.query(Interaction).delete()
+    session.query(Pubmed).delete()
+    session.query(Psimi).delete()
+    session.query(Reference).delete()
 
-            session.query(psimi_interactions).delete(synchronize_session=False)
-            session.query(pmid_interactions).delete(synchronize_session=False)
-
-            try:
-                session.commit()
-            except:
-                session.rollback()
-                raise
-    else:
-        session.query(Protein).delete()
-        session.query(Interaction).delete()
-        session.query(Pubmed).delete()
-        session.query(Psimi).delete()
-
-        session.query(psimi_interactions).delete(synchronize_session=False)
-        session.query(pmid_interactions).delete(synchronize_session=False)
-
-        try:
-            session.commit()
-        except:
-            session.rollback()
-            raise
+    try:
+        session.commit()
+    except:
+        session.rollback()
+        raise

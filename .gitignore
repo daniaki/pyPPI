@@ -1,8 +1,13 @@
 .idea/*
 .idea/
 
-data/*
-data/
+data/networks/*
+data/networks/
+data/versions/*
+data/versions/
+data/*.gz
+data/*.list
+scripts/plotting/data/*
 
 results/*
 
