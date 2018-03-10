@@ -33,8 +33,6 @@ def _fit_fold(estimator, X, y, train_idx, fold_idx, verbose, **fit_params):
 
 def _score_fold(estimator, X, y, validation_idx, fold_idx, verbose,
                 sample_weight, **score_params):
-    # if verbose:
-    #     logger.info("Scoring fold %d." % (fold_idx + 1))
     if validation_idx is not None:
         X = X[validation_idx]
         y = y[validation_idx]
