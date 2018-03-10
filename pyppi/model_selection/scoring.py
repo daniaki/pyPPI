@@ -30,7 +30,7 @@ def fdr_score(y_true, y_pred, average=None, sample_weight=None):
 
 def positive_label_hammming_loss(y_true, y_score, sample_weight=None):
     """
-    This is a relaxed version of the Hamming Loss function.
+    This is a relaxed version of the Hamming-Loss function.
     It computes the hamming loss over the positive labels appearing in
     `y_true` only. This may be desirable when you are most interested in
     penalising false negatives, or where false positives may represent
