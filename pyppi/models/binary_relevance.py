@@ -237,7 +237,7 @@ class MixedBinaryRelevanceClassifier(object):
 
         Returns
         -------
-        score : float or array-like (n_labels, ) if scoring uses binary.
+        `float` oe array-like (n_labels, ) if scoring uses binary.
             Mean score of self.predict(X) wrt. y.
         """
         self._check_y_shape(y)
