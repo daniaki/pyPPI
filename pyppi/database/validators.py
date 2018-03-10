@@ -358,7 +358,7 @@ def validate_accession(value, klass=None, upper=True, check_exists=True):
     if upper:
         value = value.strip().upper()
     else:
-        value = value.strip()
+        valu = value.strip()
 
     if check_exists:
         if klass.__name__ == 'Protein':
