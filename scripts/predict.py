@@ -399,7 +399,7 @@ if __name__ == "__main__":
         proportion = classified / predictions.shape[0]
         proportions[i] = proportion
 
-    # ------------- Rise and shine, it's plotting time! -------------------- #
+    # ------------- Rise and shine, it's plotting time! ------------------- #
     plot_threshold_curve(
         '{}/threshold.jpg'.format(direc),
         thresholds=thresholds,

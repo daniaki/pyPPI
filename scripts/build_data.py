@@ -69,7 +69,7 @@ if __name__ == "__main__":
     verbose = args['verbose']
 
     # Setup the protein table in the database
-    # ----------------------------------------------------------------------- #
+    # --------------------------------------------------------------------- #
     if clear_cache:
         logger.info("Clearing Biopython/Bioservices cache.")
         delete_cache()
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         raise
 
     # Construct all the networks
-    # ----------------------------------------------------------------------- #
+    # --------------------------------------------------------------------- #
     logger.info("Building KEGG interactions.")
     pathways = download_pathway_ids('hsa')
     kegg = pathways_to_dataframe(

@@ -429,7 +429,7 @@ if __name__ == "__main__":
             stderr = stdev / np.sqrt(n_iter)
             fp.write("{}\t{:.2f}\t{:.4f}\n".format(metric, mean, stderr))
 
-    # ---------------- Rise and shine, it's plotting time! ----------------- #
+    # ---------------- Rise and shine, it's plotting time! ---------------- #
     plot_heatmaps(
         "{}/heat_maps.jpg".format(direc),
         labels=mlb.classes,
