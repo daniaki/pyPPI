@@ -21,5 +21,5 @@ class ObjectAlreadyExists(Exception):
 class NonMatchingTaxonomyIds(Exception):
     """
     This exception should be raised when an interaction with two
-    non-matching protein taxonomies is being created.
+    non-matching protein taxonomy ids is being created.
     """
