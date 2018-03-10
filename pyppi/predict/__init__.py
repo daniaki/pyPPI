@@ -446,7 +446,8 @@ def make_predictions(ppis, proba=True, classifier=None, selection=None,
     )
     if mlb is not None:
         labels = mlb.classes
-    labels = None
+    else:
+        labels = None
 
     # Make predictions with the saved/supplied model.
     if len(valid):
