@@ -200,20 +200,22 @@ def save_network_to_path(interactions, path):
     return interactions.to_csv(path, sep='\t', index=False, na_rep=str(None))
 
 
-def save_classifier(clf, selection, path=None):
-    """Save a tuple of :module:`sklearn` classifier object and `list` to 
-    path (defaults to home directory),
+def save_classifier(clf, selection, mlb, path=None):
+    """Save a tuple of :module:`sklearn` classifier object, `list` of
+    feature databases used to train the classifier (any of `go_mf`, `go_cc`, 
+    `go_bp`, `interpro` or `pfam`) and the `MultiLabelBinarizer` used to 
+    format the y-matrix to path (defaults to home directory).
     """
     if path is None:
         path = classifier_path
-    return joblib.dump((clf, selection), path)
+    return joblib.dump((clf, selection, mlb), path)
 
 
 def load_classifier(path=None):
-    """Load a tuple of :module:`sklearn` classifier object and `list` from  
-    path (defaults to home directory). The list contains the databases
-    used to train the classifier, which can be one of `go_mf`, `go_cc`,
-    `go_bp`, `interpro` or `pfam`.
+    """Load a tuple of :module:`sklearn` classifier object, `list` and 
+    `MultiLabelBinarizer` from path (defaults to home directory). 
+    The list contains the databases used to train the classifier, which
+    can be one of `go_mf`, `go_cc`, `go_bp`, `interpro` or `pfam`.
 
     Returns
     -------
@@ -223,8 +225,8 @@ def load_classifier(path=None):
     """
     if path is None:
         path = classifier_path
-    clf, sel = joblib.load(path)
-    return clf, sel
+    clf, sel, mlb = joblib.load(path)
+    return clf, sel, mlb
 
 
 def download_from_url(url, save_path, compress=False):

@@ -199,7 +199,7 @@ def parse_args(docopt_args, require_features=False, predict_script=False):
             parsed['classifier'] = None
         elif _query_doctop_dict(docopt_args, '--classifier'):
             try:
-                clf, sel = load_classifier(docopt_args['--classifier'])
+                clf, sel, mlb = load_classifier(docopt_args['--classifier'])
                 if len(sel) == 0:
                     raise ValueError("Saved selection cannot be empty")
                 elif not all([s in VALID_SELECTION for s in sel]):
@@ -209,7 +209,7 @@ def parse_args(docopt_args, require_features=False, predict_script=False):
                             sel, VALID_SELECTION
                         )
                     )
-                parsed['classifier'] = (clf, sel)
+                parsed['classifier'] = (clf, sel, mlb)
             except (IOError, ValueError) as e:
                 sys.stdout.write(e)
                 sys.exit(0)
@@ -217,7 +217,9 @@ def parse_args(docopt_args, require_features=False, predict_script=False):
     # Model parsing
     model = _query_doctop_dict(docopt_args, '--model')
     if model is not None:
-        if (model not in supported_estimators()):
+        if model == "paper":
+            parsed["model"] = model
+        elif (model not in supported_estimators()):
             sys.stdout.write(
                 'Classifier not supported. Please choose one of: {}'.format(
                     '\t\n'.join(supported_estimators().keys())
