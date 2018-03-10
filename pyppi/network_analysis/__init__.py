@@ -117,7 +117,7 @@ class InteractionNetwork(object):
 
         Parameters
         ----------
-        label: string
+        label: str
             A PTM label seen in `interactions_`
 
         threshold: float, optional, default: 0.5
@@ -159,7 +159,7 @@ class InteractionNetwork(object):
 
         Parameters
         ----------
-        accesion_list: string
+        accesion_list: str
             A list of uniprot/gene accessions to induce a network from.
             Network will induce all edges incident upon these accessions.
 
