@@ -176,7 +176,7 @@ class Protein(Base):
     def get_by_uniprot_id(cls, uniprot_id):
         """Return the instance associated with a particular UniProt accession.
 
-        Parameters:
+        Parameters
         ----------
         uniprot_id : str
             A UniProt accession string.
@@ -326,7 +326,7 @@ class Protein(Base):
     def release_outdated(self, release):
         """Compares the release of this instance to that passed in. 
 
-        Parameters:
+        Parameters
         ----------
         release : int
             Integer UniProt release number.
@@ -347,7 +347,7 @@ class Protein(Base):
         """Compares the date of the last annotation update of this instance
         to the date supplied.
 
-        Parameters:
+        Parameters
         ----------
         release : datetime or str.
             A datetime object or a string in the form DD-MMM-YYY indicating 
@@ -490,7 +490,7 @@ class Interaction(Base):
         will search for interactions matching (a, b) and (b, a) using the 
         `joint_id` column.
 
-        Parameters:
+        Parameters
         ----------
         a : str, int or :class:`Protein`
             A UniProt accession string, int id of a :class:`Protein` instance
@@ -518,7 +518,7 @@ class Interaction(Base):
     def get_by_label(cls, label):
         """Return the instances associated with the given label.
 
-        Parameters:
+        Parameters
         ----------
         label : str
             A label in string format.
@@ -540,7 +540,7 @@ class Interaction(Base):
         """Return the instances having the `source` column associated with
         the input source.
 
-        Parameters:
+        Parameters
         ----------
         source : str, int or :class:`Protein`
             A UniProt accession string, int id of a :class:`Protein` instance
@@ -563,7 +563,7 @@ class Interaction(Base):
         """Return the instances having the `target` column associated with
         the input target.
 
-        Parameters:
+        Parameters
         ----------
         target : str, int or :class:`Protein`
             A UniProt accession string, int id of a :class:`Protein` instance
