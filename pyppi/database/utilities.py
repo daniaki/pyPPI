@@ -215,7 +215,7 @@ def get_upid_to_protein_map(uniprot_ids, taxon_id=None):
     """Builds a `dict` mapping from the given UniProt accession strings
     to their instances stored in the database, if it exists.
 
-    Parameters:
+    Parameters
     ----------
     uniprot_ids : `list`
         List of UniProt accession.
@@ -260,7 +260,7 @@ def get_source_taget_to_interactions_map(id_ppis, taxon_id=None):
     the :class:`Protein` source and target primary keys to the associtated 
     :class:`Interaction` instance if it exists.
 
-    Parameters:
+    Parameters
     ----------
     id_ppis : `list`
         List of `tuples` of integer ids representing the source and target
