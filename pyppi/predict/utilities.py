@@ -47,7 +47,7 @@ def paper_model(labels, rcv_splits=3, rcv_iter=30, scoring='f1',
     classifier is created. The estimator inside the grid search for
     each label are those specified by :func:`publication_ensemble`.
 
-    Parameters:
+    Parameters
     ----------
     labels : list
         List of labels which will be used to initialise a `Binary Relevance`
@@ -107,7 +107,7 @@ def validation_model(labels, model='LogisticRegression', rcv_splits=3,
     classifier is created. The estimator inside the grid search is that
     specified by `model`
 
-    Parameters:
+    Parameters
     ----------
     labels : list
         List of labels which will be used to initialise a `Binary Relevance`
@@ -166,7 +166,7 @@ def interactions_to_Xy_format(interactions, selection):
     into `X, y` format. No vectorisation or binarisation is computed
     during this function.
 
-    Parameters:
+    Parameters
     ----------
     interactions : list
         List of :class:`Interaction` instances.
@@ -216,7 +216,7 @@ def load_dataset(interactions, labels=None, selection=DEFAULT_SELECTION):
     during this function. If `labels` is supplied, the `y` is returned
     as an `indicator matrix`.
 
-    Parameters:
+    Parameters
     ----------
     interactions : list
         List of :class:`Interaction` instances.
@@ -262,7 +262,7 @@ def load_training_dataset(taxon_id=9606, selection=DEFAULT_SELECTION):
     :class:`MultiLabelBinarizer`. The binarizer and parsed labels
     are also returned.
 
-    Parameters:
+    Parameters
     ----------
     taxon_id : int, optional, default: 9606
         Load the training data for a specific organism. Removes all
@@ -305,7 +305,7 @@ def load_validation_dataset(taxon_id=9606, selection=DEFAULT_SELECTION):
     are also returned. The labels are parsed from the interactions that
     are strictly training only.
 
-    Parameters:
+    Parameters
     ----------
     taxon_id : int, optional, default: 9606
         Load the training/holdout data for a specific organism. Removes all
@@ -353,7 +353,7 @@ def load_interactome_dataset(taxon_id=9606, selection=DEFAULT_SELECTION):
     """Loads the :func:`interactome_interactions` and converts these into
     X, the textual features of each interaction as defined by `selection`.
 
-    Parameters:
+    Parameters
     ----------
     taxon_id : int, optional, default: 9606
         Load the interactome data for a specific organism. Removes all
@@ -380,7 +380,7 @@ def train_paper_model(rcv_splits=3, rcv_iter=30, scoring='f1', n_jobs_model=1,
     all interaction instances that are strictly training (`is_training` flag
     is True) as returned by :func:`load_training_dataset`.
 
-    Parameters:
+    Parameters
     ----------
     rcv_splits : int, optional, default: 3
         The number of splits to use during hyper-parameter cross-validation.
@@ -418,7 +418,7 @@ def train_paper_model(rcv_splits=3, rcv_iter=30, scoring='f1', n_jobs_model=1,
 
     Returns
     -------
-    tuple
+    `tuple`
         First element is a :class:`MixedBinaryRelevanceClassifier` and the
         second is a list specifying the feature selection it was trained on.
     """
@@ -444,7 +444,7 @@ def save_to_arff(file_path, interactions, labels, selection,
                  vectorizer=None, unlabelled=False, meka=True, use_bzip=True):
     """Formats interactions for `Weka/Meka` by contructing an `arff` file.
 
-    Parameters:
+    Parameters
     ----------
     file_path : str
         File path to save the arff file to.
