@@ -41,8 +41,8 @@ class IterativeStratifiedKFold(_BaseKFold):
         )
 
     def clone(self):
-        return IterativeStratifiedKFold(self.n_splits,
-                                        self.shuffle, self.random_state)
+        return IterativeStratifiedKFold(
+            self.n_splits, self.shuffle, self.random_state)
 
     def _iterative_stratification(self, y):
         """
