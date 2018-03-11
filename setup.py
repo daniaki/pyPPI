@@ -10,7 +10,7 @@ import shutil
 import importlib
 
 bioservices_cache_linux = ".cache/bioservices/"
-bioservices_cache_darwin = ".cache/bioservices/"
+bioservices_cache_darwin = "Library/Caches/bioservices/"
 bioservices_cache_win = "AppData/Local/bioservices/bioservices/"
 
 PLATFORM = sys.platform
