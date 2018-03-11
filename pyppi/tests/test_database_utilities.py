@@ -25,7 +25,11 @@ from ..database.utilities import (
     labels_from_interactions,
     get_upid_to_protein_map,
     get_source_taget_to_interactions_map,
-    create_interaction
+    create_interaction,
+    proteins_from_dat,
+    psimi_from_obo,
+    pmids_from_list,
+    psimis_from_list
 )
 from ..database.models import (
     Protein, Interaction, Psimi, Pubmed
@@ -503,3 +507,200 @@ class TestSTInteractionMap(TestCase):
         expected[(1, 1)] = self.ia
         expected[(2, 3)] = None
         self.assertEqual(mapping, expected)
+
+
+class TestProteinsFromDat(TestCase):
+    def setUp(self):
+        self.db_path = os.path.normpath(
+            "{}/databases/test.db".format(base_path)
+        )
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
+
+        self.records_hsa = os.path.normpath(
+            "{}/test_data/test_sprot_records.dat".format(base_path)
+        )
+        self.records_hsa_gz = os.path.normpath(
+            "{}/test_data/test_sprot_records.dat.gz".format(base_path)
+        )
+
+    def tearDown(self):
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
+
+    def test_can_load_from_gzip(self):
+        new, updated = proteins_from_dat(
+            self.records_hsa_gz, self.session, verbose=False
+        )
+        self.assertEqual(Protein.query.count(), 3)
+        self.assertEqual(len(updated), 0)
+
+    def test_can_load_from_dat(self):
+        new, updated = proteins_from_dat(
+            self.records_hsa, self.session, verbose=False
+        )
+        self.assertEqual(Protein.query.count(), 3)
+        self.assertEqual(len(updated), 0)
+
+    def test_will_update_existing_entry(self):
+        pa = Protein(uniprot_id="P31946", taxon_id=9606, reviewed=False)
+        pa.save(self.session, commit=True)
+
+        old_serial = {}
+        for k in Protein.columns():
+            old_serial[k.value] = getattr(pa, k.value)
+
+        new, updated = proteins_from_dat(
+            self.records_hsa, self.session, verbose=False
+        )
+        self.assertEqual(Protein.query.count(), 3)
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(len(new), 2)
+
+        new_serial = {}
+        for k in Protein.columns():
+            new_serial[k.value] = getattr(updated[0], k.value)
+
+        self.assertNotEqual(new_serial, old_serial)
+
+
+class TestPsimiFromObo(TestCase):
+    def setUp(self):
+        self.db_path = os.path.normpath(
+            "{}/databases/test.db".format(base_path)
+        )
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
+        self.file_ = os.path.normpath(
+            "{}/test_data/mi.obo.gz".format(base_path)
+        )
+
+    def tearDown(self):
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
+
+    def test_can_load_from_gzip(self):
+        new, updated = psimi_from_obo(self.file_, session=self.session)
+        self.assertEqual(Psimi.query.count(), 1496)
+        self.assertEqual(len(updated), 0)
+        self.assertEqual(len(new), 1496)
+
+    def test_will_update_existing_entry(self):
+        pa = Psimi(accession="MI:0018", description=None)
+        pa.save(self.session, commit=True)
+
+        old_serial = {'accession': pa.accession, 'description': pa.description}
+
+        new, updated = psimi_from_obo(self.file_, session=self.session)
+        self.assertEqual(Psimi.query.count(), 1496)
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(len(new), 1495)
+
+        new_serial = {
+            'accession': updated[0].accession,
+            'description': updated[0].description
+        }
+        self.assertNotEqual(new_serial, old_serial)
+
+
+class TestPmidsFromSet(TestCase):
+    def setUp(self):
+        self.db_path = os.path.normpath(
+            "{}/databases/test.db".format(base_path)
+        )
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
+
+    def tearDown(self):
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
+
+    def test_can_parse_list_of_new_entries(self):
+        new, updated = pmids_from_list(['a', ' b'], session=self.session)
+        self.assertEqual(Pubmed.query.count(), 2)
+        self.assertEqual(len(updated), 0)
+        self.assertEqual(len(new), 2)
+
+    def test_ignores_null(self):
+        for value in NULL_VALUES:
+            new, updated = pmids_from_list([value], session=self.session)
+            self.assertEqual(Pubmed.query.count(), 0)
+            self.assertEqual(len(updated), 0)
+            self.assertEqual(len(new), 0)
+
+    def test_will_update_existing_entry(self):
+        pa = Pubmed(accession='a')
+        pa.save(self.session, commit=True)
+        old_serial = {'accession': pa.accession}
+
+        new, updated = pmids_from_list(['a', ' b'], session=self.session)
+        self.assertEqual(Pubmed.query.count(), 2)
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(len(new), 1)
+
+        new_serial = {'accession': updated[0].accession}
+        self.assertEqual(new_serial, old_serial)
+
+    def test_error_not_list_or_set(self):
+        with self.assertRaises(TypeError):
+            pmids_from_list(('a', 'b'), session=self.session)
+            pmids_from_list(dict(), session=self.session)
+            pmids_from_list('a', session=self.session)
+
+
+class TestPsimisFromSet(TestCase):
+    def setUp(self):
+        self.db_path = os.path.normpath(
+            "{}/databases/test.db".format(base_path)
+        )
+        self.session, self.engine = create_session(self.db_path)
+        delete_database(self.session)
+
+    def tearDown(self):
+        delete_database(self.session)
+        cleanup_database(self.session, self.engine)
+
+    def test_can_parse_list_of_new_entries(self):
+        new, updated = psimis_from_list(
+            [('a', 'this is a'), ('b', 'this is b')],
+            self.session
+        )
+        self.assertEqual(Psimi.query.count(), 2)
+        self.assertEqual(len(updated), 0)
+        self.assertEqual(len(new), 2)
+
+    def test_ignores_null(self):
+        for value in NULL_VALUES:
+            new, updated = psimis_from_list(
+                [(value, 'this is a')],
+                self.session
+            )
+            self.assertEqual(Psimi.query.count(), 0)
+            self.assertEqual(len(updated), 0)
+            self.assertEqual(len(new), 0)
+
+    def test_will_update_existing_entry(self):
+        pa = Psimi(accession="MI:0018", description=None)
+        pa.save(self.session, commit=True)
+
+        old_serial = {'accession': pa.accession, 'description': pa.description}
+
+        new, updated = psimis_from_list(
+            [('mi:0018', 'two hybrid'), ('b', 'this is b')],
+            session=self.session
+        )
+        self.assertEqual(Psimi.query.count(), 2)
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(len(new), 1)
+
+        new_serial = {
+            'accession': updated[0].accession,
+            'description': updated[0].description
+        }
+        self.assertNotEqual(new_serial, old_serial)
+
+    def test_error_not_list_or_set(self):
+        with self.assertRaises(TypeError):
+            psimis_from_list((('a', 'this is a')), session=self.session)
+            psimis_from_list(dict(), session=self.session)
+            psimis_from_list('a', session=self.session)
