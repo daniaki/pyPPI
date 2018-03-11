@@ -34,6 +34,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedKFold, RandomizedSearchCV
 
 from ..base.utilities import get_term_description, rename
+from ..base.constants import MAX_SEED
 
 from .classifier_chain import KRandomClassifierChains
 from .binary_relevance import MixedBinaryRelevanceClassifier
@@ -259,7 +260,7 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
     `Pipeline <http://scikit-learn.org/stable/modules/generated/sklearn.pipeline.Pipeline.html>`_
     """
 
-    max_int = np.iinfo(int).max
+    max_int = MAX_SEED
     rng = RandomState(random_state)
 
     model_random_state = rng.randint(max_int)

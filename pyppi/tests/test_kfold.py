@@ -12,12 +12,12 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics import hamming_loss, label_ranking_loss
 from sklearn.metrics import f1_score, log_loss
 
-
+from ..base.constants import MAX_SEED
 from ..model_selection.k_fold import StratifiedKFoldCrossValidation
 from ..models.binary_relevance import MixedBinaryRelevanceClassifier
 from ..models.classifier_chain import KRandomClassifierChains
 
-MAX_INT = np.iinfo(int).max
+MAX_INT = MAX_SEED
 
 
 class TestStratifiedKFoldCrossValidation(TestCase):

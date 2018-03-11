@@ -11,6 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
 
+from ..base.constants import MAX_SEED
 from ..models.utilities import (
     get_parameter_distribution_for_model,
     make_classifier,
@@ -62,7 +63,7 @@ class TestMakeGridSearchClf(TestCase):
         )
 
         rng = RandomState(0)
-        max_int = np.iinfo(int).max
+        max_int = MAX_SEED
         model_random_state = rng.randint(max_int)
         cv_random_state = rng.randint(max_int)
         rcv_random_state = rng.randint(max_int)

@@ -21,3 +21,4 @@ EXPERIMENT_TYPE = 'experiment_type'
 NULL_VALUES = (
     '', 'None', 'NaN', 'none', 'nan', '-', 'unknown', None, ' ', np.NaN
 )
+MAX_SEED = 1000000

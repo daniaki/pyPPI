@@ -13,8 +13,9 @@ from sklearn.metrics import f1_score, log_loss
 
 
 from ..models.classifier_chain import KRandomClassifierChains
+from ..base.constants import MAX_SEED
 
-MAX_INT = np.iinfo(int).max
+MAX_INT = MAX_SEED
 
 
 class TestKRandomClassifierChains(TestCase):

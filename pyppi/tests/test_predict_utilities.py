@@ -3,6 +3,7 @@ import numpy as np
 from numpy.random import RandomState
 from unittest import TestCase
 
+from ..base.constants import MAX_SEED
 from ..database import create_session, delete_database, cleanup_database
 from ..database.models import Interaction, Protein
 
@@ -33,7 +34,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 
 base_path = os.path.dirname(__file__)
 db_path = os.path.normpath("{}/databases/test.db".format(base_path))
-max_int = np.iinfo(int).max
+max_int = MAX_SEED
 
 
 class TestInteractionsToXyFormat(TestCase):

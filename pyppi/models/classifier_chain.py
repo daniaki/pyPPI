@@ -11,11 +11,13 @@ from joblib import Parallel, delayed
 import numpy as np
 from numpy.random import RandomState
 
+from ..base.constants import MAX_SEED
+
 from sklearn.base import clone
 from sklearn.multioutput import ClassifierChain
 from sklearn.metrics import hamming_loss
 
-MAX_INT = np.iinfo(int).max
+MAX_INT = MAX_SEED
 
 
 def _fit_chain(estimator, X, y, **fit_params):
