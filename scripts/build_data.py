@@ -59,6 +59,8 @@ from pyppi.data_mining.features import compute_interaction_features
 
 
 logger = create_logger("scripts", logging.INFO)
+ORGANISM = "hsa"
+TAXONOMY = 9606
 
 
 if __name__ == "__main__":
@@ -105,7 +107,7 @@ if __name__ == "__main__":
         drop_nan='default',
         allow_self_edges=True,
         allow_duplicates=False,
-        org='hsa',
+        org=ORGANISM,
         cache=True,
         verbose=verbose
     )
@@ -162,7 +164,7 @@ if __name__ == "__main__":
         allow_download=False,
         accessions=accessions,
         keep_unreviewed=True,
-        match_taxon_id=9606
+        match_taxon_id=TAXONOMY
     )
     save_uniprot_accession_map(accession_mapping)
 
@@ -354,15 +356,23 @@ if __name__ == "__main__":
     generator = generate_interaction_tuples(training)
     for (uniprot_a, uniprot_b, label, pmids, psimis) in generator:
         uniprot_a, uniprot_b = sorted([uniprot_a, uniprot_b])
-        source = protein_map[uniprot_a]
-        target = protein_map[uniprot_b]
-        class_kwargs = feature_map[(uniprot_a, uniprot_b)]
-        class_kwargs["is_training"] = True
-        entry = create_interaction(
-            source, target, label, session=db_session, save=False,
-            commit=False, verbose=verbose, **class_kwargs
-        )
-        interactions[(uniprot_a, uniprot_b)] = (entry, pmids, psimis)
+        entry = interactions.get((uniprot_a, uniprot_b), None)
+        if entry is None:
+            source = protein_map[uniprot_a]
+            target = protein_map[uniprot_b]
+            class_kwargs = feature_map[(uniprot_a, uniprot_b)]
+            class_kwargs["is_training"] = True
+            entry = create_interaction(
+                source, target, label, session=db_session, save=False,
+                commit=False, verbose=verbose, **class_kwargs
+            )
+            interactions[(uniprot_a, uniprot_b)] = (entry, pmids, psimis)
+        else:
+            entry[0].is_training = True
+            entry[0].add_label(label)
+            pmids = entry[1] + pmids
+            psimis = entry[2] + psimis
+            interactions[(uniprot_a, uniprot_b)] = (entry[0], pmids, psimis)
 
     # Testing should only update the is_holdout to true and leave other
     # boolean fields alone.
