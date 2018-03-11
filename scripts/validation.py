@@ -27,7 +27,7 @@ Options:
   --n_jobs=J        Number of processes to run in parallel [default: 1]
   --n_splits=S      Number of cross-validation splits [default: 5]
   --h_iterations=H  Number of hyperparameter tuning
-                    iterations per fold [default: 60]
+                    iterations per fold [default: 30]
   --n_iterations=I  Number of bootstrap iterations [default: 5]
   --directory=DIR   Output directory [default: ./results/]
 """
