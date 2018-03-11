@@ -139,6 +139,28 @@ class StratifiedKFoldCrossValidation(object):
         return self
 
     def fit(self, X, y, **fit_params):
+        """
+        Fit an estimator for each fold.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape (n_samples, n_features)
+            Training vector, where n_samples is the number of samples and
+            n_features is the number of features.
+
+        y : array-like, shape (n_samples, n_labels)
+            Target vector relative to X.
+
+        fit_params :  dict
+            Fit function parameters which will be passed directly to the 
+            the cloned base_estimator for each fold.
+
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+
         self._generate_splits(X, y)
         self.fold_estimators_ = Parallel(n_jobs=self.n_jobs)(
             delayed(_fit_fold)(
@@ -152,6 +174,44 @@ class StratifiedKFoldCrossValidation(object):
 
     def score(self, X, y, validation=False, avg_folds=True, sample_weight=None,
               **score_params):
+        """
+        Runs the `score` method of each fold estimator on X and y.
+        If X and y are the training inputs and `validation` is True then
+        only the validation subsets are scored for each fold.
+
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            Test samples.
+
+        y : array-like, shape = (n_samples, n_labels)
+            True labels for X.
+
+        sample_weight : array-like, shape = [n_samples], optional
+            Sample weights.
+
+        avg_folds : boolean, default: False
+            If True, all folds are averaged to give a single score and
+            standard error for each label.
+
+        validation : boolean, default: False
+            If True, assumes the X and y are the same as the arrays used
+            during training and applies the scoring function over the
+            validation fold subset of X and y. Otherwise scoring is
+            performed on all samples in X and y.
+
+        score_params : dict, optional
+            Keyword arguments for `score` function in the supplied
+            `base_estimator`.
+
+        Returns
+        -------
+        C : tuple or array-like
+            If `avg_folds` is True then two arrays (n_labels,) for the mean
+            score and standard error will be returned. Otherwise a single
+            array (n_labels, n_folds) will be returned.
+        """
+
         self._check_fitted()
         scores = np.asarray(Parallel(n_jobs=self.n_jobs)(
             delayed(_score_fold)(

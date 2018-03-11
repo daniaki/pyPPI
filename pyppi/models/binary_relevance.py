@@ -211,10 +211,6 @@ class MixedBinaryRelevanceClassifier(object):
         Returns the score as determined by `scoring` on the given
         test data and labels.
 
-        In multi-label classification, this is the subset accuracy
-        which is a harsh metric since you require for each sample that
-        each label set be correctly predicted.
-
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
@@ -237,7 +233,7 @@ class MixedBinaryRelevanceClassifier(object):
 
         Returns
         -------
-        `float` oe array-like (n_labels, ) if scoring uses binary.
+        `float` or array-like (n_labels, ) if scoring uses binary.
             Mean score of self.predict(X) wrt. y.
         """
         self._check_y_shape(y)
