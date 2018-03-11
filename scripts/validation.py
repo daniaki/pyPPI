@@ -213,7 +213,8 @@ if __name__ == "__main__":
                 **score_params
             )
             scores_t = clf.score(
-                X_test, y_test, avg_folds=False, **score_params
+                X_test, y_test, avg_folds=False, validation=False,
+                **score_params
             )
             binary_statistics[:, 0, func_idx, bs_iter, :] = scores_v
             binary_statistics[:, 1, func_idx, bs_iter, :] = scores_t
@@ -235,7 +236,8 @@ if __name__ == "__main__":
                 **score_params
             )
             scores_t = clf.score(
-                X_test, y_test, avg_folds=False, **score_params
+                X_test, y_test, avg_folds=False, validation=False,
+                **score_params
             )
 
             multilabel_statistics[0, func_idx, bs_iter, :] = scores_v
@@ -405,7 +407,7 @@ if __name__ == "__main__":
                 axis=0, level=[0]
             ).std()
             stderr = stdev / np.sqrt(n_iter)
-            fp.write("{}\t{:.2f}\t{:.4f}\n".format(label, mean, stderr))
+            fp.write("{}\t{:.6f}\t{:.6f}\n".format(label, mean, stderr))
 
             if label in ("Phosphorylation", "Dephosphorylation"):
                 mean = binary_df.loc[(label, 'holdout', 'Binary F1'), :].mean(
@@ -415,11 +417,11 @@ if __name__ == "__main__":
                     axis=0, level=[0]
                 ).std()
                 stderr = stdev / np.sqrt(n_iter)
-                fp.write("{} (HPRD)\t{:.2f}\t{:.4f}\n".format(
+                fp.write("{} (HPRD)\t{:.6f}\t{:.6f}\n".format(
                     label, mean, stderr)
                 )
 
-        for metric in ['Label Ranking Loss', 'Hamming Loss']:
+        for metric, _ in multilabel_scoring_funcs:
             mean = multilabel_df.loc[('validation', metric), :].mean(
                 axis=0, level=[0]
             ).mean()
@@ -427,13 +429,20 @@ if __name__ == "__main__":
                 axis=0, level=[0]
             ).std()
             stderr = stdev / np.sqrt(n_iter)
-            fp.write("{}\t{:.2f}\t{:.4f}\n".format(metric, mean, stderr))
+            fp.write("{}\t{:.6f}\t{:.6f}\n".format(metric, mean, stderr))
 
     # ---------------- Rise and shine, it's plotting time! ---------------- #
     plot_heatmaps(
-        "{}/heat_maps.jpg".format(direc),
+        "{}/heat_maps_jaccard.jpg".format(direc),
         labels=mlb.classes,
         correlation_matrix=s_label_correlation,
         similarity_matrix=j_v_similarity_matrix,
+        dpi=350
+    )
+    plot_heatmaps(
+        "{}/heat_maps_dice.jpg".format(direc),
+        labels=mlb.classes,
+        correlation_matrix=s_label_correlation,
+        similarity_matrix=d_v_similarity_matrix,
         dpi=350
     )
