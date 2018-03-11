@@ -6,7 +6,6 @@ and the threshold curves.
 
 import numpy as np
 import matplotlib
-matplotlib.use("tkagg")
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
