@@ -1,8 +1,10 @@
 """
-This module contains a collection of functions that perform common tasks 
+This module contains a collection of functions that perform common tasks
 related to the database.
 """
-
+import os
+import gzip
+from Bio import SwissProt
 import logging
 from collections import OrderedDict
 
@@ -12,6 +14,8 @@ from sqlalchemy.orm.query import Query
 from ..base.constants import SOURCE, TARGET, LABEL, EXPERIMENT_TYPE, PUBMED
 from ..base.utilities import is_null, remove_duplicates
 from ..data_mining.features import compute_interaction_features
+from ..data_mining.uniprot import serialise_record
+from ..data_mining.psimi import parse_miobo_file
 
 from . import db_session
 from .models import Interaction, Psimi, Protein, Pubmed
@@ -21,17 +25,34 @@ from .validators import (
     validate_source_and_target, validate_joint_id
 )
 
+__all__ = [
+    "uniprotid_entry_map",
+    "accession_entry_map",
+    "filter_matching_taxon_ids",
+    "training_interactions",
+    "holdout_interactions",
+    "full_training_network",
+    "interactome_interactions",
+    "labels_from_interactions",
+    "get_upid_to_protein_map",
+    "get_source_taget_to_interactions_map",
+    "create_interaction",
+    "proteins_from_dat",
+    'psimi_from_obo',
+    'pmids_from_list',
+    'psimis_from_list'
+]
 
 logger = logging.getLogger("pyppi")
 
 
 def uniprotid_entry_map():
-    """Creates a `dict` mapping from UniProt accession to it's 
+    """Creates a `dict` mapping from UniProt accession to it's
     :class:`Protein` for all instances in the database.
 
     Returns
     -------
-    dict[str, :class:`Protein`]
+    `dict`
         A dictionary mapping from UniProt accession to it's Protein instance.
     """
     proteins = Protein.query.all()
@@ -71,6 +92,7 @@ def filter_matching_taxon_ids(query_set, taxon_id=None):
     ----------
     query_set : :class:`Query`
         A query instance from `sqlalchemy`
+
     taxon_id : int, optional
         An integer taxonomy id supported by `UniProt`
 
@@ -102,7 +124,7 @@ def training_interactions(strict=False, taxon_id=None):
     Returns
     -------
     :class:`Query`
-        An sqlalchemy :class:`Query` instances containing 
+        An sqlalchemy :class:`Query` instances containing
         :class:`Interaction` instances.
     """
     qs = Interaction.query.filter_by(is_training=True)
@@ -128,7 +150,7 @@ def holdout_interactions(strict=False, taxon_id=None):
     Returns
     -------
     :class:`Query`
-        An sqlalchemy :class:`Query` instances containing 
+        An sqlalchemy :class:`Query` instances containing
         :class:`Interaction` instances.
     """
     qs = Interaction.query.filter_by(is_holdout=True)
@@ -138,7 +160,7 @@ def holdout_interactions(strict=False, taxon_id=None):
 
 
 def full_training_network(taxon_id=None):
-    """Return all :class:`Interaction` instances with `is_holdout` and 
+    """Return all :class:`Interaction` instances with `is_holdout` and
     `is_training` set to `True`.
 
     Parameters
@@ -150,7 +172,7 @@ def full_training_network(taxon_id=None):
     Returns
     -------
     :class:`Query`
-        An sqlalchemy :class:`Query` instances containing 
+        An sqlalchemy :class:`Query` instances containing
         :class:`Interaction` instances.
     """
     qs = Interaction.query.filter(
@@ -163,7 +185,7 @@ def full_training_network(taxon_id=None):
 
 
 def interactome_interactions(taxon_id=None):
-    """Return all :class:`Interaction` instances with `is_interaction` 
+    """Return all :class:`Interaction` instances with `is_interaction`
     set to `True`.
 
     Parameters
@@ -175,7 +197,7 @@ def interactome_interactions(taxon_id=None):
     Returns
     -------
     :class:`Query`
-        An sqlalchemy :class:`Query` instances containing 
+        An sqlalchemy :class:`Query` instances containing
         :class:`Interaction` instances.
     """
     qs = Interaction.query.filter_by(is_interactome=True)
@@ -190,12 +212,12 @@ def labels_from_interactions(interactions=None, taxon_id=None):
     Parameters
     ----------
     interactions : iterable, optional.
-        An iterable of :class:`Interaction` objects. If `None`, 
+        An iterable of :class:`Interaction` objects. If `None`,
         :func:`full_training_network` is called to obtain interactions.
 
     taxon_id : int, optional
         An integer taxonomy id supported by `UniProt`. Filter out interactions
-        with a non-matching taxonomy id before collecting labels. 
+        with a non-matching taxonomy id before collecting labels.
         Ignored if `None`.
 
     Returns
@@ -222,7 +244,7 @@ def get_upid_to_protein_map(uniprot_ids, taxon_id=None):
 
     taxon_id : int, optional
         An integer taxonomy id supported by `UniProt`. Filter out interactions
-        with a non-matching taxonomy id before collecting labels. 
+        with a non-matching taxonomy id before collecting labels.
         Ignored if `None`.
 
     Returns
@@ -257,7 +279,7 @@ def get_upid_to_protein_map(uniprot_ids, taxon_id=None):
 
 def get_source_taget_to_interactions_map(id_ppis, taxon_id=None):
     """Builds a `dict` mapping from a tuple of integer ids representing
-    the :class:`Protein` source and target primary keys to the associtated 
+    the :class:`Protein` source and target primary keys to the associtated
     :class:`Interaction` instance if it exists.
 
     Parameters
@@ -268,13 +290,13 @@ def get_source_taget_to_interactions_map(id_ppis, taxon_id=None):
 
     taxon_id : int, optional
         An integer taxonomy id supported by `UniProt`. Filter out interactions
-        with a non-matching taxonomy id before collecting labels. 
+        with a non-matching taxonomy id before collecting labels.
         Ignored if `None`.
 
     Returns
     -------
     `OrderedDict`
-        Mapping from (int, int) source, target tuple to  :class:`Interaction` 
+        Mapping from (int, int) source, target tuple to  :class:`Interaction`
         or None.
     """
     id_ppis = remove_duplicates(id_ppis)
@@ -422,4 +444,243 @@ def create_interaction(source, target, labels=None, session=None,
     except Exception as e:
         if verbose:
             logger.exception(e)
+        raise
+
+
+def proteins_from_dat(file_path, session=None, verbose=False):
+    """Parses dat files into protein records to be saved into the database. If
+    the file path ends in `.gz` then gzip will be used to read from the file
+    automatically. If an entry already exists in the database with the same
+    `UniProt` identifier, then that entry will have all of it's attributes
+    updated.
+
+    Parameters
+    ----------
+    file_path : str
+        The path to the `.dat` or `.dat.gz` file to read from.
+
+    session : :class:`scoped_session`, optional.
+        A session instance to save to. Leave as None to use the default
+        session and save to the database located at `~/.pyppi/pyppi.db`
+
+    verbose : bool, default: False
+        Log messages that occur during the call.
+
+    Returns
+    -------
+    `tuple`
+        First element is a list of new :class:`Protein` instances created, the 
+        second is a list of updated instances.
+    """
+    if session is None:
+        session = db_session
+
+    # Not memory efficient but speeds up the process since we don't
+    # need to constantly query the database for entries. This
+    # becomes a faster dict lookup.
+    existing = uniprotid_entry_map()
+    new_proteins = []
+    updated_proteins = []
+
+    if os.path.splitext(file_path)[-1] == '.gz':
+        fp = gzip.open(file_path, 'rt')
+    else:
+        fp = open(file_path, 'rt')
+
+    records = SwissProt.parse(fp)
+    for record in records:
+        params = serialise_record(record)
+        if params is None:
+            continue
+
+        uniprot_id = params.get('uniprot_id')
+        protein = existing.get(uniprot_id, None)
+        if protein is None:
+            if verbose:
+                logger.info(
+                    "Creating new entry '{}'.".format(uniprot_id)
+                )
+            protein = Protein(**params)
+            new_proteins.append(protein)
+        else:
+            if verbose:
+                logger.info(
+                    "Updating entry '{}'.".format(uniprot_id)
+                )
+            for k, v in params.items():
+                setattr(protein, k, v)
+            updated_proteins.append(protein)
+
+    try:
+        session.add_all(new_proteins + updated_proteins)
+        session.commit()
+        fp.close()
+        return new_proteins, updated_proteins
+    except:
+        if verbose:
+            logger.exception("An error occured when trying to parse record.")
+        session.rollback()
+        fp.close()
+        raise
+
+
+def psimi_from_obo(file_path, session=None):
+    """Parses a gzipped PSI-MI obo file into :class:`Psimi` entries in 
+    the database. Will update existing enties.
+
+    Parameters
+    ----------
+    file_path : str
+        The path to the gzipped file to read from.
+
+    session : :class:`scoped_session`, optional.
+        A session instance to save to. Leave as None to use the default
+        session and save to the database located at `~/.pyppi/pyppi.db`
+
+    Returns
+    -------
+    `tuple`
+        First element is a list of new :class:`Psimi` instances created, the 
+        second is a list of updated instances.
+    """
+
+    if session is None:
+        session = db_session
+
+    mi_ont = parse_miobo_file(file_path)
+    new = []
+    updated = []
+
+    # Not memory efficient but speeds up the process since we don't
+    # need to constantly query the database for entries. This
+    # becomes a faster dict lookup.
+    psimi_map = {p.accession: p for p in Psimi.query.all()}
+    for key, term in mi_ont.items():
+        entry = psimi_map.get(key, None)
+        if entry is None:
+            entry = Psimi(accession=key, description=term.name)
+            new.append(entry)
+        else:
+            entry.description = term.name
+            updated.append(entry)
+
+    try:
+        session.add_all(new + updated)
+        session.commit()
+        return new, updated
+    except:
+        session.rollback()
+        raise
+
+
+def pmids_from_list(pmids, session=None):
+    """Parses a set/list of pmids and adds them to the database. Updates 
+    existing entries.
+
+    Parameters
+    ----------
+    pmids : list or set
+        List/set of uppercase pmids.
+
+    session : :class:`scoped_session`, optional.
+        A session instance to save to. Leave as None to use the default
+        session and save to the database located at `~/.pyppi/pyppi.db`
+
+    Returns
+    -------
+    `tuple`
+        First element is a list of new :class:`Pubmed` instances created, the 
+        second is a list of updated instances.
+    """
+
+    if session is None:
+        session = db_session
+
+    if not isinstance(pmids, (list, set)):
+        raise TypeError("`pmids` must a list or set. Found {}.".format(
+            type(pmids).__name__
+        ))
+
+    new = []
+    updated = []
+    pmids = list(pmids)
+    # Not memory efficient but speeds up the process since we don't
+    # need to constantly query the database for entries. This
+    # becomes a faster dict lookup.
+    existing = {p.accession: p for p in Pubmed.query.all()}
+    for pmid in pmids:
+        if is_null(pmid):
+            continue
+        pmid = pmid.strip().upper()
+        entry = existing.get(pmid, None)
+        if entry is None:
+            entry = Pubmed(accession=pmid)
+            new.append(entry)
+        else:
+            updated.append(entry)
+
+    try:
+        session.add_all(new + updated)
+        session.commit()
+        return new, updated
+    except:
+        session.rollback()
+        raise
+
+
+def psimis_from_list(psimi_tuples, session=None):
+    """Parses a list/set of PSI-MI `(accession, description)` tuples and adds 
+    them to the database. Updates existing entries.
+
+    Parameters
+    ----------
+    psimi_tuples : list or set
+        List or set of `2-tuples` `(MI:X accession, text description)`.
+
+    session : :class:`scoped_session`, optional.
+        A session instance to save to. Leave as None to use the default
+        session and save to the database located at `~/.pyppi/pyppi.db`
+
+    Returns
+    -------
+    `tuple`
+        First element is a list of new :class:`Psimi` instances created, the 
+        second is a list of updated instances.
+    """
+
+    if session is None:
+        session = db_session
+
+    if not isinstance(psimi_tuples, (list, set)):
+        raise TypeError("`psimi` must a list or set. Found {}.".format(
+            type(psimi_tuples).__name__
+        ))
+
+    new = []
+    updated = []
+    psimi_tuples = set(psimi_tuples)
+    # Not memory efficient but speeds up the process since we don't
+    # need to constantly query the database for entries. This
+    # becomes a faster dict lookup.
+    existing = {p.accession: p for p in Psimi.query.all()}
+    for psimi, desc in psimi_tuples:
+        if is_null(psimi):
+            continue
+        psimi = psimi.strip().upper()
+        desc = desc.strip()
+
+        entry = existing.get(psimi, None)
+        if entry is None:
+            entry = Psimi(accession=psimi, description=desc)
+            new.append(entry)
+        else:
+            entry.description = desc
+            updated.append(entry)
+
+    try:
+        session.add_all(new + updated)
+        session.commit()
+        return new, updated
+    except:
+        session.rollback()
         raise
