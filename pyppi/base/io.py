@@ -5,7 +5,6 @@ coupled to the data parsing processes.
 """
 
 __all__ = [
-    "line_generator",
     "generic_io",
     "uniprot_sprot",
     "uniprot_trembl",
@@ -52,76 +51,51 @@ from .file_paths import (
 )
 
 
-def line_generator(io_func):
-    """
-    Decorator to turn a io dealing function into an iterator of file lines, 
-    performing additional steps wrapping each line, such as byte decoding.
-    """
-    def wrapper_func(*args, **kwargs):
-        fp = io_func(*args, **kwargs)
-        for line in fp:
-            if isinstance(line, bytes):
-                yield line.decode('utf-8')
-            yield line
-        fp.close()
-    return wrapper_func
-
-
-@line_generator
 def generic_io(file):
     """Opens a generic file such as an edgelist file."""
     return open(file, 'r')
 
 
-@line_generator
 def uniprot_sprot():
     """Opens the gzipped UniProt SwissProt dat file."""
     return gzip.open(uniprot_sprot_dat, 'rt')
 
 
-@line_generator
 def uniprot_trembl():
     """Opens the gzipped UniProt TrEMBL dat file."""
     return gzip.open(uniprot_trembl_dat, 'rt')
 
 
-@line_generator
 def hprd_ptms():
     """Opens HPRD post-translational modifications flat file."""
     return open(hprd_ptms_txt, 'r')
 
 
-@line_generator
 def hprd_id_map():
     """Opens HPRD enzyme to UniProt mapping file."""
     return open(hprd_mappings_txt, 'r')
 
 
-@line_generator
 def bioplex_v4():
     """Opens the BioPlex network edgelist."""
     return gzip.open(bioplex_v4_path, 'rt')
 
 
-@line_generator
 def innate_curated():
     """Opens the InnateDB curated psi-mi file."""
     return gzip.open(innate_c_mitab_path, 'rt')
 
 
-@line_generator
 def innate_imported():
     """Opens the InnateDB imported psi-mi file."""
     return gzip.open(innate_i_mitab_path, 'rt')
 
 
-@line_generator
 def pina2_sif():
     """Opens the Pina2 network edgelist."""
     return gzip.open(pina2_sif_path, 'rt')
 
 
-@line_generator
 def pina2_mitab():
     """Opens the Pina2 network edgelist."""
     return gzip.open(pina2_mitab_path, 'rt')
