@@ -124,7 +124,7 @@ def parse_ptm(file_input=None, header=False, col_sep='\t'):
         lines = file_input
 
     if header:
-        next(lines)
+        lines.readline()
 
     for line in lines:
         class_fields = __PTM_FIELDS.copy()
@@ -169,7 +169,7 @@ def parse_hprd_mapping(file_input=None, header=False, col_sep='\t'):
     else:
         lines = file_input
     if header:
-        next(lines)
+        lines.readline()
 
     for line in lines:
         class_fields = __HPRD_XREF_FIELDS.copy()

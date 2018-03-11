@@ -127,10 +127,10 @@ def parallel_download(accessions, backend="multiprocessing",
     return [r for sublist in records for r in sublist]
 
 
-def parse_record_into_protein(record, verbose=False):
+def serialise_record(record):
     if record is None:
         return None
-    try:
+    else:
         uniprot_id = recent_accession(record)
         taxon_id = taxonid(record)
         gene_id = gene_name(record)
@@ -145,13 +145,22 @@ def parse_record_into_protein(record, verbose=False):
         last_update_ = last_update(record)
         last_release_ = last_release(record)
 
-        entry = Protein(
+        data = dict(
             uniprot_id=uniprot_id, taxon_id=taxon_id, reviewed=reviewed,
             gene_id=gene_id, go_mf=go_mf, go_bp=go_bp, go_cc=go_cc,
             interpro=interpro, pfam=pfam, keywords=keywords_,
             function=function_, last_update=last_update_,
             last_release=last_release_
         )
+        return data
+
+
+def parse_record_into_protein(record, verbose=False):
+    if record is None:
+        return None
+    try:
+        constuctor_args = serialise_record(record)
+        entry = Protein(**constuctor_args)
         return entry
     except:
         if verbose:

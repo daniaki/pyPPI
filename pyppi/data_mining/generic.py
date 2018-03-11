@@ -48,7 +48,7 @@ def edgelist_func(fp):
     labels = []
 
     # Remove header
-    next(fp)
+    fp.readline()
 
     for line in fp:
         xs = line.strip().split('\t')
@@ -80,7 +80,7 @@ def bioplex_func(fp):
     labels = []
 
     # Remove header
-    next(fp)
+    fp.readline()
 
     for line in fp:
         xs = line.strip().split('\t')
@@ -148,7 +148,7 @@ def innate_mitab_func(fp):
     experiment_types = []
 
     # Remove header
-    next(fp)
+    fp.readline()
 
     for line in fp:
         xs = line.strip().split('\t')
@@ -234,7 +234,7 @@ def pina_mitab_func(fp):
     experiment_types = []
 
     # Remove header
-    next(fp)
+    fp.readline()
 
     for line in fp:
         xs = line.strip().split('\t')
@@ -287,7 +287,7 @@ def generic_to_dataframe(f_input, parsing_func, drop_nan=None,
     Parameters
     ----------
     f_input : str
-        Path to file or generator of file lines
+        Path to file or a file handle
 
     parsing_func : callable 
         function that accepts a file pointer object.

@@ -89,7 +89,7 @@ def parse_miobo_file(filename):
     Parameters
     ----------
     filename : str
-        Path for obo file.
+        Path for obo file. Must be gzipped.
 
     Returns
     -------
