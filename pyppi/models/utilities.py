@@ -46,7 +46,7 @@ def publication_ensemble():
     """Returns a `dict` mapping labels to their the classifier used 
     in the publication experiments."""
     label_model_map = {
-        'Acetylation': 'RandomForestClassifier',
+        'Acetylation': 'LogisticRegression',
         'Activation': 'RandomForestClassifier',
         'Binding/association': 'RandomForestClassifier',
         'Carboxylation': 'LogisticRegression',
