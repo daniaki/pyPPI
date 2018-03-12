@@ -444,16 +444,16 @@ if __name__ == "__main__":
 
     # ---------------- Rise and shine, it's plotting time! ---------------- #
     plot_heatmaps(
-        "{}/heat_maps_jaccard.jpg".format(direc),
+        "{}/heat_maps_jaccard.png".format(direc),
         labels=mlb.classes,
         correlation_matrix=s_label_correlation,
         similarity_matrix=j_v_similarity_matrix,
-        dpi=350
+        dpi=350, format='png'
     )
     plot_heatmaps(
-        "{}/heat_maps_dice.jpg".format(direc),
+        "{}/heat_maps_dice.png".format(direc),
         labels=mlb.classes,
         correlation_matrix=s_label_correlation,
         similarity_matrix=d_v_similarity_matrix,
-        dpi=350
+        dpi=350, format='png'
     )

@@ -401,10 +401,10 @@ if __name__ == "__main__":
 
     # ------------- Rise and shine, it's plotting time! ------------------- #
     plot_threshold_curve(
-        '{}/threshold.jpg'.format(direc),
+        '{}/threshold.png'.format(direc),
         thresholds=thresholds,
         proportions=proportions,
-        dpi=350
+        dpi=350, format='png'
     )
 
     with open("{}/thresholds.csv".format(direc), 'wt') as fp:
