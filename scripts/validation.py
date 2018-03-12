@@ -47,6 +47,7 @@ from datetime import datetime
 from docopt import docopt
 from numpy.random import RandomState
 
+from pyppi.base.constants import MAX_SEED
 from pyppi.base.utilities import su_make_dir
 from pyppi.base.arg_parsing import parse_args
 from pyppi.base.log import create_logger
@@ -80,6 +81,7 @@ from sklearn.metrics import (
 )
 
 RANDOM_STATE = 42
+MAX_RAND = MAX_SEED
 logger = create_logger("scripts", logging.INFO)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
@@ -100,9 +102,17 @@ if __name__ == "__main__":
     chain = args['chain']
 
     # Set up the folder for each experiment run named after the current time
+    rng = RandomState(seed=RANDOM_STATE)
     folder = datetime.now().strftime("val_%y-%m-%d_%H-%M")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
+    seeds_clf = [int(rng.randint(1, MAX_RAND)) for i in range(n_iter)]
+    seeds_kfold = [int(rng.randint(1, MAX_RAND)) for i in range(n_iter)]
+    args["RandomState"] = {}
+    args["RandomState"]["seeds_clf"] = seeds_clf
+    args["RandomState"]["seeds_kfold"] = seeds_kfold
+    args["RandomState"]["random_state"] = RANDOM_STATE
+    args["RandomState"]["max_randint"] = MAX_RAND
     json.dump(
         args,
         fp=open("{}/settings.json".format(direc), 'w'),
@@ -170,6 +180,7 @@ if __name__ == "__main__":
     # 2: position 0 is for validation, position 1 is for testing
     binary_statistics = np.zeros((n_labels, 2, n_scorers, n_iter, n_splits))
     multilabel_statistics = np.zeros((2, n_ml_scorers, n_iter, n_splits))
+    rng = RandomState(seed=RANDOM_STATE)
 
     # Begin the main show!
     # ------------------------------------------------------------------- #
@@ -183,7 +194,7 @@ if __name__ == "__main__":
             binary=use_binary,
             n_jobs_model=n_jobs,
             n_jobs_gs=n_jobs,
-            random_state=42,
+            random_state=seeds_clf[bs_iter],
             search_vectorizer=False
         )
 
@@ -196,7 +207,7 @@ if __name__ == "__main__":
             n_folds=n_splits,
             shuffle=True,
             n_jobs=1,
-            random_state=42,
+            random_state=seeds_kfold[bs_iter],
             verbose=verbose
         )
         clf.fit(X_train, y_train)
