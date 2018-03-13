@@ -109,7 +109,7 @@ def parse_args(docopt_args, require_features=False, predict_script=False):
     booleans = [
         '--abs', '--induce', '--verbose', '--retrain',
         '--binary', '--clear_cache', '--cost_sensitive',
-        '--gene_names', '--chain'
+        '--gene_names', '--chain', '--save'
     ]
     for arg in booleans:
         if _query_doctop_dict(docopt_args, arg) is not None:
@@ -129,7 +129,7 @@ def parse_args(docopt_args, require_features=False, predict_script=False):
             parsed['selection'] = selection
 
         elif os.path.isfile(classifier_path):
-            _, trained_selection = load_classifier(classifier_path)
+            _, trained_selection, _ = load_classifier(classifier_path)
             if not parsed['retrain'] and len(selection) and \
                     sorted(trained_selection) != selection:
                 sys.stdout.write(
