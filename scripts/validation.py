@@ -73,7 +73,7 @@ from pyppi.predict.utilities import interactions_to_Xy_format
 from pyppi.predict.plotting import plot_heatmaps
 
 
-from sklearn.exceptions import UndefinedMetricWarning
+from sklearn.exceptions import UndefinedMetricWarning, FitFailedWarning
 from sklearn.base import clone
 from sklearn.metrics import (
     label_ranking_loss, hamming_loss,
@@ -85,6 +85,7 @@ MAX_RAND = MAX_SEED
 logger = create_logger("scripts", logging.INFO)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
+warnings.filterwarnings("ignore", category=FitFailedWarning)
 
 if __name__ == "__main__":
     args = docopt(__doc__)
