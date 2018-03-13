@@ -5,8 +5,8 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
-                  [--retrain] [--chain] [--induce] [--verbose]
+  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp] 
+                  [--retrain] [--chain] [--induce] [--verbose] [--save]
                   [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
                   [--input=FILE] [--output=FILE] [--directory=DIR]
   predict_ppis.py -h | --help
@@ -24,6 +24,8 @@ Options:
   --retrain     Re-train classifier instead of loading previous version. If
                 using a previous version, you must use the same selection of
                 features along with the same induce setting.
+  --save        Save the trained classifier to the home cache directory ~/.pyppi/, 
+                overwritting any previously saved classifier.
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression].
                     Ignored if using 'retrain'.
@@ -55,16 +57,18 @@ import warnings
 from pyppi.base.utilities import su_make_dir, chunk_list, is_null
 from pyppi.base.arg_parsing import parse_args
 from pyppi.base.constants import (
-    P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE
+    P1, P2, G1, G2, SOURCE, TARGET, PUBMED, EXPERIMENT_TYPE, MAX_SEED
 )
 from pyppi.base.log import create_logger
 from pyppi.base.io import generic_io, save_classifier, load_classifier
 from pyppi.base.file_paths import classifier_path, default_db_path
 
+from pyppi.model_selection.sampling import IterativeStratifiedKFold
 from pyppi.models.utilities import (
     make_classifier, get_parameter_distribution_for_model,
     publication_ensemble
 )
+
 
 from pyppi.database import db_session
 from pyppi.database.models import Interaction, Protein
@@ -92,6 +96,7 @@ from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.preprocessing import MultiLabelBinarizer
 
 RANDOM_STATE = 42
+MAX_INT = MAX_SEED
 logger = create_logger("scripts", logging.INFO)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
@@ -111,6 +116,7 @@ if __name__ == "__main__":
     direc = args['directory']
     retrain = args['retrain']
     chain = args['chain']
+    save = args['save']
 
     # Set up the folder for each experiment run named after the current time
     # -------------------------------------------------------------------- #
@@ -242,6 +248,7 @@ if __name__ == "__main__":
     X_test_useable_props = np.apply_along_axis(
         compute_proportions_shared, axis=1, arr=X_test_split_features
     )
+    rng = RandomState(seed=RANDOM_STATE)
 
     # Make the estimators and BR classifier
     # -------------------------------------------------------------------- #
@@ -250,22 +257,34 @@ if __name__ == "__main__":
         mlb.fit(y_train)
         y_train = mlb.transform(y_train)
 
+        # Same random state as make_gridsearch_clf by spinning through
+        # first value.
+        rng.randint(MAX_INT)
+        cv = IterativeStratifiedKFold(
+            n_splits=n_splits, shuffle=True,
+            random_state=rng.randint(MAX_INT)
+        )
+        cv_iter = list(cv.split(X_train, y_train))
+
         if model == 'paper':
             clf = paper_model(
                 labels=mlb.classes,
                 rcv_splits=n_splits,
+                cv=cv_iter,
                 rcv_iter=rcv_iter,
                 scoring="f1",
                 n_jobs_model=n_jobs,
                 n_jobs_gs=n_jobs,
                 n_jobs_br=1,
-                random_state=RANDOM_STATE
+                random_state=RANDOM_STATE,
+                verbose=verbose
             )
         else:
             pipeline = make_gridsearch_clf(
                 model=model,
                 rcv_splits=n_splits,
                 rcv_iter=rcv_iter,
+                cv=cv_iter,
                 scoring="f1",
                 n_jobs_model=n_jobs,
                 n_jobs_gs=n_jobs,
@@ -280,14 +299,16 @@ if __name__ == "__main__":
         # Saved to both the home directory and the output directory.
         logger.info("Fitting data.")
         clf.fit(X_train, y_train)
-        save_classifier(clf, selection, mlb, classifier_path)
         save_classifier(clf, selection, mlb, "{}/classifier.pkl".format(direc))
+        if save:  # save to home directory.
+            save_classifier(clf, selection, mlb, classifier_path)
+    else:
+        clf, selection, mlb = load_classifier(classifier_path)
 
     # Loads a previously (or recently trained) classifier from disk
     # and then performs the predictions on the new dataset.
     # -------------------------------------------------------------------- #
     logger.info("Making predictions.")
-    clf, selection, mlb = load_classifier(classifier_path)
     predictions = clf.predict_proba(X_test)
 
     # Write the predictions to a tsv file

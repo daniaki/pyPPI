@@ -210,7 +210,7 @@ def make_classifier(algorithm, class_weight='balanced', random_state=None,
 
 def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
                         binary=True, n_jobs_model=1, random_state=None,
-                        search_vectorizer=True, n_jobs_gs=1):
+                        search_vectorizer=True, n_jobs_gs=1, cv=None):
     """Wrapper function to automate the mundane setup of a `Pipeline` classifier
     within a `RandomGridSearchCV` estimator. See the links below for more
     details on the parameters.
@@ -247,6 +247,10 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
     n_jobs_gs : int, optional, default: 1
         Sets the `n_jobs` parameter of the `RandomizedGridSearch` classifier.
 
+    cv : cross-validation generator, str or an iterable, optional
+        If None, then a :class:`StratifiedKFold` cv generator is used in the
+        :class:`RandomGridSearchCV`.
+
     Returns
     -------
     `estimator`
@@ -278,13 +282,15 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
     if search_vectorizer:
         params['vectorizer__binary'] = [False, True]
 
+    if cv is None:
+        cv = StratifiedKFold(
+            n_splits=rcv_splits, shuffle=True,
+            random_state=cv_random_state
+        )
+
     clf = RandomizedSearchCV(
         estimator=pipeline,
-        cv=StratifiedKFold(
-            n_splits=rcv_splits,
-            shuffle=True,
-            random_state=cv_random_state
-        ),
+        cv=cv,
         n_iter=rcv_iter,
         n_jobs=n_jobs_gs,
         refit=True,
