@@ -52,7 +52,7 @@ class MixedBinaryRelevanceClassifier(object):
         Number of processes to use when fitting each label.
 
     verbose : bool, optional, default: False
-        Logs messages to `stdout` regarding fitting progress.
+        Logs messages regarding fitting progress.
     """
 
     def __init__(self, estimators, n_jobs=1, verbose=False):
