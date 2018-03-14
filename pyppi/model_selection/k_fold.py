@@ -25,17 +25,24 @@ def _clone(estimator):
         return clone(estimator)
 
 
-def _fit_fold(estimator, X, y, train_idx, fold_idx, verbose, **fit_params):
+def _fit_fold(estimator, X, y, train_idx, fold_idx, verbose, vectorizer,
+              **fit_params):
     if verbose:
         logger.info("Fitting fold %d." % (fold_idx + 1))
-    return estimator.fit(X[train_idx], y[train_idx], **fit_params)
+    X = X[train_idx]
+    y = y[train_idx]
+    if vectorizer is not None:
+        X = vectorizer.fit_transform(X)
+    return estimator.fit(X, y, **fit_params)
 
 
 def _score_fold(estimator, X, y, validation_idx, fold_idx, verbose,
-                sample_weight, **score_params):
+                sample_weight, vectorizer, **score_params):
     if validation_idx is not None:
         X = X[validation_idx]
         y = y[validation_idx]
+    if vectorizer is not None:
+        X = vectorizer.transform(X)
     return estimator.score(X, y, sample_weight, **score_params)
 
 
@@ -82,6 +89,11 @@ class StratifiedKFoldCrossValidation(object):
     cv_ : array-like, shape (n_folds, )
         The fold indicies generated.
 
+    vectorizer_ : VectorizerMixin object
+        If a vectorizer was passed into the `fit` call, then this attribute
+        will hold that vectorizer to be used on for future calls
+        to `score`. Otherwise it is None.
+
     """
 
     def __init__(self, estimator, n_folds=5, shuffle=False, n_jobs=1,
@@ -108,6 +120,8 @@ class StratifiedKFoldCrossValidation(object):
         if not hasattr(self, 'cv_'):
             raise ValueError("This classifier has not yet been fit.")
         if not hasattr(self, 'multilabel_'):
+            raise ValueError("This classifier has not yet been fit.")
+        if not hasattr(self, 'vectorizer_'):
             raise ValueError("This classifier has not yet been fit.")
 
     def _check_n_folds(self, n_folds):
@@ -138,7 +152,7 @@ class StratifiedKFoldCrossValidation(object):
             ).split(X, y))
         return self
 
-    def fit(self, X, y, **fit_params):
+    def fit(self, X, y, vectorizer=None, **fit_params):
         """
         Fit an estimator for each fold.
 
@@ -162,18 +176,19 @@ class StratifiedKFoldCrossValidation(object):
         """
 
         self._generate_splits(X, y)
+        self.vectorizer_ = vectorizer
         self.fold_estimators_ = Parallel(n_jobs=self.n_jobs)(
             delayed(_fit_fold)(
                 estimator=_clone(self.estimator), X=X, y=y,
                 train_idx=train_idx, fold_idx=i, verbose=self.verbose,
-                **fit_params
+                vectorizer=self.vectorizer_, **fit_params
             )
             for i, (train_idx, _) in enumerate(self.cv_)
         )
         return self
 
-    def score(self, X, y, validation=False, avg_folds=True, sample_weight=None,
-              **score_params):
+    def score(self, X, y, validation=False, avg_folds=True,
+              sample_weight=None, **score_params):
         """
         Runs the `score` method of each fold estimator on X and y.
         If X and y are the training inputs and `validation` is True then
@@ -220,7 +235,8 @@ class StratifiedKFoldCrossValidation(object):
                 validation_idx=valid_idx if validation else None,
                 fold_idx=i,
                 verbose=self.verbose,
-                **score_params
+                vectorizer=self.vectorizer_,
+                ** score_params
             )
             for i, (fold_estimator, (_, valid_idx)) in
             enumerate(zip(self.fold_estimators_, self.cv_))
