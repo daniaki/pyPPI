@@ -9,6 +9,7 @@ Usage:
                   [--retrain] [--chain] [--induce] [--verbose] [--save]
                   [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
                   [--input=FILE] [--output=FILE] [--directory=DIR]
+                  [--output_folder=OUT]
   predict_ppis.py -h | --help
 
 Options:
@@ -38,6 +39,7 @@ Options:
                     header columns 'source' and 'target'. [default: None]
   --output=FILE     Output file name [default: predictions.tsv]
   --directory=DIR   Absolute or relative output directory [default: ./results/]
+  --output_folder=OUT  Output directory [default: None]
 """
 import sys
 import os
@@ -117,10 +119,12 @@ if __name__ == "__main__":
     retrain = args['retrain']
     chain = args['chain']
     save = args['save']
+    folder = args['output_folder']
 
     # Set up the folder for each experiment run named after the current time
     # -------------------------------------------------------------------- #
-    folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
+    if folder is None:
+        folder = datetime.now().strftime("pred_%y-%m-%d_%H-%M-%S")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
     json.dump(
@@ -264,6 +268,7 @@ if __name__ == "__main__":
             n_splits=n_splits, shuffle=True,
             random_state=rng.randint(MAX_INT)
         )
+        cv_iter = list(cv.split(X_train, y_train))
         if model == 'paper':
             clf = paper_model(
                 labels=mlb.classes,
