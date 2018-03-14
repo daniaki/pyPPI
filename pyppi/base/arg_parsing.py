@@ -67,7 +67,7 @@ def parse_args(docopt_args, require_features=False, predict_script=False):
             parsed['directory'] = './'
 
     if _query_doctop_dict(docopt_args, '--output_folder'):
-        output_folder = docopt_args['--label']
+        output_folder = docopt_args['--output_folder']
         if output_folder in (None, 'None'):
             parsed['output_folder'] = None
         else:
