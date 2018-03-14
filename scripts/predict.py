@@ -211,7 +211,7 @@ if __name__ == "__main__":
     def separate_features(row):
         features = row[0].upper().split(',')
         interpro = set(term for term in features if 'IPR' in term)
-        go = set(term for term in features if 'GO:' in term)
+        go = set(term for term in features if 'GO' in term)
         pfam = set(term for term in features if 'PF' in term)
         return (go, interpro, pfam)
 
@@ -264,8 +264,6 @@ if __name__ == "__main__":
             n_splits=n_splits, shuffle=True,
             random_state=rng.randint(MAX_INT)
         )
-        cv_iter = list(cv.split(X_train, y_train))
-
         if model == 'paper':
             clf = paper_model(
                 labels=mlb.classes,

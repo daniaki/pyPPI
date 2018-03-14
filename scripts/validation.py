@@ -74,6 +74,7 @@ from pyppi.predict.plotting import plot_heatmaps
 
 
 from sklearn.exceptions import UndefinedMetricWarning, FitFailedWarning
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.base import clone
 from sklearn.metrics import (
     label_ranking_loss, hamming_loss,
@@ -196,7 +197,7 @@ if __name__ == "__main__":
             n_jobs_model=n_jobs,
             n_jobs_gs=n_jobs,
             random_state=seeds_clf[bs_iter],
-            search_vectorizer=False
+            make_pipeline=False,
         )
 
         estimators = [clone(pipeline) for _ in mlb.classes]
@@ -211,7 +212,8 @@ if __name__ == "__main__":
             random_state=seeds_kfold[bs_iter],
             verbose=verbose
         )
-        clf.fit(X_train, y_train)
+        vec = CountVectorizer(binary=use_binary, lowercase=False)
+        clf.fit(X_train, y_train, vectorizer=vec)
 
         logger.info("\tComputing cross-validation scores.")
         for func_idx, (func_name, func) in enumerate(binary_scoring_funcs):
