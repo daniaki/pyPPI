@@ -8,7 +8,7 @@ Usage:
   validation.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
              [--induce] [--chain] [--verbose] [--binary] [--top=T]
              [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
-             [--h_iterations=H] [--directory=DIR]
+             [--h_iterations=H] [--directory=DIR] [--output_folder=OUT]
   validation.py -h | --help
 
 Options:
@@ -30,6 +30,7 @@ Options:
                     iterations per fold [default: 30]
   --n_iterations=I  Number of bootstrap iterations [default: 5]
   --directory=DIR   Output directory [default: ./results/]
+  --output_folder=OUT  Output directory [default: None]
 """
 
 import json
@@ -102,10 +103,12 @@ if __name__ == "__main__":
     hyperparam_iter = args['h_iterations']
     use_binary = args['binary']
     chain = args['chain']
+    folder = args['output_folder']
 
     # Set up the folder for each experiment run named after the current time
     rng = RandomState(seed=RANDOM_STATE)
-    folder = datetime.now().strftime("val_%y-%m-%d_%H-%M")
+    if folder is None:
+        folder = datetime.now().strftime("val_%y-%m-%d_%H-%M")
     direc = "{}/{}/".format(direc, folder)
     su_make_dir(direc)
     seeds_clf = [int(rng.randint(1, MAX_RAND)) for i in range(n_iter)]
@@ -318,10 +321,6 @@ if __name__ == "__main__":
     logger.info("Writing label training order.")
     with open("{}/{}".format(direc, "label_order.csv"), 'wt') as fp:
         fp.write(",".join(mlb.classes))
-
-    logger.info("Saving classifier")
-    classifier_path = "{}/{}".format(direc, "classifier.pickle")
-    save_classifier(clf, selection, mlb, classifier_path)
 
     # Compute label similarity heatmaps and label correlation heatmap
     # -------------------------------------------------------------------- #
