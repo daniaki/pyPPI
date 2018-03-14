@@ -210,7 +210,8 @@ def make_classifier(algorithm, class_weight='balanced', random_state=None,
 
 def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
                         binary=True, n_jobs_model=1, random_state=None,
-                        search_vectorizer=True, n_jobs_gs=1, cv=None):
+                        search_vectorizer=True, n_jobs_gs=1, cv=None,
+                        make_pipeline=True, multilabel=True):
     """Wrapper function to automate the mundane setup of a `Pipeline` classifier
     within a `RandomGridSearchCV` estimator. See the links below for more
     details on the parameters.
@@ -242,7 +243,8 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
 
     search_vectorizer : bool, optional, default: False
         If True, adds the `binary` attribute of the `CountVectorizer` to the 
-        grid search parameter distribution dictionary.
+        grid search parameter distribution dictionary. Ignored if 
+        `make_pipelin` is False.
 
     n_jobs_gs : int, optional, default: 1
         Sets the `n_jobs` parameter of the `RandomizedGridSearch` classifier.
@@ -250,6 +252,10 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
     cv : cross-validation generator, str or an iterable, optional
         If None, then a :class:`StratifiedKFold` cv generator is used in the
         :class:`RandomGridSearchCV`.
+
+    make_pipeline : boolean, optional, default: True
+        Wrap the estimator defined in `model` in a pipeline with the first
+        step being a `CountVectorizer`. Useful if your features are textual.
 
     Returns
     -------
@@ -270,17 +276,19 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
     model_random_state = rng.randint(max_int)
     cv_random_state = rng.randint(max_int)
     rcv_random_state = rng.randint(max_int)
-    chain_random_state = rng.randint(max_int)
 
     base_estimator = make_classifier(
         model, random_state=model_random_state, n_jobs=n_jobs_model)
-    params = get_parameter_distribution_for_model(model, step="estimator")
 
-    vectorizer = CountVectorizer(lowercase=False, binary=binary)
-    pipeline = Pipeline(
-        steps=[('vectorizer', vectorizer), ('estimator', base_estimator)])
-    if search_vectorizer:
-        params['vectorizer__binary'] = [False, True]
+    if make_pipeline:
+        params = get_parameter_distribution_for_model(model, step="estimator")
+        vectorizer = CountVectorizer(lowercase=False, binary=binary)
+        base_estimator = Pipeline(
+            steps=[('vectorizer', vectorizer), ('estimator', base_estimator)])
+        if search_vectorizer:
+            params['vectorizer__binary'] = [False, True]
+    else:
+        params = get_parameter_distribution_for_model(model)
 
     if cv is None:
         cv = StratifiedKFold(
@@ -289,7 +297,7 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
         )
 
     clf = RandomizedSearchCV(
-        estimator=pipeline,
+        estimator=base_estimator,
         cv=cv,
         n_iter=rcv_iter,
         n_jobs=n_jobs_gs,
