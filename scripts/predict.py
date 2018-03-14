@@ -90,7 +90,7 @@ from pyppi.predict.utilities import interactions_to_Xy_format
 from pyppi.predict import parse_interactions
 from pyppi.predict.plotting import plot_threshold_curve
 from pyppi.models.utilities import make_gridsearch_clf
-from pyppi.predict.utilities import paper_model, validation_model
+from pyppi.predict.utilities import paper_model
 from pyppi.models.binary_relevance import MixedBinaryRelevanceClassifier
 
 from sklearn.base import clone
@@ -269,6 +269,12 @@ if __name__ == "__main__":
             random_state=rng.randint(MAX_INT)
         )
         cv_iter = list(cv.split(X_train, y_train))
+
+        # from sklearn.feature_extraction.text import CountVectorizer
+        # vec = CountVectorizer(binary=True, lowercase=False)
+        # X_train = vec.fit_transform(X_train)
+        # X_test = vec.transform(X_test)
+
         if model == 'paper':
             clf = paper_model(
                 labels=mlb.classes,
@@ -280,7 +286,9 @@ if __name__ == "__main__":
                 n_jobs_gs=n_jobs,
                 n_jobs_br=1,
                 random_state=RANDOM_STATE,
-                verbose=verbose
+                verbose=verbose,
+                search_vectorizer=False,
+                use_pipeline=True
             )
         else:
             pipeline = make_gridsearch_clf(
@@ -292,7 +300,8 @@ if __name__ == "__main__":
                 n_jobs_model=n_jobs,
                 n_jobs_gs=n_jobs,
                 random_state=RANDOM_STATE,
-                search_vectorizer=True
+                search_vectorizer=True,
+                make_pipeline=True
             )
             estimators = [clone(pipeline) for _ in mlb.classes]
             clf = MixedBinaryRelevanceClassifier(
