@@ -55,6 +55,9 @@ class IterativeStratifiedKFold(_BaseKFold):
         if len(y.shape) != 2 and y.shape[1] < 2:
             raise ValueError(
                 "Requires y to be of shape (n_samples, n_labels)")
+        elif y.shape[1] < 2:
+            raise ValueError(
+                "Requires y to be of shape (n_samples, n_labels)")
 
         n_labels = y.shape[1]
         n_instances = y.shape[0]
