@@ -42,7 +42,7 @@ VALID_SELECTION = (
 
 def paper_model(labels, rcv_splits=3, rcv_iter=30, scoring='f1', cv=None,
                 n_jobs_model=1, n_jobs_br=1, n_jobs_gs=1, random_state=None,
-                verbose=False):
+                verbose=False, use_pipeline=True):
     """This creates a :class:`MixedBinaryRelevanceClassifier`. A `Pipeline`
     classifier with the estimator step being a `RandomizedGridSearch`
     classifier is created. The estimator inside the grid search for
@@ -67,7 +67,7 @@ def paper_model(labels, rcv_splits=3, rcv_iter=30, scoring='f1', cv=None,
     n_jobs_model : int, optional, default: 1
         Sets the `n_jobs` parameter of the Pipeline's estimator step.
 
-    n_jobs_br : {int}, optional
+    n_jobs_br : int, optional
         Sets the `n_jobs` parameter of the :class:`MixedBinaryRelevanceClassifier`
         step.
 
@@ -84,6 +84,10 @@ def paper_model(labels, rcv_splits=3, rcv_iter=30, scoring='f1', cv=None,
 
     verbose : bool, optional, default: False
         Logs messages regarding fitting progress.
+
+    use_pipeline : bool, optional, default: False
+        If True, wraps each classifier in a pipeline with a `CountVectorizer` 
+        as the first step so features can be transformed automatically.
 
     Returns
     -------
@@ -102,80 +106,8 @@ def paper_model(labels, rcv_splits=3, rcv_iter=30, scoring='f1', cv=None,
         rcv = make_gridsearch_clf(
             model, rcv_splits=rcv_splits, rcv_iter=rcv_iter, scoring=scoring,
             n_jobs_model=n_jobs_model, n_jobs_gs=n_jobs_gs, cv=cv,
-            search_vectorizer=True, random_state=random_state
-        )
-        estimators.append(rcv)
-    return MixedBinaryRelevanceClassifier(
-        estimators, n_jobs=n_jobs_br, verbose=verbose
-    )
-
-
-def validation_model(labels, model='LogisticRegression', rcv_splits=3, cv=None,
-                     rcv_iter=30, scoring='f1', binary=True, n_jobs_br=1,
-                     n_jobs_model=1, n_jobs_gs=1, random_state=None,
-                     verbose=False):
-    """This creates a :class:`MixedBinaryRelevanceClassifier`. A `Pipeline`
-    classifier with the estimator step being a `RandomizedGridSearch`
-    classifier is created. The estimator inside the grid search is that
-    specified by `model`
-
-    Parameters
-    ----------
-    labels : list
-        List of labels which will be used to initialise a `Binary Relevance`
-        classifier with.
-
-    model: str
-        String class name of the `SciKit-Learn` model which will be the
-        `estimator` within the `Pipeline`.
-
-    rcv_splits : int, optional, default: 3
-        The number of splits to use during hyper-parameter cross-validation.
-        Ignored if `cv` is not None.
-
-    rcv_iter : int, optional, default: 30
-        The number of grid search iterations to perform. 
-
-    scoring : str, optional default: 'f1'
-        Scoring method used during hyperparameter search.
-
-    binary : bool, optional, default: True
-        If True sets the `binary` attribute of the `CountVectorizer` to True.
-
-    n_jobs_model : int, optional, default: 1
-        Sets the `n_jobs` parameter of the Pipeline's estimator step.
-
-    n_jobs_br : {int}, optional
-        Sets the `n_jobs` parameter of the :class:`MixedBinaryRelevanceClassifier`
-        step.
-
-    n_jobs_gs : int, optional, default: 1
-        Sets the `n_jobs` parameter of the `RandomizedGridSearch` classifier.
-
-    random_state : int or None, optional, default: None
-        This is a seed used to generate random_states for all estimator
-        objects such as the base model and the grid search.
-
-    cv : cross-validation generator, str or an iterable, optional
-        If None, then a :class:`StratifiedKFold` cv generator is used in the
-        :class:`RandomGridSearchCV`.
-
-    verbose : bool, optional, default: False
-        Logs messages regarding fitting progress.
-
-    Returns
-    -------
-    :class:`MixedBinaryRelevanceClassifier`
-        A fully initialised classifier.
-    """
-
-    estimators = []
-    for _ in labels:
-        rcv = make_gridsearch_clf(
-            model, rcv_splits=rcv_splits, rcv_iter=rcv_iter,
-            scoring=scoring, n_jobs_gs=n_jobs_gs, binary=binary,
-            n_jobs_model=n_jobs_model, search_vectorizer=False,
-            random_state=random_state, cv=cv
+            search_vectorizer=True, random_state=random_state,
+            make_pipeline=use_pipeline
         )
         estimators.append(rcv)
     return MixedBinaryRelevanceClassifier(
