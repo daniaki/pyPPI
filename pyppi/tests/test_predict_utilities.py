@@ -16,7 +16,6 @@ from ..predict.utilities import (
     DEFAULT_SELECTION,
     load_dataset,
     paper_model,
-    validation_model,
     interactions_to_Xy_format,
     load_training_dataset,
     load_validation_dataset,
@@ -101,75 +100,6 @@ class TestInteractionsToXyFormat(TestCase):
         ]
         self.assertEqual(result_x, list(X))
         self.assertEqual(result_y, y)
-
-
-# ------------- VALIDATION MODEL ------------------------ #
-class TestValidationModel(TestCase):
-
-    # BinaryRel -> RandomizedGS -> Pipeline(vec, est)
-
-    def test_creates_n_estimators(self):
-        clf = validation_model(labels=[0, 1, 2])
-        self.assertEqual(len(clf.estimators), 3)
-
-    def test_creates_pipeline_with_count_vectorizer(self):
-        clf = validation_model(labels=[0, 1, 2])
-        for i in range(3):
-            self.assertIsInstance(clf.estimators[i], RandomizedSearchCV)
-            self.assertIsInstance(clf.estimators[i].estimator, Pipeline)
-            self.assertIsInstance(
-                clf.estimators[i].estimator.steps[0][1], CountVectorizer)
-
-    def test_vectorizer_has_correct_parameters(self):
-        clf = validation_model(labels=[0, 1, 2])
-        for i in range(3):
-            vec = clf.estimators[i].estimator.steps[0][1]
-            self.assertEqual(vec.stop_words, None)
-            self.assertEqual(vec.binary, True)
-            self.assertEqual(vec.lowercase, False)
-
-    def test_correctly_sets_up_grid_search(self):
-        clf = validation_model(
-            labels=[0, 1, 2], rcv_splits=5, rcv_iter=50, scoring='accurracy',
-            n_jobs_br=1, n_jobs_gs=2, random_state=0, n_jobs_model=3,
-            model="RandomForestClassifier"
-        )
-        params = get_parameter_distribution_for_model(
-            "RandomForestClassifier", step='estimator'
-        )
-
-        rng = RandomState(0)
-        model_random_state = rng.randint(max_int)
-        cv_random_state = rng.randint(max_int)
-        rcv_random_state = rng.randint(max_int)
-
-        for i in range(3):
-            self.assertEqual(clf.n_jobs, 1)
-
-            rgs_est = clf.estimators[i]
-            cv = rgs_est.cv
-            pipe = rgs_est.estimator
-            model = rgs_est.estimator.steps[1][1]
-
-            self.assertIsInstance(pipe, Pipeline)
-            self.assertEqual(pipe.steps[0][0], 'vectorizer')
-            self.assertEqual(pipe.steps[0][1].binary, True)
-            self.assertEqual(pipe.steps[1][0], 'estimator')
-
-            self.assertEqual(rgs_est.param_distributions, params)
-            self.assertEqual(rgs_est.random_state, rcv_random_state)
-            self.assertEqual(rgs_est.n_iter, 50)
-            self.assertEqual(rgs_est.error_score, 0.0)
-            self.assertEqual(rgs_est.n_jobs, 2)
-            self.assertEqual(rgs_est.refit, True)
-            self.assertEqual(rgs_est.scoring, 'accurracy')
-
-            self.assertEqual(cv.n_splits, 5)
-            self.assertEqual(cv.random_state, cv_random_state)
-
-            self.assertIsInstance(model, RandomForestClassifier)
-            self.assertEqual(model.random_state, model_random_state)
-            self.assertEqual(model.n_jobs, 3)
 
 
 # ------------- PAPER MODEL ------------------------ #

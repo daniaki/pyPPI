@@ -56,7 +56,7 @@ class TestMakeGridSearchClf(TestCase):
         clf = make_gridsearch_clf(
             'LogisticRegression', rcv_splits=5, rcv_iter=50, scoring='accuracy',
             n_jobs_gs=2, n_jobs_model=4, random_state=0,
-            binary=False, search_vectorizer=False
+            binary=False, search_vectorizer=False, multilabel=False
         )
         params = get_parameter_distribution_for_model(
             "LogisticRegression", step='estimator'
@@ -99,3 +99,16 @@ class TestMakeGridSearchClf(TestCase):
         self.assertIsInstance(cv, StratifiedKFold)
         self.assertEqual(cv.n_splits, 5)
         self.assertEqual(cv.random_state, cv_random_state)
+
+    def test_make_pipeline_false_estimator_is_not_pipeline(self):
+        clf = make_gridsearch_clf(
+            'LogisticRegression', rcv_splits=5, rcv_iter=50, scoring='accuracy',
+            n_jobs_gs=2, n_jobs_model=4, random_state=0,
+            binary=False, search_vectorizer=False, make_pipeline=False
+        )
+        params = get_parameter_distribution_for_model("LogisticRegression")
+
+        rgs_est = clf  # grid search estimator
+        self.assertIsInstance(clf, RandomizedSearchCV)
+        self.assertEqual(rgs_est.param_distributions, params)
+        self.assertIsInstance(clf.estimator, LogisticRegression)
