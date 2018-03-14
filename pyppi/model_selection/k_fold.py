@@ -121,7 +121,7 @@ class StratifiedKFoldCrossValidation(object):
             raise ValueError("This classifier has not yet been fit.")
         if not hasattr(self, 'multilabel_'):
             raise ValueError("This classifier has not yet been fit.")
-        if not hasattr(self, 'vectorizer_'):
+        if not hasattr(self, 'vectorizers_'):
             raise ValueError("This classifier has not yet been fit.")
 
     def _check_n_folds(self, n_folds):
@@ -176,12 +176,17 @@ class StratifiedKFoldCrossValidation(object):
         """
 
         self._generate_splits(X, y)
-        self.vectorizer_ = vectorizer
+        if vectorizer is not None:
+            self.vectorizers_ = [clone(vectorizer)
+                                 for _ in range(self.n_folds)]
+        else:
+            self.vectorizers_ = [None for _ in range(self.n_folds)]
+
         self.fold_estimators_ = Parallel(n_jobs=self.n_jobs)(
             delayed(_fit_fold)(
                 estimator=_clone(self.estimator), X=X, y=y,
                 train_idx=train_idx, fold_idx=i, verbose=self.verbose,
-                vectorizer=self.vectorizer_, **fit_params
+                vectorizer=self.vectorizers_[i], **fit_params
             )
             for i, (train_idx, _) in enumerate(self.cv_)
         )
@@ -235,7 +240,7 @@ class StratifiedKFoldCrossValidation(object):
                 validation_idx=valid_idx if validation else None,
                 fold_idx=i,
                 verbose=self.verbose,
-                vectorizer=self.vectorizer_,
+                vectorizer=self.vectorizers_[i],
                 ** score_params
             )
             for i, (fold_estimator, (_, valid_idx)) in
