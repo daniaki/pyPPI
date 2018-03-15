@@ -187,6 +187,8 @@ if __name__ == "__main__":
     multilabel_statistics = np.zeros((2, n_ml_scorers, n_iter, n_splits))
     rng = RandomState(seed=RANDOM_STATE)
 
+    fp = open("{}/stability.txt".format(direc), 'wt')
+
     # Begin the main show!
     # ------------------------------------------------------------------- #
     for bs_iter in range(n_iter):
@@ -201,6 +203,7 @@ if __name__ == "__main__":
             n_jobs_gs=n_jobs,
             random_state=seeds_clf[bs_iter],
             make_pipeline=False,
+            search_vectorizer=False
         )
 
         estimators = [clone(pipeline) for _ in mlb.classes]
@@ -217,6 +220,14 @@ if __name__ == "__main__":
         )
         vec = CountVectorizer(binary=use_binary, lowercase=False)
         clf.fit(X_train, y_train, vectorizer=vec)
+
+        fp.write(f"\nBS {bs_iter}\n")
+        for i, br in enumerate(clf.fold_estimators_):
+            fp.write(f"\tfold {i+1}\n")
+            for l, label in enumerate(mlb.classes):
+                fp.write(f"\t\tlabel {label}\n")
+                fp.write(f"\t\t\t{br.estimators_[l].best_score_}\n")
+                fp.write(f"\t\t\t{br.estimators_[l].best_params_}\n")
 
         logger.info("\tComputing cross-validation scores.")
         for func_idx, (func_name, func) in enumerate(binary_scoring_funcs):

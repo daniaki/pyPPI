@@ -269,12 +269,6 @@ if __name__ == "__main__":
             random_state=rng.randint(MAX_INT)
         )
         cv_iter = list(cv.split(X_train, y_train))
-
-        # from sklearn.feature_extraction.text import CountVectorizer
-        # vec = CountVectorizer(binary=True, lowercase=False)
-        # X_train = vec.fit_transform(X_train)
-        # X_test = vec.transform(X_test)
-
         if model == 'paper':
             clf = paper_model(
                 labels=mlb.classes,
@@ -287,7 +281,6 @@ if __name__ == "__main__":
                 n_jobs_br=1,
                 random_state=RANDOM_STATE,
                 verbose=verbose,
-                search_vectorizer=False,
                 use_pipeline=True
             )
         else:
