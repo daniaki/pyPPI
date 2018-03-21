@@ -133,12 +133,12 @@ setup(
         'pyppi.tests'
     ],
     install_requires=[
-        'scikit-learn>=0.18.1',
-        'pandas>=0.19.1',
-        'numpy>=1.11.2',
-        'scipy>=0.18.1',
-        'bioservices>=1.4.14',
-        'biopython>=1.68',
+        'scikit-learn',
+        'pandas',
+        'numpy',
+        'scipy',
+        'bioservices',
+        'biopython',
         'matplotlib',
         'docopt',
         'sqlalchemy',
