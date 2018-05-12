@@ -18,7 +18,7 @@ from ..models.binary_relevance import MixedBinaryRelevanceClassifier
 from ..predict import _check_classifier_and_selection
 from ..predict import _update_missing_protein_map
 from ..predict import _create_missing_interactions
-from ..predict import make_predictions
+from ..predict import classify_interactions
 
 from ..predict.utilities import load_dataset, DEFAULT_SELECTION
 from ..predict.utilities import interactions_to_Xy_format
@@ -266,7 +266,7 @@ class TestMakePredictions(TestCase):
             )
             for i in self.interactions
         ]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -284,7 +284,7 @@ class TestMakePredictions(TestCase):
             )
             for i in self.interactions
         ]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=False, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -296,7 +296,7 @@ class TestMakePredictions(TestCase):
 
     def test_can_make_predictions_on_list_of_interaction_objects(self):
         ppis = self.interactions
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -308,7 +308,7 @@ class TestMakePredictions(TestCase):
 
     def test_ignores_None_or_not_interaction_objects(self):
         ppis = [self.interactions[0], None, '1']
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -320,7 +320,7 @@ class TestMakePredictions(TestCase):
 
     def test_returns_empty_list_no_valid_interactions(self):
         ppis = [(1, 2), (1, 2, 3), None, '1']
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -331,7 +331,7 @@ class TestMakePredictions(TestCase):
     def test_typeerror_first_elem_not_interaction_or_tuple(self):
         with self.assertRaises(TypeError):
             ppis = [1, None, '1']
-            make_predictions(
+            classify_interactions(
                 ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
                 taxon_id=9606, verbose=False, session=self.session
             )
@@ -345,7 +345,7 @@ class TestMakePredictions(TestCase):
             for i in self.interactions
         ]
         delete_database(self.session)
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -363,7 +363,7 @@ class TestMakePredictions(TestCase):
             for i in self.interactions
         ]
         ppis.append(ppis[0])
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -375,7 +375,7 @@ class TestMakePredictions(TestCase):
 
     def test_invalid_ppis_added_to_invalid(self):
         ppis = [('A', 'B'), ('Q04917', 'X')]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -391,7 +391,7 @@ class TestMakePredictions(TestCase):
             )
             for i in self.interactions
         ]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=0, verbose=False, session=self.session
         )
@@ -408,7 +408,7 @@ class TestMakePredictions(TestCase):
             for i in self.interactions
         ]
         delete_database(self.session)
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=0, verbose=False, session=self.session
         )
@@ -424,7 +424,7 @@ class TestMakePredictions(TestCase):
             )
             for i in self.interactions
         ]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=None, verbose=False, session=self.session
         )
@@ -444,7 +444,7 @@ class TestMakePredictions(TestCase):
             Protein.query.get(self.interactions[0].source).uniprot_id
         )
         ppis = [ppi_1, ppi_2]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -460,7 +460,7 @@ class TestMakePredictions(TestCase):
 
     def test_multiple_choice_uniprot_ids_get_put_in_invalid(self):
         ppis = [('Q8NDH8', 'P0CG12')]
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
@@ -472,7 +472,7 @@ class TestMakePredictions(TestCase):
         ppis = [('A8K9K2', 'A8K9K2')]  # maps to P31946
         entry = Protein.get_by_uniprot_id('P31946')
         interaction = Interaction.get_by_interactors(entry, entry)
-        predictions = make_predictions(
+        predictions = classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )

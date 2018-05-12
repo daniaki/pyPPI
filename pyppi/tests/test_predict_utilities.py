@@ -138,8 +138,8 @@ class TestPaperModel(TestCase):
         params['vectorizer__binary'] = [False, True]
 
         rng = RandomState(0)
-        model_random_state = rng.randint(max_int)
         cv_random_state = rng.randint(max_int)
+        model_random_state = rng.randint(max_int)
         rcv_random_state = rng.randint(max_int)
 
         for i in range(3):
@@ -602,7 +602,7 @@ class TestTrainPaperModel(TestCase):
         from sklearn.exceptions import UndefinedMetricWarning
         warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
         with warnings.catch_warnings():
-            clf, selection = train_paper_model(rcv_iter=10, rcv_splits=2)
+            clf, selection, mlb = train_paper_model(rcv_iter=10, rcv_splits=2)
 
     def test_raise_error_no_training_data(self):
         delete_database(self.session)

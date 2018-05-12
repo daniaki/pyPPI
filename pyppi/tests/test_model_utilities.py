@@ -64,8 +64,8 @@ class TestMakeGridSearchClf(TestCase):
 
         rng = RandomState(0)
         max_int = MAX_SEED
-        model_random_state = rng.randint(max_int)
         cv_random_state = rng.randint(max_int)
+        model_random_state = rng.randint(max_int)
         rcv_random_state = rng.randint(max_int)
         # chain_random_state = rng.randint(max_int)
 
