@@ -5,7 +5,7 @@ This script runs classifier training over the entire training data and then
 output predictions over the interactome.
 
 Usage:
-  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp] 
+  predict_ppis.py [--interpro] [--pfam] [--mf] [--cc] [--bp]
                   [--retrain] [--chain] [--induce] [--verbose] [--save]
                   [--model=M] [--n_jobs=J] [--n_splits=S] [--n_iterations=I]
                   [--input=FILE] [--output=FILE] [--directory=DIR]
@@ -25,7 +25,7 @@ Options:
   --retrain     Re-train classifier instead of loading previous version. If
                 using a previous version, you must use the same selection of
                 features along with the same induce setting.
-  --save        Save the trained classifier to the home cache directory ~/.pyppi/, 
+  --save        Save the trained classifier to the home cache directory ~/.pyppi/,
                 overwritting any previously saved classifier.
   --model=M         A binary classifier from Scikit-Learn implementing fit,
                     predict and predict_proba [default: LogisticRegression].
@@ -87,7 +87,7 @@ from pyppi.data_mining.uniprot import batch_map
 from pyppi.data_mining.features import compute_interaction_features
 
 from pyppi.predict.utilities import interactions_to_Xy_format
-from pyppi.predict import parse_interactions
+from pyppi.predict import get_or_create_interactions
 from pyppi.predict.plotting import plot_threshold_curve
 from pyppi.models.utilities import make_gridsearch_clf
 from pyppi.predict.utilities import paper_model
@@ -150,11 +150,10 @@ if __name__ == "__main__":
         testing = generic_to_dataframe(
             f_input=generic_io(input_file),
             parsing_func=edgelist_func,
-            drop_nan=True,
+            drop_nan=[SOURCE, TARGET],
             allow_self_edges=True,
-            allow_duplicates=True
+            allow_duplicates=False
         )
-
         sources = set(p for p in testing.source.values)
         targets = set(p for p in testing.target.values)
         accessions = list(sources | targets)
@@ -163,18 +162,21 @@ if __name__ == "__main__":
             accessions=accessions,
             keep_unreviewed=True,
             match_taxon_id=9606,
-            allow_download=True
+            allow_download=True,
+            verbose=verbose,
         )
+
         testing_network = map_network_accessions(
             interactions=testing, accession_map=accession_mapping,
-            drop_nan=True, allow_self_edges=True,
+            drop_nan=[SOURCE, TARGET], allow_self_edges=True,
             allow_duplicates=False, min_counts=None, merge=False
         )
 
-        testing, invalid, new_upids = parse_interactions(
+        testing, invalid, new_upids = get_or_create_interactions(
             testing_network, session=db_session, taxon_id=9606,
             verbose=verbose, n_jobs=n_jobs
         )
+
         # Writing some additional data returned during the parsing process.
         # Namely any invalid interactions and if old uniprot identifiers
         # have been supplied, a mapping to the recent UniProt record used
@@ -207,8 +209,20 @@ if __name__ == "__main__":
     # Get the features into X, and multilabel y indicator format
     # -------------------------------------------------------------------- #
     logger.info("Preparing training and input interactions.")
-    X_train, y_train = interactions_to_Xy_format(training, selection)
+    X_train, y_train = interactions_to_Xy_format(training.all(), selection)
     X_test, _ = interactions_to_Xy_format(testing, selection)
+    mlb = MultiLabelBinarizer(classes=sorted(labels))
+    mlb.fit(y_train)
+    y_train = mlb.transform(y_train)
+
+    logging.info("Computing class distributions.")
+    counter = {l: int(c) for l, c in zip(mlb.classes, y_train.sum(axis=0))}
+    counter["n_samples"] = int(y_train.shape[0])
+    json.dump(
+        counter,
+        fp=open("{}/training_distribution.json".format(direc), 'w'),
+        indent=4, sort_keys=True
+    )
 
     logger.info("Computing usable feature proportions in testing samples.")
 
@@ -257,10 +271,6 @@ if __name__ == "__main__":
     # Make the estimators and BR classifier
     # -------------------------------------------------------------------- #
     if retrain or not os.path.isfile(classifier_path):
-        mlb = MultiLabelBinarizer(classes=sorted(labels))
-        mlb.fit(y_train)
-        y_train = mlb.transform(y_train)
-
         # Same random state as make_gridsearch_clf by spinning through
         # first value.
         rng.randint(MAX_INT)

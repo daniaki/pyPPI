@@ -5,9 +5,9 @@ correspond to all edges labelled with `label` over the specified `threshold`
 probability.
 
 Usage:
-  induce_subnetwork.py [--input=FILE] [--label=L] [--threshold=T] 
+  induce.py [--input=FILE] [--label=L] [--threshold=T]
                        [--pathway=FILE] [--gene_names] [--directory=DIR]
-  induce_subnetwork.py -h | --help
+  induce.py -h | --help
 
 Options:
   -h --help         Show this screen.

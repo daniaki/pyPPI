@@ -13,7 +13,6 @@ Options:
   --verbose  Log information and warning output to console.
 """
 
-import os
 import pandas as pd
 import logging
 from Bio import SwissProt
@@ -32,7 +31,6 @@ from pyppi.base.file_paths import innate_i_network_path, innate_c_network_path
 from pyppi.base.file_paths import interactome_network_path, full_training_network_path
 from pyppi.base.file_paths import kegg_network_path, hprd_network_path
 from pyppi.base.file_paths import testing_network_path, training_network_path
-from pyppi.base.file_paths import default_db_path
 
 from pyppi.base.io import save_uniprot_accession_map, save_network_to_path
 from pyppi.base.io import bioplex_v4, pina2_mitab, innate_curated, innate_imported
@@ -49,14 +47,14 @@ from pyppi.data_mining.generic import bioplex_func
 from pyppi.data_mining.generic import pina_mitab_func, innate_mitab_func
 from pyppi.data_mining.generic import generic_to_dataframe
 from pyppi.data_mining.hprd import hprd_to_dataframe
-from pyppi.data_mining.tools import process_interactions, make_interaction_frame
+from pyppi.data_mining.tools import process_interactions
 from pyppi.data_mining.tools import remove_common_ppis, remove_labels
 from pyppi.data_mining.tools import map_network_accessions
 from pyppi.data_mining.kegg import download_pathway_ids, pathways_to_dataframe
-from pyppi.data_mining.ontology import get_active_instance
 from pyppi.data_mining.psimi import get_active_instance as load_mi_ontology
 from pyppi.data_mining.features import compute_interaction_features
 
+from pyppi.predict.utilities import train_paper_model
 
 logger = create_logger("scripts", logging.INFO)
 ORGANISM = "hsa"
@@ -479,7 +477,15 @@ if __name__ == "__main__":
     try:
         db_session.add_all(references)
         db_session.commit()
-        cleanup_module()
     except:
         db_session.rollback()
         raise
+
+    logger.info("Training default model.")
+    train_paper_model(
+        n_jobs_gs=n_jobs,
+        random_state=None,
+        verbose=verbose,
+        taxon_id=TAXONOMY
+    )
+    cleanup_module()
