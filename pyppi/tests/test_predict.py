@@ -21,7 +21,6 @@ from ..predict import _create_missing_interactions
 from ..predict import classify_interactions
 
 from ..predict.utilities import load_dataset, DEFAULT_SELECTION
-from ..predict.utilities import interactions_to_Xy_format
 
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
@@ -345,14 +344,11 @@ class TestMakePredictions(TestCase):
             for i in self.interactions
         ]
         delete_database(self.session)
-        predictions = classify_interactions(
+        classify_interactions(
             ppis, proba=True, classifier=self.clf, selection=DEFAULT_SELECTION,
             taxon_id=9606, verbose=False, session=self.session
         )
-
-        expected = (self.clf.predict_proba(self.X), [])
-        self.assertTrue(np.all(np.isclose(predictions[0], expected[0])))
-        self.assertEqual(predictions[1], expected[1])
+        self.assertEqual(Interaction.query.count(), 6)
 
     def test_removed_duplicate_interactions_interactions(self):
         ppis = [
