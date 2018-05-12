@@ -8,7 +8,7 @@ data/versions/
 data/*.gz
 data/*.list
 scripts/plotting/data/*
-
+scripts/plotting
 results/*
 
 *.png
