@@ -43,8 +43,8 @@ logger = logging.getLogger("pyppi")
 __all__ = [
     "plotting",
     "utilities",
-    "parse_interactions",
-    "make_predictions"
+    "get_or_create_interactions",
+    "classify_interactions"
 ]
 
 
@@ -234,8 +234,8 @@ def _create_missing_interactions(ppis, protein_map, session, verbose=False,
     return valid, invalid
 
 
-def parse_interactions(ppis, session=None, taxon_id=9606, verbose=False,
-                       n_jobs=1):
+def get_or_create_interactions(ppis, session=None, taxon_id=9606,
+                               verbose=False, n_jobs=1):
     """Parse an iterable of interactions in valid and invalid.
 
     Parse an iterable of either :py:class:`Interaction` instances or
@@ -295,7 +295,7 @@ def parse_interactions(ppis, session=None, taxon_id=9606, verbose=False,
         session = db_session
 
     if isinstance(ppis, pd.DataFrame):
-        ppis = zip(ppis[SOURCE], ppis[TARGET])
+        ppis = list(zip(ppis[SOURCE], ppis[TARGET]))
     else:
         ppis = list(ppis)
 
@@ -373,9 +373,9 @@ def parse_interactions(ppis, session=None, taxon_id=9606, verbose=False,
         raise TypeError("Unexpected type %s at index 0 in ppis." % t)
 
 
-def make_predictions(ppis, proba=True, classifier=None, selection=None,
-                     taxon_id=9606, verbose=True, session=None,
-                     n_jobs=1):
+def classify_interactions(ppis, proba=True, classifier=None, selection=None,
+                          taxon_id=9606, verbose=True, session=None,
+                          n_jobs=1):
     """Predict the labels of a list of interactions.
 
     Parameters
@@ -441,7 +441,7 @@ def make_predictions(ppis, proba=True, classifier=None, selection=None,
     """
     clf, selection, mlb = _check_classifier_and_selection(
         classifier, selection)
-    valid, invalid, mapping = parse_interactions(
+    valid, invalid, mapping = get_or_create_interactions(
         ppis, session, taxon_id, verbose, n_jobs
     )
     if mlb is not None:

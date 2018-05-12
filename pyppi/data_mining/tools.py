@@ -90,10 +90,16 @@ def xy_from_interaction_frame(interactions):
     Utility function to convert an interaction dataframe into seperate
     X and y numpy arrays.
 
-    :param interactions: pd.DataFrame
+    Parameters
+    ----------
+    interactions : :class:`pd.DataFrame`.
         DataFrame with 'source', 'target' and 'label' columns.
 
-    :return: array-like, shape (n_samples, )
+    Returns
+    -------
+    `tuple`
+        Returns X, y where X is a list of tuple edges and y is a list
+        list of strings for each row.
     """
     X = ppis_from_interaction_frame(interactions)
     y = labels_from_interaction_frame(interactions)
@@ -105,13 +111,15 @@ def labels_from_interaction_frame(interactions):
     Utility function to create an iterable of PPI objects from an interaction
     dataframe.
 
-    :param interactions: pd.DataFrame
+    Parameters
+    ----------
+    interactions : :class:`pd.DataFrame`.
         DataFrame with 'source', 'target' and 'label' columns.
-    :param use_set: boolean
-        Use True to return a set of strings.
 
-    :return: List or Set
-        List or Set of string objects.
+    Returns
+    -------
+    `list`
+        List list of strings for each row.
     """
     df = interactions
     labels = _format_labels(df[LABEL])
@@ -124,13 +132,15 @@ def ppis_from_interaction_frame(interactions):
     Utility function to create an iterable of tuples from an interaction
     dataframe.
 
-    :param interactions: pd.DataFrame
+    Parameters
+    ----------
+    interactions : :class:`pd.DataFrame`.
         DataFrame with 'source', 'target' and 'label' columns.
-    :param use_set: boolean
-        Use True to return a set of PPIs
 
-    :return: List or Set
-        List or Set of PPI objects.
+    Returns
+    -------
+    `tuple`
+        List of ppi tuples.
     """
     df = interactions
     ppis = [
@@ -143,12 +153,32 @@ def ppis_from_interaction_frame(interactions):
 def make_interaction_frame(sources, targets, labels, pmids=None, psimis=None,
                            sort=True):
     """
-    Wrapper to construct a non-directional PPI dataframe.
+    Construct a dataframe with columns `source`, `target`, `label`, 
+    `pubmed` and `experiment_type`. Source and target columns will be 
+    alpha sorted.
 
-    :param sources: Interactor ID that is the source node.
-    :param targets: Interactor ID that is the target node.
-    :param labels: Edge label for the interaction.
-    :return: DataFrame with SOURCE, TARGET and LABEL columns.
+    Parameters
+    ----------
+    sources : list
+        Interactor ID that is the source node.
+
+    targets : list
+        Interactor ID that is the target node.
+
+    labels: list
+        Edge label for the interaction.
+
+    pubmed : list
+        List of comma delimited Pubmed ids for each PPI.
+
+    psimis : list
+        List of comma delimited PSI-MI accession for each PPI.
+
+    Returns
+    -------
+    :class:`pd.DataFrame`
+        DataFrame with `source`, `target`, `label`, `pubmed` and 
+        `experiment_type` as columns.
     """
     ppis = _make_ppi_tuples(sources, targets, sort=sort)
     sources = [a for a, _ in ppis]
@@ -246,7 +276,7 @@ def normalise_nan(interactions, replace=NULL_VALUES, replace_with=None):
     return df
 
 
-def remove_nan(interactions, subset=[SOURCE, TARGET, LABEL]):
+def remove_nan(interactions, subset=(SOURCE, TARGET, LABEL)):
     """
     Drop interactions with missing source, target or labels as indicated
     by None/None.
@@ -255,7 +285,10 @@ def remove_nan(interactions, subset=[SOURCE, TARGET, LABEL]):
     :return: DataFrame with 'source', 'target' and 'label' columns.
     """
     df = normalise_nan(interactions, replace_with=np.NaN)
-    df.dropna(axis=0, how='any', inplace=True, subset=subset)
+    if subset:
+        df.dropna(axis=0, how='any', inplace=True, subset=subset)
+    else:
+        df.dropna(axis=0, how='any', inplace=True)
     selector = df.index.values
     new_df = interactions.loc[selector, ].reset_index(drop=True, inplace=False)
     return new_df

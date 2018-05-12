@@ -273,8 +273,8 @@ def make_gridsearch_clf(model, rcv_splits=3, rcv_iter=30, scoring='f1',
     max_int = MAX_SEED
     rng = RandomState(random_state)
 
-    model_random_state = rng.randint(max_int)
     cv_random_state = rng.randint(max_int)
+    model_random_state = rng.randint(max_int)
     rcv_random_state = rng.randint(max_int)
 
     base_estimator = make_classifier(

@@ -64,7 +64,7 @@ class InteractionNetwork(object):
         self.output_dir_ = output_dir
         self.sep = sep
         self.edges_ = list(zip(interactions[P1], interactions[G1]))
-        self.training_edges = set()
+        self.training_edges = {}
         self.training_nodes = set()
 
         p1_g1 = zip(interactions[P1], interactions[G1])
@@ -83,7 +83,7 @@ class InteractionNetwork(object):
             a = Protein.query.get(interaction.source).uniprot_id
             b = Protein.query.get(interaction.target).uniprot_id
             a, b = sorted((a, b))
-            self.training_edges.add((a, b))
+            self.training_edges[(a, b)] = interaction.labels_as_list
 
         for (a, b) in self.training_edges:
             self.training_nodes.add(a)
@@ -106,9 +106,12 @@ class InteractionNetwork(object):
     def node_in_training_set(self, node):
         return node in self.training_nodes
 
-    def edge_in_training_set(self, edge):
+    def edge_in_training_set(self, edge, label=None):
         p1, p2 = sorted(edge)
-        return (p1, p2) in self.training_edges
+        if label is None:
+            return (p1, p2) in self.training_edges
+        else:
+            return label.capitalize() in self.training_edges.get((p1, p2), [])
 
     def induce_subnetwork_from_label(self, label, threshold=0.5):
         """
@@ -146,7 +149,8 @@ class InteractionNetwork(object):
             pp_path=pp_path,
             noa_path=noa_path,
             eda_path=eda_path,
-            idx_selection=label_idx
+            idx_selection=label_idx,
+            label=label
         )
         return self
 
@@ -220,7 +224,7 @@ class InteractionNetwork(object):
         return self
 
     def _write_cytoscape_files(self, noa_path, eda_path,
-                               pp_path, idx_selection):
+                               pp_path, idx_selection, label=None):
         """
         Compute some node and edge attributes and write these to
         files that can be loaded in cytoscape.
@@ -244,12 +248,12 @@ class InteractionNetwork(object):
         # Compute some selected edge-attributes a,
         # Write the eda (edge-attribute) file.
         columns = ['source', 'target', 'name', 'edge in training', 'max-pr']
-        cyto_e_attrs = {}
+        cyto_e_attrs = dict()
         cyto_e_attrs['source'] = [p1 for p1, _ in edges]
         cyto_e_attrs['target'] = [p2 for _, p2 in edges]
         cyto_e_attrs['name'] = ['{} pp {}'.format(p1, p2) for p1, p2 in edges]
         cyto_e_attrs['edge in training'] = [
-            self.edge_in_training_set(e) for e in edges
+            self.edge_in_training_set(e, label) for e in edges
         ]
         cyto_e_attrs['max-pr'] = list(df['max-pr'].values)
         for label in self.labels:

@@ -42,9 +42,35 @@ ERRORS_TO_RETRY = ('503', '504', '408')
 
 def download_record(accession, verbose=False, wait=5,
                     retries=3, taxon_id=9606):
+    """Download a record for a UniProt accession via the UniProt API. 
+
+    The call will retry upon timeout up to the number specified by `retries`.
+
+    Parameters
+    ----------
+    accession : str
+        UniProt accession.
+
+    verbose : bool, optional
+        If True, log informational and warning messages to the console.
+
+    wait : int, optional
+        Seconds to wait before retrying download.
+
+    retries : int, optional
+        Number of times to retry the download if the server returns
+        errors `503`, `504` or `408`.
+
+    taxon_id : int, optional
+        The taxonomy id to download the accession for. No record is returned
+        if the downloaded record does not match this id.
+
+    Returns
+    -------
+    :class:`Bio.SwissProt.Record`
+        A UniProt record instance.
     """
-    Stub
-    """
+
     record = None
     success = False
 
@@ -80,7 +106,7 @@ def download_record(accession, verbose=False, wait=5,
 
     if not success:
         if verbose:
-            logger.error(
+            logger.warning(
                 "Failed to download record for '{}'".format(accession)
             )
         record = None
@@ -88,10 +114,10 @@ def download_record(accession, verbose=False, wait=5,
     if (not taxon_id is None) and (not record is None) and \
             int(record.taxonomy_id[0]) != taxon_id:
         if verbose:
-            logger.error(
-                "Taxonomy IDs do not match. "
+            logger.warning(
+                "Taxonomy IDs do not match for record {}. "
                 "Expected '{}' but found '{}'.".format(
-                    taxon_id, int(record.taxonomy_id[0])
+                    accession, taxon_id, int(record.taxonomy_id[0])
                 )
             )
         record = None
@@ -101,8 +127,33 @@ def download_record(accession, verbose=False, wait=5,
 
 def download_records(accessions, verbose=False, wait=5,
                      retries=3, taxon_id=9606):
-    """
-    Stub
+    """Download records for each UniProt accession via the UniProt API. 
+
+    The call will retry upon timeout up to the number specified by `retries`.
+
+    Parameters
+    ----------
+    accession : str
+        UniProt accession.
+
+    verbose : bool, optional
+        If True, log informational and warning messages to the console.
+
+    wait : int, optional
+        Seconds to wait before retrying download.
+
+    retries : int, optional
+        Number of times to retry the download if the server returns
+        errors `503`, `504` or `408`.
+
+    taxon_id : int, optional
+        The taxonomy id to download the accession for. No record is returned
+        if the downloaded record does not match this id.
+
+    Returns
+    -------
+    `list`
+        A list of :class:`Bio.SwissProt.Record` record instances.
     """
     return [
         download_record(a, verbose, wait, retries, taxon_id)
@@ -113,8 +164,37 @@ def download_records(accessions, verbose=False, wait=5,
 def parallel_download(accessions, backend="multiprocessing",
                       verbose=False, n_jobs=1, wait=5,
                       retries=3, taxon_id=9606):
-    """
-    Stub
+    """Parallel download records for UniProt accessions via the UniProt API. 
+
+    The call will retry upon timeout up to the number specified by `retries`.
+
+    Parameters
+    ----------
+    accession : str
+        UniProt accession.
+
+    verbose : bool, optional
+        If True, log informational and warning messages to the console.
+
+    wait : int, optional
+        Seconds to wait before retrying download.
+
+    retries : int, optional
+        Number of times to retry the download if the server returns
+        errors `503`, `504` or `408`.
+
+    taxon_id : int, optional
+        The taxonomy id to download the accession for. No record is returned
+        if the downloaded record does not match this id.
+
+    backend : str
+        A supported `Joblib` backend. Can be either 'multiprocessing' or 
+        'threading'.
+
+    Returns
+    -------
+    `list`
+        A list of :class:`Bio.SwissProt.Record` record instances.
     """
     # Warning: Setting backend to multiprocessing may cause strange errors.
     # This is most likely due to this function not being run in a
@@ -128,6 +208,21 @@ def parallel_download(accessions, backend="multiprocessing",
 
 
 def serialise_record(record):
+    """
+    Serialises the fields in a record that can then used to instantiate
+    a :class:`Protein` instance.
+
+    Parameters
+    ----------
+    record : :class:`Bio.SwissProt.Record`
+        Record to serialise
+
+    Returns
+    -------
+    `dict`
+        Serialises the fields in a record that can then used to instantiate
+        a :class:`Protein` instance.
+    """
     if record is None:
         return None
     else:
@@ -156,6 +251,25 @@ def serialise_record(record):
 
 
 def parse_record_into_protein(record, verbose=False):
+    """
+    Instantiate a :class:`Protein` instance from a 
+    :class:`Bio.SwissProt.Record` instance. It will not be saved to the 
+    global session or database.
+
+    Parameters
+    ----------
+    record : :class:`Bio.SwissProt.Record`
+        Record to turn into a :class:`Protein` instance.
+
+    verbose : bool, optional
+            If True, log informational and warning messages to the console.
+
+    Returns
+    -------
+    :class:`Protein`
+        Instantiated protein instance that has not been saved.
+    """
+
     if record is None:
         return None
     try:
@@ -179,10 +293,42 @@ def batch_map(accessions, fr='ACC+ID', allow_download=False, cache=False,
               verbose=False):
     """
     Map a list of accessions using the UniProt batch mapping service.
-    :param accessions: List of accessions.
-    :param fr: Database to map from.
-    :param keep_unreviewed: Also keep the unreviewed accession in mapping.
-    :return: Dictionary of accessions to list of accessions.
+
+    Parameters
+    ----------
+    accessions : list
+        List of accessions.
+
+    fr : str, optional
+        Database to map from. See :class:`bioservices.UniProt`.
+
+    keep_unreviewed : bool, optional
+        If True, keep the unreviewed accession in mapping.
+
+    allow_download : bool, optional
+        If True, will download records that are missing for any accession
+        in `accessions`.
+
+    cache : bool, optional
+        If True, `bioservices` cache will be used by 
+        :class:`bioservices.UniProt`. Set to `False` to use the most up-to-date
+        mappings.
+
+    session : `scoped_session`, optional
+        Session instance to save protein instances to if `allow_download`
+        is True.
+
+    match_taxon_id : int, optional
+        Ignores mappings to or from proteins that do not match this id.
+
+    verbose :  bool, optional
+        Log info/warning/error messages to the console.
+
+    Returns
+    -------
+    `dict`
+        A dictionary of mappings from UniProt accessions to the most
+        up-to-date UniProt accessions. Dictionary values are lists.
     """
     uniprot_mapper = UniProtMapper(cache=cache)
     filtered_mapping = {}
@@ -261,9 +407,6 @@ def batch_map(accessions, fr='ACC+ID', allow_download=False, cache=False,
 
 
 def __xrefs(db_name, record):
-    """
-    Stub
-    """
     result = []
     for xref in record.cross_references:
         extdb = xref[0]
@@ -273,18 +416,12 @@ def __xrefs(db_name, record):
 
 
 def recent_accession(record):
-    """
-    Stub
-    """
     if not record:
         return None
     return record.accessions[0]
 
 
 def taxonid(record):
-    """
-    Stub
-    """
     if not record:
         return None
     data = record.taxonomy_id[0]
@@ -292,18 +429,12 @@ def taxonid(record):
 
 
 def review_status(record):
-    """
-    Stub
-    """
     if not record:
         return None
     return record.data_class
 
 
 def gene_name(record):
-    """
-    Stub
-    """
     if not record:
         return None
     try:
@@ -316,9 +447,6 @@ def gene_name(record):
 
 
 def go_terms(record, ont):
-    """
-    Stub
-    """
     if not record:
         return None
     data = __xrefs("GO", record)
@@ -336,9 +464,6 @@ def go_terms(record, ont):
 
 
 def pfam_terms(record):
-    """
-    Stub
-    """
     if not record:
         return None
     data = __xrefs("Pfam", record)
@@ -346,9 +471,6 @@ def pfam_terms(record):
 
 
 def interpro_terms(record):
-    """
-    Stub
-    """
     if not record:
         return None
     data = __xrefs("InterPro", record)
@@ -356,9 +478,6 @@ def interpro_terms(record):
 
 
 def keywords(record):
-    """
-    Stub
-    """
     if not record:
         return None
     data = record.keywords
@@ -366,9 +485,6 @@ def keywords(record):
 
 
 def organism_code(record):
-    """
-    Stub
-    """
     if not record:
         return None
     data = record.entry_name
@@ -377,36 +493,24 @@ def organism_code(record):
 
 
 def entry_name(record):
-    """
-    Stub
-    """
     if not record:
         return None
     return record.entry_name
 
 
 def last_release(record):
-    """
-    Stub
-    """
     if not record:
         return None
     return int(record.annotation_update[1])
 
 
 def last_update(record):
-    """
-    Stub
-    """
     if not record:
         return None
     return record.annotation_update[0]
 
 
 def synonyms(record):
-    """
-    Stub
-    """
     if not record:
         return None
     try:

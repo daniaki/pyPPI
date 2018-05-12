@@ -21,7 +21,8 @@ db_engine = create_engine(
     convert_unicode=True, connect_args={'check_same_thread': False}
 )
 db_session = scoped_session(
-    sessionmaker(autocommit=False, autoflush=False,  bind=db_engine)
+    sessionmaker(autocommit=False, expire_on_commit=False,
+                 autoflush=False,  bind=db_engine)
 )
 Base = declarative_base()
 Base.query = db_session.query_property()
@@ -44,7 +45,8 @@ def create_session(db_path, echo=False):
             convert_unicode=True, connect_args={'check_same_thread': False}
         )
         session = scoped_session(
-            sessionmaker(autocommit=False, autoflush=False, bind=engine)
+            sessionmaker(autocommit=False, expire_on_commit=False,
+                         autoflush=False, bind=engine)
         )
         Base.query = session.query_property()
         init_database(engine)

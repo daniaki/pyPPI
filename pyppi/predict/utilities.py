@@ -3,7 +3,9 @@ import numpy as np
 
 import bz2
 import gzip
+from numpy.random import RandomState
 
+from ..base.constants import MAX_SEED
 from ..base.utilities import rename
 from ..database.models import Interaction
 from ..database.utilities import (
@@ -11,6 +13,7 @@ from ..database.utilities import (
     interactome_interactions, holdout_interactions
 )
 
+from ..model_selection.sampling import IterativeStratifiedKFold
 from ..models.utilities import publication_ensemble, make_gridsearch_clf
 from ..models.binary_relevance import MixedBinaryRelevanceClassifier
 
@@ -241,7 +244,7 @@ def load_training_dataset(taxon_id=9606, selection=DEFAULT_SELECTION):
     if not training.count():
         return {}
 
-    X_train, y_train = interactions_to_Xy_format(training, selection)
+    X_train, y_train = interactions_to_Xy_format(training.all(), selection)
     mlb = MultiLabelBinarizer(classes=sorted(labels))
     y_train = mlb.fit_transform(y_train)
     return {
@@ -289,14 +292,14 @@ def load_validation_dataset(taxon_id=9606, selection=DEFAULT_SELECTION):
     if not training.count():
         return {}
     else:
-        X_train, y_train = interactions_to_Xy_format(training, selection)
+        X_train, y_train = interactions_to_Xy_format(training.all(), selection)
         mlb = MultiLabelBinarizer(classes=sorted(labels))
         y_train = mlb.fit_transform(y_train)
         data['training'] = (X_train, y_train)
         data['binarizer'] = mlb
 
     if testing.count():
-        X_test, y_test = interactions_to_Xy_format(testing, selection)
+        X_test, y_test = interactions_to_Xy_format(testing.all(), selection)
         y_test = mlb.transform(y_test)
         data['testing'] = (X_test, y_test)
 
@@ -322,12 +325,12 @@ def load_interactome_dataset(taxon_id=9606, selection=DEFAULT_SELECTION):
     `list`
         List of str textual features for each interaction.
     """
-    interactome = interactome_interactions(taxon_id)
+    interactome = interactome_interactions(taxon_id).all()
     X_test, _ = interactions_to_Xy_format(interactome, selection)
     return X_test
 
 
-def train_paper_model(rcv_splits=3, rcv_iter=30, scoring='f1', n_jobs_model=1,
+def train_paper_model(rcv_splits=3, rcv_iter=60, scoring='f1', n_jobs_model=1,
                       n_jobs_br=1, n_jobs_gs=1, random_state=42, taxon_id=9606,
                       verbose=False, selection=DEFAULT_SELECTION):
     """Calls :func:`paper_model` and trains the returned model on
@@ -385,13 +388,20 @@ def train_paper_model(rcv_splits=3, rcv_iter=30, scoring='f1', n_jobs_model=1,
 
     X, y = dataset.get("training")
     labels = dataset.get("labels")
+    mlb = dataset.get("binarizer")
+    rng = RandomState(seed=random_state)
+    cv = IterativeStratifiedKFold(
+        n_splits=rcv_splits, shuffle=True,
+        random_state=rng.randint(MAX_SEED)
+    )
+    cv_iter = list(cv.split(X, y))
     clf = paper_model(
-        labels=labels, rcv_splits=rcv_splits, rcv_iter=rcv_iter,
+        labels=labels, cv=cv_iter, rcv_iter=rcv_iter,
         scoring=scoring, n_jobs_gs=n_jobs_gs, n_jobs_br=n_jobs_br,
-        random_state=random_state, n_jobs_model=n_jobs_model
+        random_state=random_state, n_jobs_model=n_jobs_model, verbose=verbose
     )
     clf.fit(X, y)
-    return clf, selection
+    return clf, selection, mlb
 
 
 def save_to_arff(file_path, interactions, labels, selection,
