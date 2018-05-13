@@ -1,35 +1,49 @@
 # Introduction
-A python tool for for two primary purposes:
+A computational tool for annotating the edges in a protein-protein interaction 
+(PPI) network with post-translational modification (PTM) and functional labels.
+The tool serves two main purposes: 
 
- 1) Mining protein-protein interactions labelled with post-translational
- modifications (PTM) and/or signalling function from various databases
- such as KEGG and HPRD.
+ 1. Mining protein-protein interactions labelled with PTMs and higher level 
+ signalling function (activation, inhibition etc) from various databases
+ such as [KEGG](http://www.genome.jp/kegg/)and [HPRD](http://www.hprd.org/).
 
- 2) Provide machine learning and classification functionallity on proteins
- encoded by UniProt-KB accession numbers to learn and classify the
- PTMs/Singalling function of protein-protein interactions.
+ 2. Provide machine learning API that can be used to 
+  classify the PTM of binary protein interactions encoded by [UniProt](http://www.uniprot.org/)
+  accessions to both learn from a training dataset and  and classify new/unseen 
+  classify interactions.
 
 This can be used as a command line tool with the provided scripts, or custom
-made scripts. Alterantively, the tool can be integrated into an existing
-project using the simple API described in the examples.
+made scripts. Alternatively, the tool can be integrated into an existing
+project using the simple API described in the examples. See the documentation
+for an in-depth guide.
 
-# Install
+# Basic install guide
+To install the package and all requirements:
+
+```python
 pip setup.py install
+```
 
-Note: for windows users you will need to install python-igraph from 
-http://www.lfd.uci.edu/~gohlke/pythonlibs/ before using setup.py.
+To download all required data:
 
+```python
+pip setup.py download_data
+```
 
-# Citation
-If you use pyPPI in a scientific publication, please cite the following paper:
+To test your installation:
 
-[In progress]
+```python
+pip setup.py test 
+--OR--
+python test.py
+```
 
-@article{pyppi,
- title={},
- author={Esposito, D and David, M.},
- journal={},
- volume={},
- pages={},
- year={}
-}
+Before using the API or provided scripts, you will need to build the training
+database and train an initial classifier. Once you have installed the package
+you can move the script files to any directory of your choice. Once you have
+changed your working directory to the script directory:
+
+```python
+python build_data.py -h
+python build_data.py
+```
