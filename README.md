@@ -34,7 +34,9 @@ To test your installation:
 
 ```python
 pip setup.py test 
---OR--
+```
+Or
+```python
 python test.py
 ```
 
