@@ -5,7 +5,7 @@ The tool serves two main purposes:
 
  1. Mining protein-protein interactions labelled with PTMs and higher level 
  signalling function (activation, inhibition etc) from various databases
- such as [KEGG](http://www.genome.jp/kegg/)and [HPRD](http://www.hprd.org/).
+ such as [KEGG](http://www.genome.jp/kegg/) and [HPRD](http://www.hprd.org/).
 
  2. Provide machine learning API that can be used to 
   classify the PTM of binary protein interactions encoded by [UniProt](http://www.uniprot.org/)
