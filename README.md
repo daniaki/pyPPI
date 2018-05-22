@@ -18,22 +18,22 @@ project using the simple API described in the examples. See the documentation
 for an in-depth guide.
 
 # Basic install guide
-To install the package and all requirements:
+First clone the repository or download it and extract it to a convenient location. To install the package and all requirements:
 
 ```python
-pip setup.py install
+python setup.py install
 ```
 
 To download all required data:
 
 ```python
-pip setup.py download_data
+python setup.py download_data
 ```
 
 To test your installation:
 
 ```python
-pip setup.py test 
+python setup.py test 
 ```
 Or
 ```python
@@ -49,3 +49,12 @@ changed your working directory to the script directory:
 python build_data.py -h
 python build_data.py
 ```
+
+# Documentation
+The documentation is not currently hosted (upcoming). To build a local copy of the documentation `cd` into `docs` and run the make script:
+
+```bash
+make html
+```
+
+This will build a html version of the documentation in the folder `build`. To view the documentation, open the file `index.html`.
