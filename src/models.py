@@ -231,6 +231,19 @@ class GeneSymbol(BaseModel):
         return super().save(*args, **kwargs)
 
 
+class ExperimentType(BaseModel):
+    text = peewee.CharField(
+        null=False,
+        default=None,
+        unique=True,
+        help_text="Experiment/Assay detection method.",
+    )
+
+    def save(self, *args, **kwargs):
+        self.text = self.text.strip().capitalize()
+        return super().save(*args, **kwargs)
+
+
 class Protein(BaseModel):
     identifier = peewee.ForeignKeyField(
         model=UniprotIdentifier,
@@ -307,6 +320,15 @@ class Interaction(BaseModel):
     )
     labels = peewee.ManyToManyField(
         model=InteractionLabel, backref="interactions"
+    )
+    psimi_ids = peewee.ManyToManyField(
+        model=PsimiIdentifier, backref="interactions"
+    )
+    pubmed_ids = peewee.ManyToManyField(
+        model=PubmedIdentifier, backref="interactions"
+    )
+    experiment_types = peewee.ManyToManyField(
+        model=ExperimentType, backref="interactions"
     )
     obj_hash = peewee.CharField(
         max_length=64,
@@ -411,6 +433,7 @@ MODELS = (
     InterproTerm,
     Keyword,
     GeneSymbol,
+    ExperimentType,
     # Protein
     Protein,
     Protein.go_annotations.get_through_model(),
@@ -423,6 +446,9 @@ MODELS = (
     Interaction,
     InteractionLabel,
     Interaction.labels.get_through_model(),
+    Interaction.pubmed_ids.get_through_model(),
+    Interaction.psimi_ids.get_through_model(),
+    Interaction.experiment_types.get_through_model(),
     InteractionPrediction,
     ClassifierModel,
 )
