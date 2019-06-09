@@ -95,9 +95,15 @@ class TestGeneOntologyTermModel(BaseTestCase):
 
 
 class TestGeneSymbolModel(BaseTestCase):
-    def test_capitalizes_and_strips_text(self):
+    def test_uppercases_and_strips_text(self):
         symbol = models.GeneSymbol.create(text="  brca1  ")
         assert symbol.text == "BRCA1"
+
+
+class TestExperimentTypelModel(BaseTestCase):
+    def test_capitalizes_and_strips_text(self):
+        symbol = models.ExperimentType.create(text="  in vitro  ")
+        assert symbol.text == "In vitro"
 
 
 class TestKeywordModel(BaseTestCase):
