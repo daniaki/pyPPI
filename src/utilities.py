@@ -16,17 +16,23 @@ from collections import OrderedDict
 from .constants import null_re
 
 
-__all__ = ["is_null", "su_make_dir", "take", "remove_duplicates", "chunks"]
+__all__ = [
+    "take",
+    "chunks",
+    "is_null",
+    "su_make_dir",
+    "remove_duplicates",
+    "download_from_url",
+    "validate_accession",
+]
 
 
 logger: logging.Logger = logging.getLogger("pyppi")
 
 
 def is_null(value: Any) -> bool:
-    """Check if a value is null according to `NULL_VALUES` in 
-    :module:`.constants`. This includes numpy/pandas `NaN`, `None` values
-    and some other values considered null by this software that are
-    enountered during edgelist parsing.
+    """
+    Check if a value is NaN/None/NA/empty etc.
 
     Returns
     -------
