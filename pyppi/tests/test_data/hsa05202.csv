@@ -1,9 +1,0 @@
-source,target,label,pubmed,experiment_type
-hsa:25942,hsa:9611,Binding/association,None,None
-hsa:5468,hsa:6256,Binding/association,None,None
-hsa:5468,hsa:6257,Binding/association,None,None
-hsa:5468,hsa:6258,Binding/association,None,None
-hsa:4066,hsa:6929,Binding/association,None,None
-hsa:6667,hsa:7709,Binding/association,None,None
-hsa:4790,hsa:64332,Binding/association,None,None
-hsa:5970,hsa:64332,Binding/association,None,None
