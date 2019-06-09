@@ -14,4 +14,3 @@ innate_curated_url = (
 innate_imported_url = (
     "http://www.innatedb.com/download/interactions/all.mitab.gz"
 )
-
