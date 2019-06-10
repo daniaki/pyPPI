@@ -6,7 +6,7 @@ from typing import Optional, Tuple, List, Generator
 import peewee
 import playhouse.fields
 
-from .settings import DATABASE
+from ..settings import DATABASE
 
 
 class BaseModel(peewee.Model):
@@ -187,6 +187,12 @@ class InterproTerm(BaseModel, AnnotationMixin):
     )
     description = peewee.TextField(
         null=False, default=None, help_text="Long form description of a term."
+    )
+    entry_type = peewee.CharField(
+        null=True,
+        default=None,
+        help_text="Interpro entry type.",
+        max_length=32,
     )
 
 

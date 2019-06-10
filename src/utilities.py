@@ -13,7 +13,7 @@ from itertools import islice
 from typing import Sequence, List, Generator, Any
 from collections import OrderedDict
 
-from .constants import null_re
+from .constants import NULL_RE
 
 
 __all__ = [
@@ -39,7 +39,7 @@ def is_null(value: Any) -> bool:
     bool
         True if the value is considered null.
     """
-    return null_re.fullmatch(str(value)) is not None
+    return NULL_RE.fullmatch(str(value)) is not None
 
 
 def su_make_dir(path: str, mode: int = 0o777) -> None:
@@ -77,11 +77,11 @@ def validate_accession(accession):
 
 
 def download_from_url(url, save_path, compress=True):
-    logger.info("Downloading file from %s" % url)
+    logger.info(f"Downloading file from {url}")
     if compress:
         tmp, info = urlretrieve(url)
         bytes_ = info["Content-Length"]
-        logger.info("\tCompresing file with size %s bytes" % bytes_)
+        logger.info(f"Compresing file with size {bytes_} bytes")
         with open(tmp, "rb") as f_in, gzip.open(save_path, "wb") as f_out:
             return f_out.writelines(f_in)
     else:

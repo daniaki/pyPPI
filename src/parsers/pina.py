@@ -4,7 +4,7 @@ from typing import Generator, List, Dict, Union, Set
 from collections import OrderedDict
 
 from ..utilities import validate_accession, is_null
-from ..constants import psimi_name_to_identifier
+from ..constants import PSIMI_NAME_TO_IDENTIFIER
 
 from .types import Interaction
 from . import open_file
@@ -90,7 +90,7 @@ def pina_mitab_func(path: str) -> Generator[Interaction, None, None]:
                 ).keys()
             )
             experiment_types: List[str] = [
-                psimi_name_to_identifier[psimi_id] for psimi_id in psimi_ids
+                PSIMI_NAME_TO_IDENTIFIER[psimi_id] for psimi_id in psimi_ids
             ]
 
             yield Interaction(

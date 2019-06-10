@@ -17,7 +17,7 @@ from itertools import product
 from collections import defaultdict, OrderedDict
 
 from ..utilities import is_null
-from ..constants import Columns, UNIPROT_ORD_KEY, psimi_name_to_identifier
+from ..constants import Columns, UNIPROT_ORD_KEY, PSIMI_NAME_TO_IDENTIFIER
 
 from .types import Interaction
 from . import open_file
@@ -300,7 +300,7 @@ def parse_hprd_interactions(
         for (source, target) in product(uniprot_sources, uniprot_targets):
             # Match up the pmids with the experiment/assay type.
             psi_ids = [
-                psimi_name_to_identifier[e_type] for e_type in experiment_types
+                PSIMI_NAME_TO_IDENTIFIER[e_type] for e_type in experiment_types
             ]
 
             yield Interaction(

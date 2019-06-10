@@ -2,12 +2,12 @@ import pytest
 
 from peewee import IntegrityError
 
-from .. import models, settings
+from .. import models
 
-from . import BaseTestCase
+from . import DatabaseTestMixin
 
 
-class TestBaseModel(BaseTestCase):
+class TestBaseModel(DatabaseTestMixin):
     def setup(self):
         super().setup()
         self.instance = models.InteractionLabel.create(text="activation")
@@ -36,7 +36,7 @@ class TestIdentifierMixin:
         assert value == "hello world"
 
 
-class TestExternalIdentiferModel(BaseTestCase):
+class TestExternalIdentiferModel(DatabaseTestMixin):
     def test_prepends_prefix_if_defined(self):
         i = models.PubmedIdentifier.create(identifier="1234")
         assert i.identifier == "PMID:1234"
@@ -58,7 +58,7 @@ class TestExternalIdentiferModel(BaseTestCase):
         assert i.dbname == models.PubmedIdentifier.DB_NAME
 
 
-class TestGeneOntologyTermModel(BaseTestCase):
+class TestGeneOntologyTermModel(DatabaseTestMixin):
     def test_raises_error_invalid_category(self):
         term = models.GeneOntologyTerm(
             identifier=models.GeneOntologyIdentifier.create(identifier="1"),
@@ -94,19 +94,19 @@ class TestGeneOntologyTermModel(BaseTestCase):
             assert term.category == expected
 
 
-class TestGeneSymbolModel(BaseTestCase):
+class TestGeneSymbolModel(DatabaseTestMixin):
     def test_uppercases_and_strips_text(self):
         symbol = models.GeneSymbol.create(text="  brca1  ")
         assert symbol.text == "BRCA1"
 
 
-class TestExperimentTypelModel(BaseTestCase):
+class TestExperimentTypelModel(DatabaseTestMixin):
     def test_capitalizes_and_strips_text(self):
         symbol = models.ExperimentType.create(text="  in vitro  ")
         assert symbol.text == "In vitro"
 
 
-class TestKeywordModel(BaseTestCase):
+class TestKeywordModel(DatabaseTestMixin):
     def test_appends_prefix(self):
         kw = models.Keyword.create(
             identifier=models.KeywordIdentifier.create(identifier="1"),
@@ -121,7 +121,7 @@ class TestKeywordModel(BaseTestCase):
         assert kw.identifier.identifier == "KW-2"
 
 
-class TestProteinModel(BaseTestCase):
+class TestProteinModel(DatabaseTestMixin):
     def test_uppercases_sequence(self):
         protein = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P1234"),
@@ -131,13 +131,13 @@ class TestProteinModel(BaseTestCase):
         assert protein.sequence == "AAA"
 
 
-class TestInteractionLabelModel(BaseTestCase):
+class TestInteractionLabelModel(DatabaseTestMixin):
     def test_capitalizes_label(self):
         label = models.InteractionLabel.create(text="activation")
         assert label.text == "Activation"
 
 
-class TestInteractionModel(BaseTestCase):
+class TestInteractionModel(DatabaseTestMixin):
     def setup(self):
         super().setup()
         self.protein_a = models.Protein.create(

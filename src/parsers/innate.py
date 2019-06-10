@@ -2,7 +2,7 @@ import itertools
 from typing import Generator, List
 
 from ..utilities import validate_accession, is_null
-from ..constants import psimi_name_to_identifier
+from ..constants import PSIMI_NAME_TO_IDENTIFIER
 
 from .types import Interaction
 from . import open_file
@@ -87,7 +87,7 @@ def innate_mitab_func(path: str) -> Generator[Interaction, None, None]:
 
                 experiment_types: List[str] = []
                 if d_psimi:
-                    experiment_types = [psimi_name_to_identifier[d_psimi]]
+                    experiment_types = [PSIMI_NAME_TO_IDENTIFIER[d_psimi]]
 
                 pmids: List[str] = []
                 if pmid:
