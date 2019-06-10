@@ -26,13 +26,27 @@ class BaseModel(peewee.Model):
 
 
 class IdentifierMixin:
+    def _get_identifier(self) -> str:
+        identifier: Optional[str] = getattr(self, "identifier", None)
+        if not getattr(self, "identifier", None):
+            raise AttributeError(
+                f"{self.__class__.__name__} is missing attribute 'identifier'."
+            )
+        if not isinstance(identifier, str):
+            klass = type(identifier).__name__
+            raise TypeError(
+                f"Expected 'identifier' to be 'str'. Found '{klass}'"
+            )
+        return identifier
+
     def prefix(self, prefix: str, sep: str = ":") -> str:
-        if not self.identifier.lower().startswith(f"{prefix.lower()}{sep}"):
-            return f"{prefix}{sep}{self.identifier}"
-        return self.identifier
+        identifier = self._get_identifier()
+        if not identifier.lower().startswith(f"{prefix.lower()}{sep}"):
+            return f"{prefix}{sep}{identifier}"
+        return identifier
 
     def unprefix(self, sep: str = ":") -> str:
-        return self.identifier.split(sep)[-1]
+        return self._get_identifier().split(sep)[-1]
 
 
 class ExternalIdentifier(IdentifierMixin, BaseModel):
@@ -101,8 +115,8 @@ class PfamIdentifier(ExternalIdentifier):
 
 
 class AnnotationMixin:
-    def to_str(self):
-        return self.identifier.identifier
+    def to_str(self) -> str:
+        return getattr(self, "identifier").identifier
 
 
 class GeneOntologyTerm(BaseModel, AnnotationMixin):
@@ -292,6 +306,20 @@ class Protein(BaseModel):
         return super().save(*args, **kwargs)
 
 
+class InteractionDatabase(BaseModel):
+    name = peewee.CharField(
+        null=False,
+        default=None,
+        unique=True,
+        max_length=16,
+        help_text="Interaction database name.",
+    )
+
+    def save(self, *args, **kwargs):
+        self.name = self.name.strip().capitalize()
+        return super().save(*args, **kwargs)
+
+
 class InteractionLabel(BaseModel):
     text = peewee.CharField(
         null=False,
@@ -321,12 +349,24 @@ class Interaction(BaseModel):
         backref="interactions_as_target",
         help_text="Target protein.",
     )
+
+    # Interaction metadata.
     organism = peewee.IntegerField(
         null=False, default=None, help_text="Numeric organism code. Eg 9606."
+    )
+    direction = peewee.IntegerField(
+        null=False,
+        default=1,
+        help_text=(
+            "Direction of the interaction. Positive for source to target. "
+            "Negative for target to source.",
+        ),
     )
     labels = peewee.ManyToManyField(
         model=InteractionLabel, backref="interactions"
     )
+
+    # Fields relating to evidence/experiment detection method.
     psimi_ids = peewee.ManyToManyField(
         model=PsimiIdentifier, backref="interactions"
     )
@@ -336,6 +376,11 @@ class Interaction(BaseModel):
     experiment_types = peewee.ManyToManyField(
         model=ExperimentType, backref="interactions"
     )
+    databases = peewee.ManyToManyField(
+        model=InteractionDatabase, backref="interactions"
+    )
+
+    # Unique hash for easy identification.
     obj_hash = peewee.CharField(
         max_length=64,
         null=False,
@@ -348,10 +393,18 @@ class Interaction(BaseModel):
     )
 
     @classmethod
+    def get_update_or_create(cls, **kwargs):
+        source = kwargs.get("source", None)
+        target = kwargs.get("target", None)
+        organism = kwargs.get("organism", None)
+
+        cls.get_or_create(source=source, target=target, organism=organism)
+
+    @classmethod
     def format_xy(
         cls,
         queryset: Optional[peewee.ModelSelect] = None,
-        features: Tuple[str] = (
+        features: Tuple[str, str, str] = (
             Protein.go_annotations.name,
             Protein.pfam_annotations.name,
             Protein.interpro_annotations.name,
@@ -362,7 +415,7 @@ class Interaction(BaseModel):
 
         Interaction
         for interaction in queryset:
-            annotations = []
+            annotations: List[str] = []
             for feature in features:
                 # Collect source annotations
                 annotations.extend(
@@ -376,10 +429,13 @@ class Interaction(BaseModel):
             labels = [label.text for label in interaction.labels]
             yield annotations, labels
 
-    def save(self, *args, **kwargs):
-        self.obj_hash = hash(
+    def hash(self):
+        return hash(
             (tuple(sorted([self.source.id, self.target.id])), self.organism)
         )
+
+    def save(self, *args, **kwargs):
+        self.obj_hash = self.hash()
         return super().save(*args, **kwargs)
 
 
@@ -450,11 +506,13 @@ MODELS = (
     Protein.keywords.get_through_model(),
     # Interaction
     Interaction,
+    InteractionDatabase,
     InteractionLabel,
     Interaction.labels.get_through_model(),
     Interaction.pubmed_ids.get_through_model(),
     Interaction.psimi_ids.get_through_model(),
     Interaction.experiment_types.get_through_model(),
+    Interaction.databases.get_through_model(),
     InteractionPrediction,
     ClassifierModel,
 )

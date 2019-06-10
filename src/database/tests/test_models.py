@@ -102,8 +102,14 @@ class TestGeneSymbolModel(DatabaseTestMixin):
 
 class TestExperimentTypelModel(DatabaseTestMixin):
     def test_capitalizes_and_strips_text(self):
-        symbol = models.ExperimentType.create(text="  in vitro  ")
-        assert symbol.text == "In vitro"
+        instance = models.ExperimentType.create(text="  in vitro  ")
+        assert instance.text == "In vitro"
+
+
+class TestInteractionDatabaseModel(DatabaseTestMixin):
+    def test_capitalizes_and_strips_text(self):
+        instance = models.InteractionDatabase.create(name="  KEGG  ")
+        assert instance.name == "Kegg"
 
 
 class TestKeywordModel(DatabaseTestMixin):
