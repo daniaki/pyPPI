@@ -20,6 +20,10 @@ class BaseModel(peewee.Model):
     class Meta:
         database = DATABASE
 
+    def refresh(self):
+        """Refresh from database"""
+        return self.__class__.get(self._pk_expr())
+
     def save(self, *args, **kwargs):
         if self.created is None:
             self.created = datetime.datetime.now()
@@ -578,6 +582,7 @@ class Interaction(BaseModel):
         interaction: Interaction
         index: List[str] = []
 
+        # df column, m2m attribute name
         features = [
             ("go_mf", "go_mf"),
             ("go_bp", "go_bp"),
@@ -586,24 +591,46 @@ class Interaction(BaseModel):
             ("interpro", "interpro_annotations"),
             ("pfam", "pfam_annotations"),
         ]
+
+        # df column, m2m attribute name, m2m model attribute to use as
+        # string value
+        metadata = [
+            ("psimi", "psimi_ids", "identifier"),
+            ("pmid", "pubmed_ids", "identifier"),
+            ("experiment_type", "experiment_types", "text"),
+            ("database", "databases", "name"),
+            ("label", "labels", "text"),
+        ]
         for interaction in queryset:
             source = interaction.source.identifier.identifier
             target = interaction.target.identifier.identifier
-            labels = ",".join(
-                sorted([label.text for label in interaction.labels])
-            )
             index.append(",".join(sorted([source, target])))
-            data = {
-                "source": source,
-                "target": target,
-                "labels": labels or None,
-            }
-            for column, attr in features:
+
+            data = {"source": source, "target": target}
+
+            for (column, attr) in features:
                 joined = ",".join(
-                    [a.to_str() for a in getattr(interaction.source, attr)]
-                    + [a.to_str() for a in getattr(interaction.target, attr)]
+                    sorted(
+                        [a.to_str() for a in getattr(interaction.source, attr)]
+                        + [
+                            a.to_str()
+                            for a in getattr(interaction.target, attr)
+                        ]
+                    )
                 )
                 data[column] = joined or None
+
+            for (column, attr, rel_attr) in metadata:
+                joined = ",".join(
+                    sorted(
+                        [
+                            getattr(elem, rel_attr)
+                            for elem in getattr(interaction, attr)
+                        ]
+                    )
+                )
+                data[column] = joined or None
+
             interactions.append(data)
 
         return pd.DataFrame(
@@ -614,10 +641,14 @@ class Interaction(BaseModel):
                 "go_mf",
                 "go_bp",
                 "go_cc",
-                "keywords",
+                "keyword",
                 "interpro",
                 "pfam",
-                "labels",
+                "label",
+                "psimi",
+                "pmid",
+                "experiment_type",
+                "database",
             ],
             index=index,
         )
