@@ -1,7 +1,9 @@
 import json
 import datetime
 
-from typing import Optional, Tuple, List, Generator
+import pandas as pd
+
+from typing import Optional, Tuple, List, Generator, Union, Iterable
 
 import peewee
 import playhouse.fields
@@ -162,7 +164,7 @@ class GeneOntologyTerm(BaseModel, AnnotationMixin):
         null=False, default=None, help_text="GO term name."
     )
     description = peewee.TextField(
-        null=False, default=None, help_text="GO term description."
+        null=True, default=None, help_text="GO term description."
     )
     category = peewee.CharField(
         null=False,
@@ -200,7 +202,7 @@ class InterproTerm(BaseModel, AnnotationMixin):
         null=False, default=None, help_text="Short name description of a term."
     )
     description = peewee.TextField(
-        null=False, default=None, help_text="Long form description of a term."
+        null=True, default=None, help_text="Long form description of a term."
     )
     entry_type = peewee.CharField(
         null=True,
@@ -272,6 +274,9 @@ class Protein(BaseModel):
         unique=True,
         backref="proteins",
     )
+    organism = peewee.IntegerField(
+        null=False, default=None, help_text="Numeric organism code. Eg 9606."
+    )
     aliases = peewee.ManyToManyField(
         model=UniprotIdentifier, backref="proteins_aliased"
     )
@@ -285,21 +290,89 @@ class Protein(BaseModel):
         model=PfamTerm, backref="proteins"
     )
     keywords = peewee.ManyToManyField(model=Keyword, backref="proteins")
-    gene_name = peewee.ForeignKeyField(
+    gene = peewee.ForeignKeyField(
         model=GeneSymbol,
         null=True,
         default=None,
         backref="proteins",
         help_text="Gene symbol related to this protein.",
     )
-    alt_gene_names = peewee.ManyToManyField(
+    alt_genes = peewee.ManyToManyField(
         model=GeneSymbol, backref="proteins_alt"
     )
     sequence = peewee.TextField(
         null=False,
         default=None,
-        help_text="The protein sequence in single base format.",
+        help_text="The protein sequence in single letter format.",
     )
+
+    def _select_go(self, category: str):
+        return (
+            GeneOntologyTerm.select()
+            .join(Protein.go_annotations.get_through_model())
+            .join(Protein)
+            .where(Protein.id == self.id)
+            .select()
+            .where(GeneOntologyTerm.category == category)
+        )
+
+    @property
+    def go_mf(self):
+        return self._select_go(GeneOntologyTerm.Category.molecular_function)
+
+    @property
+    def go_bp(self):
+        return self._select_go(GeneOntologyTerm.Category.biological_process)
+
+    @property
+    def go_cc(self):
+        return self._select_go(GeneOntologyTerm.Category.cellular_compartment)
+
+    @classmethod
+    @DATABASE.atomic()
+    def update_or_create(
+        cls,
+        identifier: Union[str, UniprotIdentifier],
+        sequence: str,
+        organism: int,
+        aliases: Iterable = (),
+        go: Iterable[GeneOntologyTerm] = (),
+        interpro: Iterable[InterproTerm] = (),
+        pfam: Iterable[PfamTerm] = (),
+        keywords: Iterable[Keyword] = (),
+        gene: Optional[Union[str, GeneSymbol]] = None,
+        alt_genes: Iterable[Union[str, GeneSymbol]] = (),
+    ):
+        if isinstance(identifier, str):
+            identifier = UniprotIdentifier.get_or_create(
+                identifier=identifier
+            )[0]
+
+        query = Protein.get_or_create(identifier=identifier)
+        instance: Protein = query[0]
+        instance.sequence = sequence
+        instance.aliases.add([alias for alias in aliases])
+        instance.organism = organism
+
+        # Update annotations
+        instance.go_annotations.add([term for term in go])
+        instance.interpro_annotations.add([term for term in interpro])
+        instance.pfam_annotations.add([term for term in pfam])
+        instance.keywords.add([term for term in keywords])
+
+        # Update gene symbols
+        if isinstance(gene, str):
+            instance.gene = GeneSymbol.get_or_create(text=gene)[0]
+        else:
+            instance.gene = gene
+        instance.alt_genes.add(
+            [
+                gene
+                if isinstance(gene, GeneSymbol)
+                else GeneSymbol.get_or_create(text=gene)[0]
+                for gene in alt_genes
+            ]
+        )
 
     def save(self, *args, **kwargs):
         self.sequence = self.sequence.strip().upper()
@@ -352,14 +425,11 @@ class Interaction(BaseModel):
 
     # Interaction metadata.
     organism = peewee.IntegerField(
-        null=False, default=None, help_text="Numeric organism code. Eg 9606."
-    )
-    direction = peewee.IntegerField(
-        null=False,
-        default=1,
+        null=True,
+        default=None,
         help_text=(
-            "Direction of the interaction. Positive for source to target. "
-            "Negative for target to source.",
+            "Numeric organism code. Eg 9606. This can be None if the "
+            "interaction is a species hybrid."
         ),
     )
     labels = peewee.ManyToManyField(
@@ -380,63 +450,177 @@ class Interaction(BaseModel):
         model=InteractionDatabase, backref="interactions"
     )
 
-    # Unique hash for easy identification.
-    obj_hash = peewee.CharField(
-        max_length=64,
-        null=False,
-        default=None,
-        unique=True,
-        help_text=(
-            "Hash based on the source, target and organism. "
-            "Ensures interaction uniquness."
-        ),
-    )
+    class Meta:
+        indexes = (
+            # create a unique on source/target
+            (("source_id", "target_id"), True),
+        )
 
     @classmethod
-    def get_update_or_create(cls, **kwargs):
-        source = kwargs.get("source", None)
-        target = kwargs.get("target", None)
-        organism = kwargs.get("organism", None)
-
-        cls.get_or_create(source=source, target=target, organism=organism)
-
-    @classmethod
-    def format_xy(
+    @DATABASE.atomic()
+    def update_or_create(
         cls,
-        queryset: Optional[peewee.ModelSelect] = None,
-        features: Tuple[str, str, str] = (
-            Protein.go_annotations.name,
-            Protein.pfam_annotations.name,
-            Protein.interpro_annotations.name,
-        ),
-    ) -> Generator[Tuple[List[str], List[str]], None, None]:
+        source: Protein,
+        target: Protein,
+        organism: int = None,
+        labels: Iterable[Union[str, InteractionLabel]] = (),
+        psimi_ids: Iterable[Union[str, PsimiIdentifier]] = (),
+        pubmed_ids: Iterable[Union[str, PubmedIdentifier]] = (),
+        experiment_types: Iterable[Union[str, ExperimentType]] = (),
+        databases: Iterable[Union[str, InteractionDatabase]] = (),
+    ):
+        """
+        Searches for an existing interaction given the source, target and
+        organism. Treats source and target as interchangeable. Adds
+        additional metadata in `kwargs` to existing interactions, such as 
+        new labels, pmids etc. 
+        
+        Metadata supplied as strings will be created if they don't already 
+        exist.
+        
+        Args:
+            source (Protein): 
+                Source protein instance.
+            
+            target (Protein): 
+                Target protein instance.
+            
+            organism (int, optional): 
+                Numeric organism code. Defaults to 9606.
+            
+            labels (Iterable[Union[str, InteractionLabel]], optional): 
+                Labels as strings or instances. Will be appened to existing 
+                instances. Defaults to ().
+            
+            psimi_ids (Iterable[Union[str, PsimiIdentifier]], optional): 
+                PSI-MI identifiers as strings or instances. Will be appened to 
+                existing instances. Defaults to ().
+            
+            pubmed_ids (Iterable[Union[str, PubmedIdentifier]], optional): 
+                PubMed IDs as strings or instances. Will be appened to existing 
+                instances. Defaults to ().
+            
+            experiment_types (Iterable[Union[str, ExperimentType]], optional): 
+                Experiment types as strings or instances. Will be appened to 
+                existing instances. Defaults to ().
+            
+            databases (Iterable[Union[str, InteractionDatabase]], optional): 
+                Database as strings or instances. Will be appened to existing 
+                instances. Defaults to ().
+
+        Returns:
+            Interaction: Newly created interaction with supplied parameters,
+            or an existing interaction with updates fields.
+        """
+        result = cls.get_or_create(source=source, target=target)
+        instance: Interaction = result[0]
+
+        # Change organism if provided
+        if organism is not None:
+            instance.organism = organism
+
+        # Add additional labels.
+        instance.labels.add(
+            [
+                label
+                if isinstance(label, InteractionLabel)
+                else InteractionLabel.get_or_create(text=label)[0]
+                for label in labels
+            ]
+        )
+        # Add pubmed PSI-MI assay description identifiers.
+        instance.psimi_ids.add(
+            [
+                ident
+                if isinstance(ident, PsimiIdentifier)
+                else PsimiIdentifier.get_or_create(identifier=ident)[0]
+                for ident in psimi_ids
+            ]
+        )
+        # Add pubmed evidence identifiers.
+        instance.pubmed_ids.add(
+            [
+                ident
+                if isinstance(ident, PubmedIdentifier)
+                else PubmedIdentifier.get_or_create(identifier=ident)[0]
+                for ident in pubmed_ids
+            ]
+        )
+        # Add pubmed experiment type descriptors.
+        instance.experiment_types.add(
+            [
+                etype
+                if isinstance(etype, ExperimentType)
+                else ExperimentType.get_or_create(text=etype)[0]
+                for etype in experiment_types
+            ]
+        )
+        # Add databases in which interaction appears.
+        instance.databases.add(
+            [
+                name
+                if isinstance(name, InteractionDatabase)
+                else InteractionDatabase.get_or_create(name=name)[0]
+                for name in databases
+            ]
+        )
+        instance.save()
+        return instance
+
+    @classmethod
+    def to_dataframe(
+        cls, queryset: Optional[peewee.ModelSelect] = None
+    ) -> pd.DataFrame:
         if queryset is None:
             queryset = cls.select()
 
-        Interaction
+        interactions: List[dict] = []
+        interaction: Interaction
+        index: List[str] = []
+
+        features = [
+            ("go_mf", "go_mf"),
+            ("go_bp", "go_bp"),
+            ("go_cc", "go_cc"),
+            ("keywords", "keywords"),
+            ("interpro", "interpro_annotations"),
+            ("pfam", "pfam_annotations"),
+        ]
         for interaction in queryset:
-            annotations: List[str] = []
-            for feature in features:
-                # Collect source annotations
-                annotations.extend(
-                    a.to_str() for a in getattr(interaction.source, feature)
+            source = interaction.source.identifier.identifier
+            target = interaction.target.identifier.identifier
+            labels = ",".join(
+                sorted([label.text for label in interaction.labels])
+            )
+            index.append(",".join(sorted([source, target])))
+            data = {
+                "source": source,
+                "target": target,
+                "labels": labels or None,
+            }
+            for column, attr in features:
+                joined = ",".join(
+                    [a.to_str() for a in getattr(interaction.source, attr)]
+                    + [a.to_str() for a in getattr(interaction.target, attr)]
                 )
-                # Collect target annotations
-                annotations.extend(
-                    a.to_str() for a in getattr(interaction.target, feature)
-                )
+                data[column] = joined or None
+            interactions.append(data)
 
-            labels = [label.text for label in interaction.labels]
-            yield annotations, labels
-
-    def hash(self):
-        return hash(
-            (tuple(sorted([self.source.id, self.target.id])), self.organism)
+        return pd.DataFrame(
+            data=interactions,
+            columns=[
+                "source",
+                "target",
+                "go_mf",
+                "go_bp",
+                "go_cc",
+                "keywords",
+                "interpro",
+                "pfam",
+                "labels",
+            ],
+            index=index,
         )
-
-    def save(self, *args, **kwargs):
-        self.obj_hash = self.hash()
-        return super().save(*args, **kwargs)
 
 
 class ClassifierModel(BaseModel):
@@ -500,7 +684,7 @@ MODELS = (
     Protein,
     Protein.go_annotations.get_through_model(),
     Protein.aliases.get_through_model(),
-    Protein.alt_gene_names.get_through_model(),
+    Protein.alt_genes.get_through_model(),
     Protein.interpro_annotations.get_through_model(),
     Protein.pfam_annotations.get_through_model(),
     Protein.keywords.get_through_model(),
