@@ -35,7 +35,7 @@ def pina_sif_func(path: str) -> Generator[Interaction, None, None]:
             target = validate_accession(xs[target_idx].strip().upper())
             if not (source and target):
                 continue
-            yield Interaction(source=source, target=target, label=None)
+            yield Interaction(source=source, target=target, labels=[])
 
 
 def pina_mitab_func(path: str) -> Generator[Interaction, None, None]:
@@ -96,9 +96,9 @@ def pina_mitab_func(path: str) -> Generator[Interaction, None, None]:
             yield Interaction(
                 source=source,
                 target=target,
-                label=None,
-                pmids=pmids,
+                labels=[],
+                pubmed_ids=pmids,
                 psimi_ids=psimi_ids,
                 experiment_types=experiment_types,
-                database="PINA2",
+                databases=["PINA2"],
             )

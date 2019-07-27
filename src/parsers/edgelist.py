@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Generator, List
 
 from ..utilities import validate_accession
 
@@ -40,6 +40,10 @@ def edgelist_func(
             if not (source and target):
                 continue
 
+            databases: List[str] = []
+            if database:
+                databases = [database]
+
             yield Interaction(
-                source=source, target=target, label=None, database=database
+                source=source, target=target, labels=[], databases=databases
             )

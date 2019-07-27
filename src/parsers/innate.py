@@ -101,9 +101,9 @@ def innate_mitab_func(path: str) -> Generator[Interaction, None, None]:
                     yield Interaction(
                         source=source,
                         target=target,
-                        label=None,
-                        pmids=pmids,
+                        labels=[],
+                        pubmed_ids=pmids,
                         psimi_ids=psimi_ids,
                         experiment_types=experiment_types,
-                        database="InnateDB",
+                        databases=["InnateDB"],
                     )

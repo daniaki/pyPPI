@@ -2,8 +2,8 @@ from typing import Generator
 
 from ..utilities import validate_accession
 
-from .types import Interaction
 from . import open_file
+from .types import Interaction
 
 
 def bioplex_func(path: str) -> Generator[Interaction, None, None]:
@@ -33,5 +33,5 @@ def bioplex_func(path: str) -> Generator[Interaction, None, None]:
                 continue
 
             yield Interaction(
-                source=source, target=target, label=None, database="BioPlex"
+                source=source, target=target, labels=[], databases=["BioPlex"]
             )

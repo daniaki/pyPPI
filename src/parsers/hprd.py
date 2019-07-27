@@ -291,8 +291,6 @@ def parse_hprd_interactions(
             xrefs.get(ptm.substrate_hprd_id, None), "swissprot_id"
         )
 
-        print(uniprot_sources)
-        print(uniprot_targets)
         if not (uniprot_sources and uniprot_targets):
             # Missing information so ignore.
             continue
@@ -306,9 +304,9 @@ def parse_hprd_interactions(
             yield Interaction(
                 source=source,
                 target=target,
-                label=label,
+                labels=[label],
                 psimi_ids=psi_ids,
-                pmids=reference_ids,
+                pubmed_ids=reference_ids,
                 experiment_types=experiment_types,
-                database="HPRD",
+                databases=["HPRD"],
             )
