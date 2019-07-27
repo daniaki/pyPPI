@@ -9,53 +9,6 @@ from typing import Union, Optional, List, Dict, Set
 from bs4 import BeautifulSoup
 
 
-class UniprotClient:
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key: Optional[str] = api_key
-        self.base: str = "https://www.uniprot.org"
-
-    def get_entry(
-        self, identifier: str, db: str = "uniprot", fmt: str = "xml"
-    ) -> Union[str, BeautifulSoup]:
-        url: str = f"{self.base}/{db}/{identifier}.{fmt}"
-        response: Response = requests.get(url)
-        if not response.ok:
-            response.raise_for_status()
-        if fmt == "xml":
-            return BeautifulSoup(response.text, "html5lib")
-        return response.text
-
-    def get_entries(
-        self,
-        identifiers: str,
-        fr: str = "ACC+ID",
-        to: str = "ACC",
-        fmt: str = "xml",
-    ) -> Union[str, List[BeautifulSoup], Dict[str, List[str]]]:
-        url = f"{self.base}/uploadlists/"
-        data = {
-            "query": "\n".join(list(identifiers)),
-            "format": fmt,
-            "from": fr,
-            "to": to,
-        }
-        response: Response = requests.post(url, data)
-        if not response.ok:
-            response.raise_for_status()
-        if fmt == "xml":
-            return BeautifulSoup(response.text, "html5lib").find_all("entry")
-        elif fmt == "tab":
-            reader = DictReader(io.StringIO(response.text), delimiter="\t")
-            rows: Dict[str, Set[str]] = defaultdict(lambda: set())
-            for row in reader:
-                map_to: Set[str] = {
-                    x.strip() for x in row["To"].split(",") if x.strip()
-                }
-                rows[row["From"]] |= map_to
-            return {k: list(v) for (k, v) in rows.items()}
-        return response.text
-
-
 class UniprotEntry:
     def __init__(self, root: BeautifulSoup):
         self.root: BeautifulSoup = root
@@ -123,7 +76,7 @@ class UniprotEntry:
 
     @property
     def db(self) -> str:
-        return self.root["dataset"]
+        return self.root.entry["dataset"]
 
     @property
     def reviewed(self) -> bool:
@@ -131,7 +84,7 @@ class UniprotEntry:
 
     @property
     def version(self) -> str:
-        return self.root["version"]
+        return self.root.entry["version"]
 
     @property
     def genes(self) -> List[Dict[str, str]]:
@@ -141,7 +94,61 @@ class UniprotEntry:
         return genes
 
     @property
-    def taxonomy(self) -> str:
-        return self.root.find("organism").find(
-            "dbreference", type="NCBI Taxonomy"
-        )["id"]
+    def taxonomy(self) -> int:
+        return int(
+            self.root.find("organism").find(
+                "dbReference", type="NCBI Taxonomy"
+            )["id"]
+        )
+
+
+class UniprotClient:
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key: Optional[str] = api_key
+        self.base: str = "https://www.uniprot.org"
+
+    def get_entry(
+        self, identifier: str, db: str = "uniprot", fmt: str = "xml"
+    ) -> Union[str, UniprotEntry]:
+        url: str = f"{self.base}/{db}/{identifier}.{fmt}"
+        response: Response = requests.get(url)
+        if not response.ok:
+            response.raise_for_status()
+        if fmt == "xml":
+            return UniprotEntry(BeautifulSoup(response.text, "xml"))
+        return response.text
+
+    def get_entries(
+        self,
+        identifiers: str,
+        fr: str = "ACC+ID",
+        to: str = "ACC",
+        fmt: str = "xml",
+    ) -> Union[str, List[UniprotEntry], Dict[str, List[str]]]:
+        url = f"{self.base}/uploadlists/"
+        data = {
+            "query": "\n".join(list(identifiers)),
+            "format": fmt,
+            "from": fr,
+            "to": to,
+        }
+        response: Response = requests.post(url, data)
+        if not response.ok:
+            response.raise_for_status()
+        if fmt == "xml":
+            return [
+                UniprotEntry(entry)
+                for entry in BeautifulSoup(response.text, "xml").find_all(
+                    "entry"
+                )
+            ]
+        elif fmt == "tab":
+            reader = DictReader(io.StringIO(response.text), delimiter="\t")
+            rows: Dict[str, Set[str]] = defaultdict(lambda: set())
+            for row in reader:
+                map_to: Set[str] = {
+                    x.strip() for x in row["To"].split(",") if x.strip()
+                }
+                rows[row["From"]] |= map_to
+            return {k: list(v) for (k, v) in rows.items()}
+        return response.text
