@@ -170,7 +170,7 @@ class TestInteractionModel(DatabaseTestMixin):
                 source=self.protein_a, target=self.protein_b, organism=9606
             )
 
-    def test_to_dataframe_combines_annotations_into_string_or_none_if_absent(
+    def test_to_dataframe_combines_annotations_into_sorted_string_or_none_if_absent(
         self
     ):
         go1 = models.GeneOntologyTerm.create(
@@ -195,16 +195,13 @@ class TestInteractionModel(DatabaseTestMixin):
             name="",
             description="",
         )
-        self.protein_a.go_annotations.add([go1, go2])
+        self.protein_a.go_annotations.add([go2, go1])
         self.protein_a.pfam_annotations.add([pfam])
         self.protein_a.interpro_annotations.add([ipr])
 
-        i = models.Interaction.create(
+        models.Interaction.create(
             source=self.protein_a, target=self.protein_b, organism=9606
         )
-        label_1 = models.InteractionLabel.create(text="Activation")
-        label_2 = models.InteractionLabel.create(text="Methylation")
-        i.labels.add([label_1, label_2])
 
         result = models.Interaction.to_dataframe()
         expected = pd.DataFrame(
@@ -215,10 +212,14 @@ class TestInteractionModel(DatabaseTestMixin):
                     "go_mf": "GO:1,GO:2",
                     "go_bp": None,
                     "go_cc": None,
-                    "keywords": None,
+                    "keyword": None,
                     "interpro": "IPR1",
                     "pfam": "PF1",
-                    "labels": "Activation,Methylation",
+                    "label": None,
+                    "psimi": None,
+                    "pmid": None,
+                    "experiment_type": None,
+                    "database": None,
                 }
             ],
             columns=[
@@ -227,17 +228,154 @@ class TestInteractionModel(DatabaseTestMixin):
                 "go_mf",
                 "go_bp",
                 "go_cc",
-                "keywords",
+                "keyword",
                 "interpro",
                 "pfam",
-                "labels",
+                "label",
+                "psimi",
+                "pmid",
+                "experiment_type",
+                "database",
             ],
             index=["P1234,P5678"],
         )
-        assert_frame_equal(result, expected)
+        assert_frame_equal(result, expected, check_dtype=False)
 
-    def test_update_or_create_updates_existing_metadata(self):
-        pass
+    def test_to_dataframe_combines_metadata_into_sorted_string_or_none_if_absent(
+        self
+    ):
+        i = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b, organism=9606
+        )
+        label_1 = models.InteractionLabel.create(text="Activation")
+        label_2 = models.InteractionLabel.create(text="Methylation")
+        i.labels.add([label_1, label_2])
+
+        psimi1 = models.PsimiIdentifier.create(identifier="1")
+        psimi2 = models.PsimiIdentifier.create(identifier="2")
+        pmid = models.PubmedIdentifier.create(identifier="1123")
+        e_type = models.ExperimentType.create(text="In vivo")
+        database1 = models.InteractionDatabase.create(name="Kegg")
+        database2 = models.InteractionDatabase.create(name="hprd")
+
+        i.psimi_ids.add([psimi2, psimi1])
+        i.pubmed_ids.add([pmid])
+        i.experiment_types.add([e_type])
+        i.databases.add([database2, database1])
+
+        result = models.Interaction.to_dataframe()
+        expected = pd.DataFrame(
+            data=[
+                {
+                    "source": "P1234",
+                    "target": "P5678",
+                    "go_mf": None,
+                    "go_bp": None,
+                    "go_cc": None,
+                    "keyword": None,
+                    "interpro": None,
+                    "pfam": None,
+                    "label": "Activation,Methylation",
+                    "psimi": "MI:1,MI:2",
+                    "pmid": "PMID:1123",
+                    "experiment_type": "In vivo",
+                    "database": "Hprd,Kegg",
+                }
+            ],
+            columns=[
+                "source",
+                "target",
+                "go_mf",
+                "go_bp",
+                "go_cc",
+                "keyword",
+                "interpro",
+                "pfam",
+                "label",
+                "psimi",
+                "pmid",
+                "experiment_type",
+                "database",
+            ],
+            index=["P1234,P5678"],
+        )
+        assert_frame_equal(result, expected, check_dtype=False)
 
     def test_update_or_create_creates_new_instance(self):
-        pass
+        instance: models.Interaction = models.Interaction.update_or_create(
+            source=self.protein_a,
+            target=self.protein_b,
+            organism=9606,
+            labels=["Activation", "Methylation"],
+            psimi_ids=["PSI:1"],
+            pubmed_ids=["PMID:1"],
+            experiment_types=["In vitro"],
+            databases=["Kegg"],
+        )
+        assert instance.source.id == self.protein_a.id
+        assert instance.target.id == self.protein_b.id
+        assert instance.organism == 9606
+        assert instance.labels.count() == 2
+        assert instance.psimi_ids.count() == 1
+        assert instance.pubmed_ids.count() == 1
+        assert instance.experiment_types.count() == 1
+        assert instance.databases.count() == 1
+
+    def test_update_or_create_updates_existing_metadata(self):
+        instance_1: models.Interaction = models.Interaction.update_or_create(
+            source=self.protein_a,
+            target=self.protein_b,
+            organism=9606,
+            labels=["Activation"],
+            psimi_ids=["PSI:1"],
+            pubmed_ids=["PMID:1"],
+            experiment_types=["In vitro"],
+            databases=["Kegg"],
+        )
+
+        instance_2: models.Interaction = models.Interaction.update_or_create(
+            source=self.protein_a,
+            target=self.protein_b,
+            organism=9606,
+            labels=["Methylation"],
+            psimi_ids=["PSI:2"],
+            pubmed_ids=["PMID:2"],
+            experiment_types=["In vivo"],
+            databases=["Hprd"],
+        )
+
+        assert instance_1.id == instance_2.id
+        assert instance_1.source.id == self.protein_a.id
+        assert instance_1.target.id == self.protein_b.id
+        assert instance_1.organism == 9606
+        assert instance_1.labels.count() == 2
+        assert instance_1.psimi_ids.count() == 2
+        assert instance_1.pubmed_ids.count() == 2
+        assert instance_1.experiment_types.count() == 2
+        assert instance_1.databases.count() == 2
+
+    def test_update_or_create_updates_organism_if_not_none(self):
+        instance = models.Interaction = models.Interaction.update_or_create(
+            source=self.protein_a,
+            target=self.protein_b,
+            labels=["Activation"],
+            psimi_ids=["PSI:1"],
+            pubmed_ids=["PMID:1"],
+            experiment_types=["In vitro"],
+            databases=["Kegg"],
+        )
+
+        models.Interaction = models.Interaction.update_or_create(
+            source=self.protein_a,
+            target=self.protein_b,
+            organism=123,
+            labels=["Methylation"],
+            psimi_ids=["PSI:2"],
+            pubmed_ids=["PMID:2"],
+            experiment_types=["In vivo"],
+            databases=["Hprd"],
+        )
+
+        instance = instance.refresh()
+        assert instance.organism == 123
+
