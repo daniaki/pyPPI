@@ -1,9 +1,10 @@
+import pandas as pd
 import pytest
 
+from pandas.testing import assert_frame_equal
 from peewee import IntegrityError
 
 from .. import models
-
 from . import DatabaseTestMixin
 
 
@@ -131,7 +132,8 @@ class TestProteinModel(DatabaseTestMixin):
     def test_uppercases_sequence(self):
         protein = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P1234"),
-            gene_name=models.GeneSymbol.create(text="BRCA1"),
+            organism=9606,
+            gene=models.GeneSymbol.create(text="BRCA1"),
             sequence="aaa",
         )
         assert protein.sequence == "AAA"
@@ -148,16 +150,18 @@ class TestInteractionModel(DatabaseTestMixin):
         super().setup()
         self.protein_a = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P1234"),
-            gene_name=models.GeneSymbol.create(text="BRCA1"),
+            organism=9606,
+            gene=models.GeneSymbol.create(text="BRCA1"),
             sequence="MLPGA",
         )
         self.protein_b = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P5678"),
-            gene_name=models.GeneSymbol.create(text="BRCA2"),
+            organism=9606,
+            gene=models.GeneSymbol.create(text="BRCA2"),
             sequence="EDALM",
         )
 
-    def test_unique_index_on_source_target_organism(self):
+    def test_unique_index_on_source_target(self):
         _ = models.Interaction.create(
             source=self.protein_a, target=self.protein_b, organism=9606
         )
@@ -166,17 +170,9 @@ class TestInteractionModel(DatabaseTestMixin):
                 source=self.protein_a, target=self.protein_b, organism=9606
             )
 
-    def test_unique_index_on_target_source_organism(self):
-        models.Interaction.create(
-            source=self.protein_a, target=self.protein_b, organism=9606
-        )
-        with pytest.raises(IntegrityError):
-            # Switch order on source and target
-            models.Interaction.create(
-                source=self.protein_b, target=self.protein_a, organism=9606
-            )
-
-    def test_format_xy_returns_list_of_tuples(self):
+    def test_to_dataframe_combines_annotations_into_string_or_none_if_absent(
+        self
+    ):
         go1 = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(identifier="1"),
             name="",
@@ -210,8 +206,38 @@ class TestInteractionModel(DatabaseTestMixin):
         label_2 = models.InteractionLabel.create(text="Methylation")
         i.labels.add([label_1, label_2])
 
-        data = list(models.Interaction.format_xy())
-        expected = [
-            (["GO:1", "GO:2", "PF1", "IPR1"], ["Activation", "Methylation"])
-        ]
-        assert data == expected
+        result = models.Interaction.to_dataframe()
+        expected = pd.DataFrame(
+            data=[
+                {
+                    "source": "P1234",
+                    "target": "P5678",
+                    "go_mf": "GO:1,GO:2",
+                    "go_bp": None,
+                    "go_cc": None,
+                    "keywords": None,
+                    "interpro": "IPR1",
+                    "pfam": "PF1",
+                    "labels": "Activation,Methylation",
+                }
+            ],
+            columns=[
+                "source",
+                "target",
+                "go_mf",
+                "go_bp",
+                "go_cc",
+                "keywords",
+                "interpro",
+                "pfam",
+                "labels",
+            ],
+            index=["P1234,P5678"],
+        )
+        assert_frame_equal(result, expected)
+
+    def test_update_or_create_updates_existing_metadata(self):
+        pass
+
+    def test_update_or_create_creates_new_instance(self):
+        pass
