@@ -1,0 +1,9 @@
+[run]
+omit=*/test*,*/__init__.py
+
+[paths]
+source = src/*
+
+[report]
+show_missing = true
+sort = Cover
