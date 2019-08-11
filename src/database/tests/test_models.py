@@ -4,6 +4,7 @@ import pytest
 from pandas.testing import assert_frame_equal
 from peewee import IntegrityError
 
+from ...constants import GeneOntologyCategory
 from .. import models
 from . import DatabaseTestMixin
 
@@ -25,6 +26,18 @@ class TestIdentifierMixin:
         def __init__(self, identifier: str):
             self.identifier = identifier
 
+    def test_attribute_error_missing_identifier_attr_in_class(self):
+        class MissingDriver(models.IdentifierMixin):
+            pass
+
+        with pytest.raises(AttributeError):
+            MissingDriver()._get_identifier()
+    
+    def test_type_error_identifier_not_a_string(self):
+        instance = self.Driver(identifier=1)
+        with pytest.raises(TypeError):
+            instance._get_identifier()
+    
     def test_prefix_prepends_prefix_if_not_starts_with(self):
         value = self.Driver(identifier="hello world").prefix("GO", ":")
         assert value == "GO:hello world"
@@ -38,6 +51,11 @@ class TestIdentifierMixin:
 
 
 class TestExternalIdentiferModel(DatabaseTestMixin):
+    def test_raises_not_implemented_error_db_name_attr_not_set(self):
+        i = models.ExternalIdentifier()
+        with pytest.raises(NotImplementedError):
+            i.save()
+
     def test_prepends_prefix_if_defined(self):
         i = models.PubmedIdentifier.create(identifier="1234")
         assert i.identifier == "PMID:1234"
@@ -60,6 +78,15 @@ class TestExternalIdentiferModel(DatabaseTestMixin):
 
 
 class TestGeneOntologyTermModel(DatabaseTestMixin):
+    def test_converts_single_letter_category_to_full_category(self):
+        term = models.GeneOntologyTerm.create(
+            identifier=models.GeneOntologyIdentifier.create(identifier="1"),
+            name="",
+            description="",
+            category="C",
+        )
+        assert term.category == GeneOntologyCategory.cellular_compartment
+
     def test_raises_error_invalid_category(self):
         term = models.GeneOntologyTerm(
             identifier=models.GeneOntologyIdentifier.create(identifier="1"),
@@ -77,22 +104,7 @@ class TestGeneOntologyTermModel(DatabaseTestMixin):
             description="",
             category="  molecular function  ",
         )
-        assert term.category == "Molecular function"
-
-    def test_converts_single_letter_to_category(self):
-        check_for = enumerate(
-            zip(list("FPC"), models.GeneOntologyTerm.Category.list())
-        )
-        for i, (letter, expected) in check_for:
-            term = models.GeneOntologyTerm.create(
-                identifier=models.GeneOntologyIdentifier.create(
-                    identifier=str(i)
-                ),
-                name="",
-                description="",
-                category=letter,
-            )
-            assert term.category == expected
+        assert term.category == GeneOntologyCategory.molecular_function
 
 
 class TestGeneSymbolModel(DatabaseTestMixin):
@@ -177,13 +189,13 @@ class TestInteractionModel(DatabaseTestMixin):
             identifier=models.GeneOntologyIdentifier.create(identifier="1"),
             name="",
             description="",
-            category=models.GeneOntologyTerm.Category.molecular_function,
+            category=GeneOntologyCategory.molecular_function,
         )
         go2 = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(identifier="2"),
             name="",
             description="",
-            category=models.GeneOntologyTerm.Category.molecular_function,
+            category=GeneOntologyCategory.molecular_function,
         )
         pfam = models.PfamTerm.create(
             identifier=models.PfamIdentifier.create(identifier="PF1"),
