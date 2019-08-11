@@ -1,15 +1,22 @@
 import logging
+import ssl
 import sys
+
 from tqdm import tqdm
 
-from ..constants import Urls, Paths
+from ..constants import Paths, Urls
 from ..settings import LOGGER_NAME, PROJECT_NAME
 from ..utilities import download_from_url
+
 
 logger: logging.Logger = logging.getLogger(LOGGER_NAME)
 
 
 def download_program_data():
+
+    # Work around for python 3.7 where urlretrieve fails on SSL handshake.
+    ssl._create_default_https_context = ssl._create_unverified_context
+
     # HPRD must be downloaded manually by the user due to licencing.
     sys.stdout.write(
         "Downloading required data. This may take some time depending on your "
