@@ -1,6 +1,6 @@
 from logging.config import dictConfig
-
 from pathlib import Path
+from typing import Iterable
 
 import peewee
 
@@ -17,21 +17,16 @@ MODELS_DIR = HOME_DIR / "models"
 LOG_DIR = HOME_DIR / "logs"
 
 
-_dirs = [HOME_DIR, DATA_DIR, NETWORKS_DIR, MODELS_DIR]
-for _dir in _dirs:
-    if not _dir.exists():
-        _dir.mkdir()
+_dirs = (HOME_DIR, DATA_DIR, NETWORKS_DIR, MODELS_DIR)
+
+
+def make_home_dirs(directories: Iterable[Path] = _dirs) -> None:
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
 
 
 DATABASE_PATH = HOME_DIR / f"{PROJECT_NAME.lower()}.sqlite"
 DATABASE = peewee.SqliteDatabase(DATABASE_PATH)
-
-
-def create_tables():
-    from .database import models
-
-    with DATABASE:
-        DATABASE.create_tables(models.MODELS)
 
 
 # Set up logging
