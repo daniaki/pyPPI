@@ -1,13 +1,12 @@
-import json
 import datetime
+import json
+from typing import Generator, Iterable, List, Optional, Tuple, Union
 
 import pandas as pd
-
-from typing import Optional, Tuple, List, Generator, Union, Iterable
-
 import peewee
 import playhouse.fields
 
+from ..constants import GeneOntologyCategory
 from ..settings import DATABASE
 
 
@@ -56,9 +55,14 @@ class IdentifierMixin:
 
 
 class ExternalIdentifier(IdentifierMixin, BaseModel):
+    # Database name of the identifier.
     DB_NAME: Optional[str] = None
+    # Prefix for appending to an identifier if missing. For example the
+    # GO in GO:<accession>.
     PREFIX: Optional[str] = None
-    SEP = ":"
+    # How to separate identifier and prefix. For example the ':' between
+    # GO and <accession>.
+    SEP: Optional[str] = ":"
 
     identifier = peewee.CharField(
         null=False,
@@ -87,21 +91,25 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
 class GeneOntologyIdentifier(ExternalIdentifier):
     DB_NAME = "Gene Ontology"
     PREFIX = "GO"
+    SEP = ":"
 
 
 class PubmedIdentifier(ExternalIdentifier):
     DB_NAME = "PubMed"
     PREFIX = "PMID"
+    SEP = ":"
 
 
 class PsimiIdentifier(ExternalIdentifier):
     DB_NAME = "Psimi"
     PREFIX = "MI"
+    SEP = ":"
 
 
 class UniprotIdentifier(ExternalIdentifier):
     DB_NAME = "UniProt"
     PREFIX = None
+    SEP = None
 
 
 class KeywordIdentifier(ExternalIdentifier):
@@ -113,11 +121,13 @@ class KeywordIdentifier(ExternalIdentifier):
 class InterproIdentifier(ExternalIdentifier):
     DB_NAME = "InterPro"
     PREFIX = None
+    SEP = None
 
 
 class PfamIdentifier(ExternalIdentifier):
     DB_NAME = "PFAM"
     PREFIX = None
+    SEP = None
 
 
 class AnnotationMixin:
@@ -126,36 +136,6 @@ class AnnotationMixin:
 
 
 class GeneOntologyTerm(BaseModel, AnnotationMixin):
-    class Category:
-        molecular_function = "Molecular function"
-        biological_process = "Biological process"
-        cellular_compartment = "Cellular compartment"
-
-        @classmethod
-        def list(cls):
-            return [
-                cls.molecular_function,
-                cls.biological_process,
-                cls.cellular_compartment,
-            ]
-
-        @classmethod
-        def letter_to_category(cls, letter: str) -> str:
-            if letter.upper() == "C":
-                return cls.cellular_compartment
-            elif letter.upper() == "P":
-                return cls.biological_process
-            elif letter.upper() == "F":
-                return cls.molecular_function
-            else:
-                raise ValueError(
-                    f"'{letter}' is not a supported shorthand category."
-                )
-
-        @classmethod
-        def choices(cls):
-            return [(c, c) for c in cls.list()]
-
     identifier = peewee.ForeignKeyField(
         model=GeneOntologyIdentifier,
         null=False,
@@ -176,19 +156,21 @@ class GeneOntologyTerm(BaseModel, AnnotationMixin):
         help_text="The GO category that the term belongs to.",
     )
     obsolete = peewee.BooleanField(
-        null=False,
-        default=False,
+        null=True,
+        default=None,
         help_text="Term is obsolete according to the GO.",
     )
 
     def save(self, *args, **kwargs):
-        if len(self.category) == 1:
-            self.category = self.Category.letter_to_category(self.category)
         self.category = self.category.strip().capitalize()
-        if self.category not in set(self.Category.list()):
+        if len(self.category) == 1:
+            self.category = GeneOntologyCategory.letter_to_category(
+                self.category
+            )
+        if self.category not in set(GeneOntologyCategory.list()):
             raise ValueError(
                 f"'{self.category}' is not a supported category. "
-                f"Supported categories are {self.Category.list()}"
+                f"Supported categories are {GeneOntologyCategory.list()}"
             )
         return super().save(*args, **kwargs)
 
@@ -205,15 +187,37 @@ class InterproTerm(BaseModel, AnnotationMixin):
     name = peewee.TextField(
         null=False, default=None, help_text="Short name description of a term."
     )
-    description = peewee.TextField(
-        null=True, default=None, help_text="Long form description of a term."
-    )
     entry_type = peewee.CharField(
         null=True,
         default=None,
         help_text="Interpro entry type.",
         max_length=32,
     )
+
+    @classmethod
+    @DATABASE.atomic()
+    def update_or_create(
+        cls,
+        identifier: Union[str, GeneOntologyIdentifier],
+        name: str,
+        entry_type: Optional[str] = None,
+    ):
+        if isinstance(identifier, str):
+            identifier, _ = InterproIdentifier.get_or_create(
+                identifier=identifier
+            )
+
+        instance, created = cls.get_or_create(
+            identifier=identifier,
+            defaults={"name": name, "entry_type": entry_type},
+        )
+        if not created:
+            instance.name = name
+            if entry_type:
+                instance.entry_type = entry_type
+            instance.save()
+
+        return instance
 
 
 class PfamTerm(BaseModel, AnnotationMixin):
@@ -232,6 +236,29 @@ class PfamTerm(BaseModel, AnnotationMixin):
         null=False, default=None, help_text="Long form description of a term."
     )
 
+    @classmethod
+    @DATABASE.atomic()
+    def update_or_create(
+        cls,
+        identifier: Union[str, GeneOntologyIdentifier],
+        name: str,
+        description: Optional[str] = None,
+    ):
+        if isinstance(identifier, str):
+            identifier, _ = PfamIdentifier.get_or_create(identifier=identifier)
+
+        instance, created = cls.get_or_create(
+            identifier=identifier,
+            defaults={"name": name, "description": description},
+        )
+        if not created:
+            instance.name = name
+            if description:
+                instance.description = description
+            instance.save()
+
+        return instance
+
 
 class Keyword(BaseModel, AnnotationMixin):
     identifier = peewee.ForeignKeyField(
@@ -245,6 +272,26 @@ class Keyword(BaseModel, AnnotationMixin):
     description = peewee.TextField(
         null=False, default=None, help_text="Keyword description."
     )
+
+    @classmethod
+    @DATABASE.atomic()
+    def update_or_create(
+        cls,
+        identifier: Union[str, GeneOntologyIdentifier],
+        description: Optional[str] = None,
+    ):
+        if isinstance(identifier, str):
+            identifier, _ = PfamIdentifier.get_or_create(identifier=identifier)
+
+        instance, created = cls.get_or_create(
+            identifier=identifier, defaults={"description": description}
+        )
+        if not created:
+            if description:
+                instance.description = description
+            instance.save()
+
+        return instance
 
 
 class GeneSymbol(BaseModel):
@@ -322,15 +369,15 @@ class Protein(BaseModel):
 
     @property
     def go_mf(self):
-        return self._select_go(GeneOntologyTerm.Category.molecular_function)
+        return self._select_go(GeneOntologyCategory.molecular_function)
 
     @property
     def go_bp(self):
-        return self._select_go(GeneOntologyTerm.Category.biological_process)
+        return self._select_go(GeneOntologyCategory.biological_process)
 
     @property
     def go_cc(self):
-        return self._select_go(GeneOntologyTerm.Category.cellular_compartment)
+        return self._select_go(GeneOntologyCategory.cellular_compartment)
 
     @classmethod
     @DATABASE.atomic()
@@ -339,7 +386,7 @@ class Protein(BaseModel):
         identifier: Union[str, UniprotIdentifier],
         sequence: str,
         organism: int,
-        aliases: Iterable = (),
+        aliases: Iterable[Union[str, UniprotIdentifier]] = (),
         go: Iterable[GeneOntologyTerm] = (),
         interpro: Iterable[InterproTerm] = (),
         pfam: Iterable[PfamTerm] = (),
@@ -355,7 +402,14 @@ class Protein(BaseModel):
         query = Protein.get_or_create(identifier=identifier)
         instance: Protein = query[0]
         instance.sequence = sequence
-        instance.aliases.add([alias for alias in aliases])
+        instance.aliases.add(
+            [
+                alias
+                if isinstance(alias, UniprotIdentifier)
+                else UniprotIdentifier.get_or_create(identifier=alias)[0]
+                for alias in aliases
+            ]
+        )
         instance.organism = organism
 
         # Update annotations
