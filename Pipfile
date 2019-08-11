@@ -11,6 +11,7 @@ pylint = "*"
 pytest = "*"
 black = "*"
 rope = "*"
+mock = "*"
 
 [packages]
 flask = "*"
