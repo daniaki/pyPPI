@@ -4,11 +4,11 @@ from typing import Generator, List
 from ..utilities import validate_accession, is_null
 from ..constants import PSIMI_NAME_TO_IDENTIFIER
 
-from .types import Interaction
+from .types import InteractionData
 from . import open_file
 
 
-def innate_mitab_func(path: str) -> Generator[Interaction, None, None]:
+def innate_mitab_func(path: str) -> Generator[InteractionData, None, None]:
     """
     Parsing function for psimitab format files issued by `InnateDB`.
 
@@ -98,9 +98,10 @@ def innate_mitab_func(path: str) -> Generator[Interaction, None, None]:
                     psimi_ids = [d_psimi]
 
                 else:
-                    yield Interaction(
+                    yield InteractionData(
                         source=source,
                         target=target,
+                        organism=9606,
                         labels=[],
                         pubmed_ids=pmids,
                         psimi_ids=psimi_ids,

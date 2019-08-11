@@ -3,18 +3,11 @@ from dataclasses import dataclass
 from typing import List, Dict
 
 from . import open_file
+from .types import InterproTermData
 
 
-@dataclass
-class ParsedInterproTerm:
-    identifier: str
-    name: str
-    description: str
-    term_type: str
-
-
-def parse_entry_list(path: str) -> List[ParsedInterproTerm]:
-    terms: List[ParsedInterproTerm] = []
+def parse_entry_list(path: str) -> List[InterproTermData]:
+    terms: List[InterproTermData] = []
     with open_file(path, mode="rt") as handle:
         reader = DictReader(
             f=handle,
@@ -23,11 +16,10 @@ def parse_entry_list(path: str) -> List[ParsedInterproTerm]:
         )
         for row in reader:
             terms.append(
-                ParsedInterproTerm(
+                InterproTermData(
                     identifier=row["ENTRY_AC"],
                     name=row["ENTRY_NAME"],
-                    description=row["ENTRY_NAME"],
-                    term_type=row["ENTRY_TYPE"],
+                    entry_type=row["ENTRY_TYPE"],
                 )
             )
     return terms

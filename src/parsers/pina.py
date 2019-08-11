@@ -6,11 +6,11 @@ from collections import OrderedDict
 from ..utilities import validate_accession, is_null
 from ..constants import PSIMI_NAME_TO_IDENTIFIER
 
-from .types import Interaction
+from .types import InteractionData
 from . import open_file
 
 
-def pina_sif_func(path: str) -> Generator[Interaction, None, None]:
+def pina_sif_func(path: str) -> Generator[InteractionData, None, None]:
     """
     Parsing function for bioplex tsv format.
 
@@ -35,10 +35,10 @@ def pina_sif_func(path: str) -> Generator[Interaction, None, None]:
             target = validate_accession(xs[target_idx].strip().upper())
             if not (source and target):
                 continue
-            yield Interaction(source=source, target=target, labels=[])
+            yield InteractionData(source=source, target=target, labels=[])
 
 
-def pina_mitab_func(path: str) -> Generator[Interaction, None, None]:
+def pina_mitab_func(path: str) -> Generator[InteractionData, None, None]:
     """
     Parsing function for psimitab format files from `PINA2`.
 
@@ -93,10 +93,11 @@ def pina_mitab_func(path: str) -> Generator[Interaction, None, None]:
                 PSIMI_NAME_TO_IDENTIFIER[psimi_id] for psimi_id in psimi_ids
             ]
 
-            yield Interaction(
+            yield InteractionData(
                 source=source,
                 target=target,
                 labels=[],
+                organism=9606,
                 pubmed_ids=pmids,
                 psimi_ids=psimi_ids,
                 experiment_types=experiment_types,

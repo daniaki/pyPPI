@@ -3,10 +3,10 @@ from typing import Generator
 from ..utilities import validate_accession
 
 from . import open_file
-from .types import Interaction
+from .types import InteractionData
 
 
-def bioplex_func(path: str) -> Generator[Interaction, None, None]:
+def bioplex_func(path: str) -> Generator[InteractionData, None, None]:
     """
     Parsing function for bioplex tsv format.
     
@@ -32,6 +32,10 @@ def bioplex_func(path: str) -> Generator[Interaction, None, None]:
             if not (source and target):
                 continue
 
-            yield Interaction(
-                source=source, target=target, labels=[], databases=["BioPlex"]
+            yield InteractionData(
+                source=source,
+                target=target,
+                organism=9606,
+                labels=[],
+                databases=["BioPlex"],
             )

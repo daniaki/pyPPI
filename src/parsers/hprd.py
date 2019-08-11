@@ -19,7 +19,7 @@ from collections import defaultdict, OrderedDict
 from ..utilities import is_null
 from ..constants import Columns, UNIPROT_ORD_KEY, PSIMI_NAME_TO_IDENTIFIER
 
-from .types import Interaction
+from .types import InteractionData
 from . import open_file
 
 
@@ -221,7 +221,7 @@ def parse_hprd_mapping(
 
 def parse_hprd_interactions(
     ptm_path: str, mapping_path: str
-) -> Generator[Interaction, None, None]:
+) -> Generator[InteractionData, None, None]:
     """
     Parse the FLAT_FILES from HPRD into a list of interactions with pubmed and
     experiment type annotations.
@@ -301,9 +301,10 @@ def parse_hprd_interactions(
                 PSIMI_NAME_TO_IDENTIFIER[e_type] for e_type in experiment_types
             ]
 
-            yield Interaction(
+            yield InteractionData(
                 source=source,
                 target=target,
+                organism=9606,
                 labels=[label],
                 psimi_ids=psi_ids,
                 pubmed_ids=reference_ids,

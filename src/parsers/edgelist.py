@@ -2,13 +2,13 @@ from typing import Generator, List
 
 from ..utilities import validate_accession
 
-from .types import Interaction
+from .types import InteractionData
 from . import open_file
 
 
 def edgelist_func(
     path, database: str = None, sep: str = "\t"
-) -> Generator[Interaction, None, None]:
+) -> Generator[InteractionData, None, None]:
     """
     Parsing function a generic edgelist file.
     
@@ -44,6 +44,10 @@ def edgelist_func(
             if database:
                 databases = [database]
 
-            yield Interaction(
-                source=source, target=target, labels=[], databases=databases
+            yield InteractionData(
+                source=source,
+                target=target,
+                organism=9606,
+                labels=[],
+                databases=databases,
             )
