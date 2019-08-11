@@ -1,23 +1,25 @@
-from typing import Generator
+from pathlib import Path
+from typing import Generator, Union
 
 from ..utilities import validate_accession
-
 from . import open_file
 from .types import InteractionData
 
 
-def bioplex_func(path: str) -> Generator[InteractionData, None, None]:
+def bioplex_func(
+    path: Union[str, Path]
+) -> Generator[InteractionData, None, None]:
     """
     Parsing function for bioplex tsv format.
     
     Parameters
     ----------
-    path : str
+    path : Union[str, Path]
         Path to file to parse.
 
     Returns
     -------
-    Generator[Interaction]
+    Generator[InteractionData]
         Interaction. Label is always `None`.
     """
     source_idx = 2

@@ -3,33 +3,33 @@ This module provides functionality to mine interactions with labels from
 HPRD flat files.
 """
 
+from collections import OrderedDict, defaultdict
+from itertools import product
 from typing import (
     Any,
-    Dict,
-    List,
-    Union,
-    Optional,
-    Sequence,
-    Generator,
     DefaultDict,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Iterable,
+    Union,
 )
-from itertools import product
-from collections import defaultdict, OrderedDict
 
+from ..constants import PSIMI_NAME_TO_IDENTIFIER, UNIPROT_ORD_KEY, Columns
 from ..utilities import is_null
-from ..constants import Columns, UNIPROT_ORD_KEY, PSIMI_NAME_TO_IDENTIFIER
-
-from .types import InteractionData
 from . import open_file
+from .types import InteractionData
 
 
 __all__ = [
-    "parse_hprd_interactions",
-    "parse_hprd_mapping",
+    "parse_interactions",
+    "parse_xref_mapping",
     "parse_ptm",
     "PTMEntry",
     "HPRDXrefEntry",
 ]
+
 
 SUBTYPES_TO_EXCLUDE: List[str] = []
 
@@ -69,8 +69,8 @@ class PTMEntry:
         enzyme_hprd_id: Optional[str] = None,
         substrate_hprd_id: Optional[str] = None,
         modification_type: Optional[str] = None,
-        reference_id: Sequence[str] = (),
-        experiment_type: Sequence[str] = (),
+        reference_id: Union[str, Iterable[str]] = (),
+        experiment_type: Union[str, Iterable[str]] = (),
         **kwargs
     ):
         self.enzyme_hprd_id = enzyme_hprd_id
@@ -115,7 +115,7 @@ class HPRDXrefEntry:
         self,
         hprd_id: str,
         gene_symbol: Optional[str] = None,
-        swissprot_id: Optional[str] = None,
+        swissprot_id: Iterable[str] = (),
         **kwargs
     ):
         self.hprd_id = hprd_id
@@ -126,13 +126,13 @@ class HPRDXrefEntry:
 
         self.swissprot_id = swissprot_id
         if not self.swissprot_id or self.swissprot_id == "-":
-            self.swissprot_id = None
+            self.swissprot_id = []
 
         self.__dict__.update(**kwargs)
 
 
 def parse_ptm(
-    path: str, header: bool = False, col_sep: str = "\t"
+    path: str, header: bool = False, sep: str = "\t"
 ) -> List[PTMEntry]:
     """
     Parse HPRD post_translational_modifications file.
@@ -145,7 +145,7 @@ def parse_ptm(
     header : bool, optional.
         True if file has header. Default is False.
     
-    col_sep : str, optional.
+    sep : str, optional.
         Column separator value.
     
     Returns
@@ -159,25 +159,28 @@ def parse_ptm(
             handle.readline()
         for line in handle:
             class_fields = __PTM_FIELDS.copy()
-            xs = line.strip().split(col_sep)
+            xs = line.strip().split(sep)
             for k in __PTM_FIELDS.keys():
-                raw_data: str = xs[__PTM_INDEX[k]]
+                raw_data: Optional[str] = xs[__PTM_INDEX[k]]
+                if is_null(raw_data) or raw_data == "-":
+                    raw_data = None
+
                 data: Union[List[str], str, None] = []
-                if k == "reference_id":
+                if k == "reference_id" and raw_data:
                     data = [x.strip() for x in raw_data.split(",")]
-                elif k == "experiment_type":
+                elif k == "experiment_type" and raw_data:
                     data = [x.strip() for x in raw_data.split(";")]
                 else:
-                    data = raw_data
-                    if not raw_data:
-                        data = None
+                    data = raw_data or None
+
                 class_fields[k] = data
+
             ptms.append(PTMEntry(**class_fields))
         return ptms
 
 
-def parse_hprd_mapping(
-    path: str, header: bool = False, col_sep: str = "\t"
+def parse_xref_mapping(
+    path: str, header: bool = False, sep: str = "\t"
 ) -> Dict[str, HPRDXrefEntry]:
     """
     Parse a hprd mapping file into HPRDXref Objects.
@@ -190,7 +193,7 @@ def parse_hprd_mapping(
     header : bool, optional
         True if file has header. Default is False.
     
-    col_sep : str, optional
+    sep : str, optional
         Column separator value.
     
     Returns
@@ -204,23 +207,26 @@ def parse_hprd_mapping(
             handle.readline()
         for line in handle:
             class_fields = __HPRD_XREF_FIELDS.copy()
-            xs = line.strip().split(col_sep)
+            xs = line.strip().split(sep)
             for k in __HPRD_XREF_FIELDS.keys():
-                raw_data: str = xs[__HPRD_XREF_INDEX[k]]
+                raw_data: Optional[str] = xs[__HPRD_XREF_INDEX[k]]
+                if is_null(raw_data) or raw_data == "-":
+                    raw_data = None
+
                 data: Union[List[str], str, None] = None
-                if k == "swissprot_id":
+                if k == "swissprot_id" and raw_data:
                     data = [x.strip() for x in raw_data.split(",")]
                 else:
-                    data = raw_data
-                    if not data:
-                        data = None
+                    data = raw_data or None
+
                 class_fields[k] = data
+
             xrefs[xs[0]] = HPRDXrefEntry(**class_fields)
         return xrefs
 
 
-def parse_hprd_interactions(
-    ptm_path: str, mapping_path: str
+def parse_interactions(
+    ptms: Iterable[PTMEntry], xrefs=Dict[str, HPRDXrefEntry]
 ) -> Generator[InteractionData, None, None]:
     """
     Parse the FLAT_FILES from HPRD into a list of interactions with pubmed and
@@ -228,34 +234,23 @@ def parse_hprd_interactions(
     
     Parameters
     ----------
-    ptm_path : str
+    ptms : Iterable[PTMEntry]
         Path to the HPRD PTM file to parse.
     
-    mapping_path : str
+    xrefs : Dict[str, HPRDXrefEntry]
         Path to the HPRD mapping file to parse.
     
     Returns
     -------
-    list[types.AnnotatedInteraction]
-        With 'source', 'target' and 'label' columns.
+    list[types.InteractionData]
     """
-    ptms = parse_ptm(path=ptm_path)
-    xrefs = parse_hprd_mapping(path=mapping_path)
-
     for ptm in ptms:
         label = None
         if ptm.modification_type is not None:
-            label = ptm.modification_type.lower().replace(" ", "-")
-
-        if ptm.enzyme_hprd_id == "-":
-            ptm.enzyme_hprd_id = None
-
-        if ptm.substrate_hprd_id == "-":
-            ptm.substrate_hprd_id = None
-
-        if label == "-":
-            ptm.modification_type = None
-            label = None
+            label = ptm.modification_type.strip().capitalize()
+            if not label:
+                ptm.modification_type = None
+                label = None
 
         if (
             (ptm.enzyme_hprd_id is None)
@@ -264,6 +259,7 @@ def parse_hprd_interactions(
         ):
             continue
 
+        # Remove duplicated pubmed ids
         reference_ids: Any = ",".join(
             OrderedDict()
             .fromkeys([x for x in ptm.reference_id if not is_null(x)])
@@ -274,6 +270,7 @@ def parse_hprd_interactions(
         else:
             reference_ids = reference_ids.split(",")
 
+        # Remove duplicated experiment_type
         experiment_types: Any = ",".join(
             OrderedDict()
             .fromkeys([x for x in ptm.experiment_type if not is_null(x)])
@@ -291,23 +288,21 @@ def parse_hprd_interactions(
             xrefs.get(ptm.substrate_hprd_id, None), "swissprot_id"
         )
 
-        if not (uniprot_sources and uniprot_targets):
-            # Missing information so ignore.
-            continue
+        if uniprot_sources and uniprot_targets:
+            for (source, target) in product(uniprot_sources, uniprot_targets):
+                # Match up the pmids with the experiment/assay type.
+                psi_ids = [
+                    PSIMI_NAME_TO_IDENTIFIER[e_type]
+                    for e_type in experiment_types
+                ]
 
-        for (source, target) in product(uniprot_sources, uniprot_targets):
-            # Match up the pmids with the experiment/assay type.
-            psi_ids = [
-                PSIMI_NAME_TO_IDENTIFIER[e_type] for e_type in experiment_types
-            ]
-
-            yield InteractionData(
-                source=source,
-                target=target,
-                organism=9606,
-                labels=[label],
-                psimi_ids=psi_ids,
-                pubmed_ids=reference_ids,
-                experiment_types=experiment_types,
-                databases=["HPRD"],
-            )
+                yield InteractionData(
+                    source=source,
+                    target=target,
+                    organism=9606,
+                    labels=[label],
+                    psimi_ids=psi_ids,
+                    pubmed_ids=reference_ids,
+                    experiment_types=experiment_types,
+                    databases=["HPRD"],
+                )
