@@ -175,11 +175,11 @@ class TestInteractionModel(DatabaseTestMixin):
 
     def test_unique_index_on_source_target(self):
         _ = models.Interaction.create(
-            source=self.protein_a, target=self.protein_b, organism=9606
+            source=self.protein_a, target=self.protein_b
         )
         with pytest.raises(IntegrityError):
             models.Interaction.create(
-                source=self.protein_a, target=self.protein_b, organism=9606
+                source=self.protein_a, target=self.protein_b
             )
 
     def test_to_dataframe_combines_annotations_into_sorted_string_or_none_if_absent(
