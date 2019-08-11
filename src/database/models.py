@@ -356,6 +356,11 @@ class Protein(BaseModel):
         default=None,
         help_text="The protein sequence in single letter format.",
     )
+    reviewed = peewee.BooleanField(
+        null=True,
+        default=None,
+        help_text="Protein has been reviewed (Swiss-prot).",
+    )
 
     def _select_go(self, category: str):
         return (
