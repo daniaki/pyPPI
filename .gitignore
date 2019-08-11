@@ -137,3 +137,6 @@ dmypy.json
 
 # Ignore vim swap files
 .models.*.py.*
+
+# MacOS files
+.DS_store
