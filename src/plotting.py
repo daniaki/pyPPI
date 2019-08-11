@@ -1,26 +1,24 @@
-"""
-This module contains the two functions used to make the heat-map plots
-and the threshold curves.
-"""
+from pathlib import Path
+from typing import List, Union, Tuple
 
-
-import numpy as np
-import matplotlib
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-
 import numpy as np
 import pandas as pd
-
+from matplotlib.gridspec import GridSpec
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 __all__ = ["plot_heatmaps", "plot_threshold_curve"]
 
 
 def plot_heatmaps(
-    path, labels, correlation_matrix, similarity_matrix, dpi=350, format="jpg"
-):
+    path: Union[str, Path],
+    labels: List[str],
+    correlation_matrix: np.ndarray,
+    similarity_matrix: np.ndarray,
+    dpi: int = 350,
+    format: str = "png",
+) -> Tuple[plt.Figure, plt.Axes, plt.Axes]:
     plt.style.use("default")
     ticklabels = [l.capitalize() for l in labels]
 
@@ -70,7 +68,13 @@ def plot_heatmaps(
     return fig, ax1, ax2
 
 
-def plot_threshold_curve(path, thresholds, proportions, dpi=350, format="jpg"):
+def plot_threshold_curve(
+    path: Union[str, Path],
+    thresholds: np.ndarray,
+    proportions: np.ndarray,
+    dpi: int = 350,
+    format: str = "png",
+) -> Tuple[plt.Figure, plt.Axes]:
     plt.style.use("default")
     fig, ax = plt.subplots(1, 1)
     ax.plot(thresholds, proportions, "s-", color="black", linewidth="1")
