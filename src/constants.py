@@ -1,7 +1,7 @@
 import re
 import numpy as np
 from pathlib import Path
-from typing import DefaultDict
+from typing import DefaultDict, Dict
 
 from collections import defaultdict
 
@@ -34,7 +34,7 @@ NULL_RE = re.compile(
 
 UNIPROT_ORD_KEY: DefaultDict[str, int] = defaultdict(lambda: 9)
 
-PSIMI_NAME_TO_IDENTIFIER = {
+PSIMI_NAME_TO_IDENTIFIER: Dict[str, str] = {
     "in vitro": "MI:0492",
     "invitro": "MI:0492",
     "in vivo": "MI:0493",
@@ -43,49 +43,94 @@ PSIMI_NAME_TO_IDENTIFIER = {
 }
 
 
+class GeneOntologyCategory:
+    molecular_function = "Molecular function"
+    biological_process = "Biological process"
+    cellular_compartment = "Cellular compartment"
+
+    @classmethod
+    def list(cls):
+        return [
+            cls.molecular_function,
+            cls.biological_process,
+            cls.cellular_compartment,
+        ]
+
+    @classmethod
+    def letter_to_category(cls, letter: str) -> str:
+        if letter.upper() == "C":
+            return cls.cellular_compartment
+        elif letter.upper() == "P":
+            return cls.biological_process
+        elif letter.upper() == "F":
+            return cls.molecular_function
+        else:
+            raise ValueError(
+                f"'{letter}' is not a supported shorthand category."
+            )
+
+    @classmethod
+    def choices(cls):
+        return [(c, c) for c in cls.list()]
+
+
 class Columns:
-    source = "source"
-    target = "target"
-    label = "label"
-    pubmed = "pubmed"
-    psimi = "psimi"
+    source: str = "source"
+    target: str = "target"
+    gene_source = "gene_source"
+    gene_target = "gene_target"
+    label: str = "label"
+    pubmed: str = "pubmed"
+    psimi: str = "psimi"
+    experiment_type: str = "experiment_type"
+    go_mf: str = "go_mf"
+    go_bp: str = "go_bp"
+    go_cc: str = "go_cc"
+    interpro: str = "interpro"
+    keyword: str = "keyword"
+    pfam: str = "pfam"
+    database: str = "database"
 
 
 class Paths:
-    psimi_obo = DATA_DIR / "mi.obo.gz"
-    go_obo = DATA_DIR / "go.obo.gz"
-    interpro_entries = DATA_DIR / "entry.list"
-    pfam_clans = DATA_DIR / "Pfam-A.clans.tsv.gz"
+    psimi_obo: Path = DATA_DIR / "mi.obo.gz"
+    go_obo: Path = DATA_DIR / "go.obo.gz"
+    interpro_entries: Path = DATA_DIR / "entry.list"
+    pfam_clans: Path = DATA_DIR / "Pfam-A.clans.tsv.gz"
 
     # Networks
-    hprd_ptms = NETWORKS_DIR / "POST_TRANSLATIONAL_MODIFICATIONS.txt"
-    hprd_xref = NETWORKS_DIR / "HPRD_ID_MAPPINGS.txt"
-    pina2_mitab = NETWORKS_DIR / "Homo-sapiens-20140521.tsv.gz"
-    bioplex = NETWORKS_DIR / "BioPlex_interactionList_v4a.tsv.gz"
-    innate_all = NETWORKS_DIR / "all.mitab.gz"
-    innate_curated = NETWORKS_DIR / "innatedb_ppi.mitab.gz"
+    hprd_ptms: Path = NETWORKS_DIR / "POST_TRANSLATIONAL_MODIFICATIONS.txt"
+    hprd_xref: Path = NETWORKS_DIR / "HPRD_ID_MAPPINGS.txt"
+    pina2_mitab: Path = NETWORKS_DIR / "Homo-sapiens-20140521.tsv.gz"
+    bioplex: Path = NETWORKS_DIR / "BioPlex_interactionList_v4a.tsv.gz"
+    innate_all: Path = NETWORKS_DIR / "all.mitab.gz"
+    innate_curated: Path = NETWORKS_DIR / "innatedb_ppi.mitab.gz"
 
-    # classifiers
-    trained_models = MODELS_DIR
+    # Path where classifiers will be saved.
+    trained_models: Path = MODELS_DIR
 
 
 class Urls:
-    interpro_entries = "ftp://ftp.ebi.ac.uk/pub/databases/interpro/entry.list"
-    psimi_obo = "http://purl.obolibrary.org/obo/mi.obo"
-    go_obo = "http://purl.obolibrary.org/obo/go.obo"
-    pfam_clans = (
+    interpro_entries: str = (
+        "ftp://ftp.ebi.ac.uk/pub/databases/interpro/entry.list"
+    )
+    psimi_obo: str = "http://purl.obolibrary.org/obo/mi.obo"
+    go_obo: str = "http://purl.obolibrary.org/obo/go.obo"
+    pfam_clans: str = (
         "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/"
         "current_release/Pfam-A.clans.tsv.gz"
     )
 
     # Networks
-    pina2_mitab = (
+    pina2_mitab: str = (
         "http://omics.bjcancer.org/pina/download/Homo%20sapiens-20140521.tsv"
     )
-    bioplex = (
+    bioplex: str = (
         "http://bioplex.hms.harvard.edu/data/BioPlex_interactionList_v4a.tsv"
     )
-    innate_curated = (
+    innate_curated: str = (
         "http://www.innatedb.com/download/interactions/innatedb_ppi.mitab.gz"
     )
-    innate_all = "http://www.innatedb.com/download/interactions/all.mitab.gz"
+    innate_all: str = (
+        "http://www.innatedb.com/download/interactions/all.mitab.gz"
+    )
