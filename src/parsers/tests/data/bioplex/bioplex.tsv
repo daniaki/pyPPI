@@ -1,0 +1,3 @@
+GeneA	GeneB	UniprotA	UniprotB	SymbolA	SymbolB	p(Wrong)	p(No Interaction)	p(Interaction)
+100	728378	P00813	A5A3E0	ADA	POTEF	2.3	0.0	0.99
+100	345651	P00813	Q562R1	ADA	ACTBL2	9.7	0.21	0.78
