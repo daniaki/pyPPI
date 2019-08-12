@@ -1,7 +1,13 @@
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass, field
 
 from ..constants import GeneOntologyCategory
+
+
+@dataclass
+class InteractionEvidenceData:
+    pubmed: str
+    psimi: Optional[str] = field(default=None)
 
 
 @dataclass
@@ -11,9 +17,7 @@ class InteractionData:
     organism: int
     labels: List[str] = field(default_factory=list)
     databases: List[str] = field(default_factory=list)
-    psimi_ids: List[str] = field(default_factory=list)
-    pubmed_ids: List[str] = field(default_factory=list)
-    experiment_types: List[str] = field(default_factory=list)
+    evidence: List[InteractionEvidenceData] = field(default_factory=list)
 
 
 @dataclass
