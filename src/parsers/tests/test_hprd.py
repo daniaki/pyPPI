@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List
 
 from .. import hprd
+from ..types import InteractionEvidenceData
 
 
 class TestPTMEntry:
@@ -88,7 +89,6 @@ class TestParsePTM:
         assert ptm1.enzyme_name == None
         assert ptm1.enzyme_hprd_id == None
         assert ptm1.modification_type == "Phosphorylation"
-        assert ptm1.experiment_type == ["in vivo", "in vitro"]
         assert ptm1.reference_id == ["17287340"]
 
         ptm2 = entries[1]
@@ -101,8 +101,7 @@ class TestParsePTM:
         assert ptm2.enzyme_name == "TMPRSS2"
         assert ptm2.enzyme_hprd_id == "03637"
         assert ptm2.modification_type == "Proteolytic Cleavage"
-        assert ptm2.experiment_type == ["in vitro"]
-        assert ptm2.reference_id == ["11245484"]
+        assert ptm2.reference_id == ["11245484", "17287340"]
 
     def test_parse_ptm_file_with_header_header_clipped(self):
         path = Path(__file__).parent / "data" / "hprd" / "hprd_ptms.tsv"
@@ -183,7 +182,7 @@ class TestParseInteractions:
                 enzyme_hprd_id="03637",
                 modification_type="Proteolytic Cleavage",
                 experiment_type=["in vivo", "in vitro"],
-                reference_id=["11245484"],
+                reference_id=["11245484", "11245484"],
             ),
         ]
         self.xrefs = {
@@ -258,12 +257,6 @@ class TestParseInteractions:
         )
         assert len(interactions) == 9
 
-    def test_converts_experiment_type_name_to_psimi_id(self):
-        interactions = list(
-            hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
-        )
-        assert interactions[0].psimi_ids == ["MI:0493", "MI:0492"]
-
     def test_sets_organism_as_9606_and_database_as_HPRD(self):
         interactions = list(
             hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
@@ -271,31 +264,19 @@ class TestParseInteractions:
         assert interactions[0].organism == 9606
         assert interactions[0].databases == ["HPRD"]
 
-    def test_removes_duplicate_experiment_types(self):
-        self.ptms[1].experiment_type = ["in vitro", "in vitro"]
-        interactions = list(
-            hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
-        )
-        assert interactions[0].experiment_types == ["in vitro"]
-
-    def test_removes_falsey_experiment_types(self):
-        self.ptms[1].experiment_type = [" "]
-        interactions = list(
-            hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
-        )
-        assert interactions[0].experiment_types == []
-
     def test_removes_duplicate_reference_ids(self):
         self.ptms[1].reference_id = ["A", "A"]
         interactions = list(
             hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
         )
-        assert interactions[0].pubmed_ids == ["A"]
+        assert interactions[0].evidence == [
+            InteractionEvidenceData(pubmed='A')
+        ]
 
     def test_removes_falsey_reference_ids(self):
         self.ptms[1].reference_id = [" "]
         interactions = list(
             hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
         )
-        assert interactions[0].pubmed_ids == []
+        assert interactions[0].evidence == []
     

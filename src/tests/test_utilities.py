@@ -1,9 +1,9 @@
-import io
 import mock
 import gzip
 from pathlib import Path
 
 from .. import utilities
+
 
 null_values = ("none", "na", "nan", "n/a", "undefined", "unknown", "null", " ")
 
@@ -15,21 +15,6 @@ class TestIsNull:
 
     def test_false_for_non_null_values(self):
         assert not utilities.is_null("aaa")
-
-
-class TestValidateAccession:
-    def test_returns_none_for_none_input(self):
-        assert utilities.validate_accession(None) is None
-
-    def test_returns_none_null_accession(self):
-        for value in null_values:
-            assert utilities.validate_accession(value) is None
-
-    def test_strips_and_formats(self):
-        assert (
-            utilities.validate_accession(" identifier ", str.capitalize)
-            == "Identifier"
-        )
 
 
 class TestDownloadFromURL:
@@ -54,8 +39,9 @@ class TestDownloadFromURL:
         with mock.patch(
             "urllib.request.urlretrieve", return_value=(tmp, None)
         ) as patch:
-            url = "https://google.com.au"
-            utilities.download_from_url(url=url, save_path=path, compress=True)
+            utilities.download_from_url(
+                url="aaa", save_path=path, compress=True
+            )
             patch.assert_called()
             assert path.exists()
             with gzip.open(path, "rt") as fp:

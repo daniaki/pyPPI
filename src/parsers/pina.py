@@ -1,105 +1,72 @@
+import csv
 import itertools
-
-from typing import Generator, List, Dict, Union, Set
 from collections import OrderedDict
+from pathlib import Path
+from typing import Dict, Generator, List, Set, Union
 
-from ..utilities import validate_accession, is_null
-from ..constants import PSIMI_NAME_TO_IDENTIFIER
-
-from .types import InteractionData
+from ..utilities import is_null
+from ..validators import uniprot_re, psimi_re, pubmed_re, validate_accession
 from . import open_file
+from .types import InteractionData, InteractionEvidenceData
 
 
-def pina_sif_func(path: str) -> Generator[InteractionData, None, None]:
-    """
-    Parsing function for bioplex tsv format.
-
-    Parameters
-    ----------
-    path : str
-        Path to file to parse.
-
-    Returns
-    -------
-    Generator[Interaction]
-        Interaction. Label is always `None`. There may be pubmed and psimi
-        identifiers associated with each row.
-    """
-    source_idx = 0
-    target_idx = 2
-
-    with open_file(path, "rt") as handle:
-        for line in handle:
-            xs = line.strip().split(" ")
-            source = validate_accession(xs[source_idx].strip().upper())
-            target = validate_accession(xs[target_idx].strip().upper())
-            if not (source and target):
-                continue
-            yield InteractionData(source=source, target=target, labels=[])
-
-
-def pina_mitab_func(path: str) -> Generator[InteractionData, None, None]:
+def parse_interactions(
+    path: Union[str, Path]
+) -> Generator[InteractionData, None, None]:
     """
     Parsing function for psimitab format files from `PINA2`.
 
     Parameters
     ----------
-    path : str
+    path : Union[str, Path]
         Path to file to parse.
 
     Returns
     -------
-    Generator[Interaction]
-        Interaction. Label is always `None`. There may be pubmed and psimi
-        identifiers associated with each row.
+    Generator[Interaction, None, None]
     """
-    uniprot_source_idx = 0
-    uniprot_target_idx = 1
-    d_method_idx = 6  # detection method
-    pmid_idx = 8
+    uniprot_source_column = '"ID(s) interactor A"'
+    uniprot_target_column = '"ID(s) interactor B"'
+    detection_method_column = '"Interaction detection method(s)"'
+    pmid_column = '"Publication Identifier(s)"'
+    taxid_A_column = '"Taxid interactor A"'
+    taxid_B_column = '"Taxid interactor B"'
 
     with open_file(path, "rt") as handle:
-        handle.readline()  # Remove header
-        for line in handle:
-            xs = line.strip().split("\t")
-            source = validate_accession(
-                xs[uniprot_source_idx].split(":")[-1].strip().upper()
-            )
-            target = validate_accession(
-                xs[uniprot_target_idx].split(":")[-1].strip().upper()
-            )
-            if not (source and target):
+        header = handle.readline().strip().split("\t")
+        reader = csv.DictReader(f=handle, fieldnames=header, delimiter="\t")
+
+        for row in reader:
+            source_tax = row[taxid_A_column].strip()
+            target_tax = row[taxid_B_column].strip()
+            if ("9606" not in source_tax) or ("9606" not in target_tax):
                 continue
 
-            pmids: List[str] = list(
-                OrderedDict.fromkeys(
-                    [
-                        x.split(":")[-1]
-                        for x in xs[pmid_idx].strip().split("|")
-                        if not is_null(x.split(":")[-1])
-                    ]
-                ).keys()
-            )
-            psimi_ids: List[str] = list(
-                OrderedDict.fromkeys(
-                    [
-                        x.split("(")[0]
-                        for x in xs[d_method_idx].strip().split("|")
-                        if not is_null(x.split("(")[0])
-                    ]
-                ).keys()
-            )
-            experiment_types: List[str] = [
-                PSIMI_NAME_TO_IDENTIFIER[psimi_id] for psimi_id in psimi_ids
+            # These formats should contain ONE uniprot interactor in a
+            # single line, or none. Continue parsing if the latter.
+            sources = [
+                m[0] for m in uniprot_re.findall(row[uniprot_source_column])
             ]
+            targets = [
+                m[0] for m in uniprot_re.findall(row[uniprot_target_column])
+            ]
+            if not sources or not targets:
+                continue
+
+            psimi_ids = psimi_re.findall(row[detection_method_column])
+            pmids = [m[0] for m in pubmed_re.findall(row[pmid_column])]
+            evidence: List[InteractionEvidenceData] = []
+            if len(pmids):
+                assert len(pmids) == len(psimi_ids)
+                for pmid, psimi in zip(pmids, psimi_ids):
+                    evidence.append(
+                        InteractionEvidenceData(pubmed=pmid, psimi=psimi)
+                    )
 
             yield InteractionData(
-                source=source,
-                target=target,
-                labels=[],
+                source=sources[0],
+                target=targets[0],
                 organism=9606,
-                pubmed_ids=pmids,
-                psimi_ids=psimi_ids,
-                experiment_types=experiment_types,
+                evidence=list(sorted(set(evidence), key=lambda e: hash(e))),
                 databases=["PINA2"],
             )

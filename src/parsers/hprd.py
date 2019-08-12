@@ -19,7 +19,7 @@ from typing import (
 from ..constants import PSIMI_NAME_TO_IDENTIFIER, UNIPROT_ORD_KEY, Columns
 from ..utilities import is_null
 from . import open_file
-from .types import InteractionData
+from .types import InteractionData, InteractionEvidenceData
 
 
 __all__ = [
@@ -260,26 +260,11 @@ def parse_interactions(
             continue
 
         # Remove duplicated pubmed ids
-        reference_ids: Any = ",".join(
-            OrderedDict()
-            .fromkeys([x for x in ptm.reference_id if not is_null(x)])
-            .keys()
-        )
-        if not reference_ids:
-            reference_ids = []
-        else:
-            reference_ids = reference_ids.split(",")
-
-        # Remove duplicated experiment_type
-        experiment_types: Any = ",".join(
-            OrderedDict()
-            .fromkeys([x for x in ptm.experiment_type if not is_null(x)])
-            .keys()
-        )
-        if not experiment_types:
-            experiment_types = []
-        else:
-            experiment_types = experiment_types.split(",")
+        evidence = [
+            InteractionEvidenceData(pubmed=x.strip()) for
+            x in set(ptm.reference_id)
+            if not is_null(x)
+        ]
 
         uniprot_sources = getattr(
             xrefs.get(ptm.enzyme_hprd_id, None), "swissprot_id"
@@ -290,19 +275,11 @@ def parse_interactions(
 
         if uniprot_sources and uniprot_targets:
             for (source, target) in product(uniprot_sources, uniprot_targets):
-                # Match up the pmids with the experiment/assay type.
-                psi_ids = [
-                    PSIMI_NAME_TO_IDENTIFIER[e_type]
-                    for e_type in experiment_types
-                ]
-
                 yield InteractionData(
                     source=source,
                     target=target,
                     organism=9606,
                     labels=[label],
-                    psimi_ids=psi_ids,
-                    pubmed_ids=reference_ids,
-                    experiment_types=experiment_types,
+                    evidence=evidence,
                     databases=["HPRD"],
                 )

@@ -1,32 +1,32 @@
-from typing import Generator, List
+from pathlib import Path
+from typing import Generator, Iterable, Union
 
-from ..utilities import validate_accession
+from ..validators import validate_accession
 
 from .types import InteractionData
 from . import open_file
 
 
-def edgelist_func(
-    path, database: str = None, sep: str = "\t"
+def parse_interactions(
+    path: Union[str, Path], databases: Iterable[str] = (), sep: str = "\t"
 ) -> Generator[InteractionData, None, None]:
     """
     Parsing function a generic edgelist file.
     
     Parameters
     ----------
-    path : str
+    path : str | Path
         Path to file to parse.
 
-    database: str, optional
-        The database the edgelist was downloaded from.
+    databases: list[str], optional
+        The databases an edgelist was downloaded from.
 
     sep: str, optional 
         File column separator.
 
     Returns
     -------
-    Generator[Interaction]
-        Interaction. Label is always a list of `None`.
+    Generator[Interaction, None, None]
     """
     source_idx = 0
     target_idx = 1
@@ -40,14 +40,9 @@ def edgelist_func(
             if not (source and target):
                 continue
 
-            databases: List[str] = []
-            if database:
-                databases = [database]
-
             yield InteractionData(
                 source=source,
                 target=target,
                 organism=9606,
-                labels=[],
-                databases=databases,
+                databases=list(databases),
             )

@@ -4,22 +4,17 @@ Collection of utility operations that don't go anywhere else.
 
 import gzip
 import logging
-import math
-import os
 import urllib.request
-from collections import OrderedDict
-from itertools import islice
 from pathlib import Path
-from typing import Any, Callable, Generator, List, Optional, Sequence, Union
-
-import numpy as np
+from typing import Any, Union
 
 from .constants import NULL_RE
+from .settings import LOGGER_NAME
 
-__all__ = ["is_null", "download_from_url", "validate_accession"]
+__all__ = ["is_null", "download_from_url"]
 
 
-logger: logging.Logger = logging.getLogger("pyppi")
+logger: logging.Logger = logging.getLogger(LOGGER_NAME)
 
 
 def is_null(value: Any) -> bool:
@@ -32,18 +27,6 @@ def is_null(value: Any) -> bool:
         True if the value is considered null.
     """
     return NULL_RE.fullmatch(str(value)) is not None
-
-
-def validate_accession(
-    accession: Optional[str], formatting: Callable = str.upper
-) -> Optional[str]:
-    """Return None if an accession is invalid, else strip and uppercase it."""
-    if accession is None:
-        return None
-    elif is_null(accession):
-        return None
-    else:
-        return formatting(accession.strip())
 
 
 def download_from_url(

@@ -84,7 +84,7 @@ class GeneOntologyIdentifier(ExternalIdentifier):
 
 class PubmedIdentifier(ExternalIdentifier):
     DB_NAME = "PubMed"
-    PREFIX = "PMID"
+    PREFIX = "pubmed"
     SEP = ":"
 
 

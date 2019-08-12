@@ -27,6 +27,7 @@ pronto = "*"
 tqdm = "*"
 beautifulsoup4 = "*"
 lxml = "*"
+idutils = "*"
 
 [requires]
 python_version = "3.7"

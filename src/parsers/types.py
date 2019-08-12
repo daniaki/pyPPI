@@ -9,6 +9,9 @@ class InteractionEvidenceData:
     pubmed: str
     psimi: Optional[str] = field(default=None)
 
+    def __hash__(self):
+        return hash((self.pubmed, self.psimi))
+
 
 @dataclass
 class InteractionData:
