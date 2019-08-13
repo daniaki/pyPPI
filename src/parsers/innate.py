@@ -43,11 +43,15 @@ def parse_interactions(
 
             # These formats might contain multiple uniprot interactors in a
             # single line, or none. Continue parsing if the latter.
-            sources = [
-                m[0] for m in uniprot_re.findall(row[uniprot_source_column])
+            sources: List[str] = [
+                str(validate_accession(m[0]))
+                for m in uniprot_re.findall(row[uniprot_source_column])
+                if validate_accession(m[0]) is not None
             ]
-            targets = [
-                m[0] for m in uniprot_re.findall(row[uniprot_target_column])
+            targets: List[str] = [
+                str(validate_accession(m[0]))
+                for m in uniprot_re.findall(row[uniprot_target_column])
+                if validate_accession(m[0]) is not None
             ]
             if not sources or not targets:
                 continue
@@ -58,11 +62,6 @@ def parse_interactions(
             # Iterate through the list of tuples, each tuple being a list of
             # accessions found within a line for each of the two proteins.
             for source, target in itertools.product(sources, targets):
-                source = validate_accession(source)
-                target = validate_accession(target)
-                if not (source and target):
-                    continue
-
                 evidence: List[InteractionEvidenceData] = []
                 if len(pmids):
                     assert len(psimi_ids) == len(pmids)
@@ -75,6 +74,8 @@ def parse_interactions(
                     source=source,
                     target=target,
                     organism=9606,
-                    evidence=evidence,
+                    evidence=list(
+                        sorted(set(evidence), key=lambda e: hash(e))
+                    ),
                     databases=["InnateDB"],
                 )

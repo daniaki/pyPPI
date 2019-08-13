@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import Generator, Iterable, Union
+from typing import Generator, Iterable, Union, Callable
+
+from idutils import is_uniprot
 
 from ..validators import validate_accession
 
@@ -8,7 +10,12 @@ from . import open_file
 
 
 def parse_interactions(
-    path: Union[str, Path], databases: Iterable[str] = (), sep: str = "\t"
+    path: Union[str, Path],
+    databases: Iterable[str] = (),
+    sep: str = "\t",
+    validator: Callable = is_uniprot,
+    formatter: Callable = str.upper,
+    header: bool = True,
 ) -> Generator[InteractionData, None, None]:
     """
     Parsing function a generic edgelist file.
@@ -24,6 +31,17 @@ def parse_interactions(
     sep: str, optional 
         File column separator.
 
+    formatter : callable, optional.
+        String formatting function. Should return a string value and accept
+        a single string input.
+    
+    validator : callable, optional.
+        Validator function to check if an accession is valid. Should return
+        a single boolean value and accept a single input value.
+
+    header : bool, optional.
+        Set as `True` if the input file has a header line.
+
     Returns
     -------
     Generator[Interaction, None, None]
@@ -32,11 +50,20 @@ def parse_interactions(
     target_idx = 1
 
     with open_file(path, "rt") as handle:
-        handle.readline()  # Remove header
+        if header:
+            handle.readline()  # Remove header
         for line in handle:
             xs = line.strip().split(sep)
-            source = validate_accession(xs[source_idx].strip().upper())
-            target = validate_accession(xs[target_idx].strip().upper())
+            source = validate_accession(
+                accession=xs[source_idx].strip().upper(),
+                formatter=formatter,
+                validator=validator,
+            )
+            target = validate_accession(
+                accession=xs[target_idx].strip().upper(),
+                formatter=formatter,
+                validator=validator,
+            )
             if not (source and target):
                 continue
 

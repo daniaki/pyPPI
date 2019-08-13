@@ -42,20 +42,20 @@ class TestExternalIdentiferModel(DatabaseTestMixin):
 
     def test_prepends_prefix_if_defined(self):
         i = models.PubmedIdentifier.create(identifier="1234")
-        assert i.identifier == "PMID:1234"
+        assert i.identifier == "PUBMED:1234"
 
     def test_does_not_prepend_prefix_if_already_present(self):
-        i = models.PubmedIdentifier.create(identifier="PMID:1234")
-        assert i.identifier == "PMID:1234"
+        i = models.PubmedIdentifier.create(identifier="PUBMED:1234")
+        assert i.identifier == "PUBMED:1234"
 
     def test_does_not_prepend_prefix_if_not_defined(self):
         i = models.UniprotIdentifier.create(identifier="P1234")
         assert i.identifier == "P1234"
 
     def test_uppercases_identifier(self):
-        i = models.PubmedIdentifier.create(identifier="pmid:1234")
-        assert i.identifier == "PMID:1234"
+        i = models.PubmedIdentifier.create(identifier="pubmed:1234")
+        assert i.identifier == "PUBMED:1234"
 
     def test_sets_db_name(self):
-        i = models.PubmedIdentifier.create(identifier="pmid:1234")
+        i = models.PubmedIdentifier.create(identifier="pubmed:1234")
         assert i.dbname == models.PubmedIdentifier.DB_NAME

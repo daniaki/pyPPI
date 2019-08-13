@@ -60,7 +60,7 @@ def is_keyword(identifier):
 
 def validate_accession(
     accession: Optional[str],
-    formatting: Callable = str.upper,
+    formatter: Callable = str.upper,
     validator: Callable = is_uniprot,
 ) -> Optional[str]:
     """
@@ -72,7 +72,7 @@ def validate_accession(
     accession : str | None
         Accession to validate.
 
-    formatting : callable, optional.
+    formatter : callable, optional.
         String formatting function. Should return a string value and accept
         a single string input.
     
@@ -91,4 +91,4 @@ def validate_accession(
     elif not validator(str(accession).strip()):
         return None
     else:
-        return formatting(accession.strip())
+        return formatter(accession.strip())

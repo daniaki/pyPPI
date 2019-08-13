@@ -44,11 +44,15 @@ def parse_interactions(
 
             # These formats should contain ONE uniprot interactor in a
             # single line, or none. Continue parsing if the latter.
-            sources = [
-                m[0] for m in uniprot_re.findall(row[uniprot_source_column])
+            sources: List[str] = [
+                str(validate_accession(m[0]))
+                for m in uniprot_re.findall(row[uniprot_source_column])
+                if validate_accession(m[0]) is not None
             ]
-            targets = [
-                m[0] for m in uniprot_re.findall(row[uniprot_target_column])
+            targets: List[str] = [
+                str(validate_accession(m[0]))
+                for m in uniprot_re.findall(row[uniprot_target_column])
+                if validate_accession(m[0]) is not None
             ]
             if not sources or not targets:
                 continue
@@ -62,7 +66,8 @@ def parse_interactions(
                     evidence.append(
                         InteractionEvidenceData(pubmed=pmid, psimi=psimi)
                     )
-
+            assert len(sources) == 1
+            assert len(targets) == 1
             yield InteractionData(
                 source=sources[0],
                 target=targets[0],

@@ -65,7 +65,7 @@ class TestValidateAccession:
         assert (
             validators.validate_accession(
                 accession=" P58753 ",
-                formatting=str.capitalize,
+                formatter=str.capitalize,
                 validator=is_uniprot,
             )
             == "P58753"
@@ -75,7 +75,7 @@ class TestValidateAccession:
         assert (
             validators.validate_accession(
                 accession="1111",
-                formatting=str.capitalize,
+                formatter=str.capitalize,
                 validator=is_uniprot,
             )
             is None

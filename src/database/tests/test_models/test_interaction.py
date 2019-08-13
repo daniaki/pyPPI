@@ -154,7 +154,7 @@ class TestInteractionModel(DatabaseTestMixin):
                     "interpro": None,
                     "pfam": None,
                     "label": "Activation,Methylation",
-                    "evidence": "PMID:1123|MI:1,PMID:1123|MI:2",
+                    "evidence": "PUBMED:1123|MI:1,PUBMED:1123|MI:2",
                     "database": "Hprd,Kegg",
                 }
             ],
