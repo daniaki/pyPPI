@@ -7,7 +7,7 @@ class TestGeneOntologyCategory:
     def test_converts_single_letter_to_category(self):
         assert (
             constants.GeneOntologyCategory.letter_to_category("C")
-            == constants.GeneOntologyCategory.cellular_compartment
+            == constants.GeneOntologyCategory.cellular_component
         )
         assert (
             constants.GeneOntologyCategory.letter_to_category("F")
@@ -26,7 +26,7 @@ class TestGeneOntologyCategory:
         assert constants.GeneOntologyCategory.list() == [
             constants.GeneOntologyCategory.molecular_function,
             constants.GeneOntologyCategory.biological_process,
-            constants.GeneOntologyCategory.cellular_compartment,
+            constants.GeneOntologyCategory.cellular_component,
         ]
 
     def test_choices_returns_list_of_tuples(self):
@@ -40,7 +40,7 @@ class TestGeneOntologyCategory:
                 constants.GeneOntologyCategory.biological_process,
             ),
             (
-                constants.GeneOntologyCategory.cellular_compartment,
-                constants.GeneOntologyCategory.cellular_compartment,
+                constants.GeneOntologyCategory.cellular_component,
+                constants.GeneOntologyCategory.cellular_component,
             ),
         ]

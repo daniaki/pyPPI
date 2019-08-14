@@ -13,7 +13,6 @@ logger: logging.Logger = logging.getLogger(LOGGER_NAME)
 
 
 def download_program_data():
-
     # Work around for python 3.7 where urlretrieve fails on SSL handshake.
     ssl._create_default_https_context = ssl._create_unverified_context
 

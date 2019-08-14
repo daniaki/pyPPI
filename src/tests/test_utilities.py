@@ -9,6 +9,10 @@ null_values = ("none", "na", "nan", "n/a", "undefined", "unknown", "null", " ")
 
 
 class TestIsNull:
+    def test_true_for_falsey_values(self):
+        for value in ["", 0, None, []]:
+            assert utilities.is_null(value)
+
     def test_true_for_null_values(self):
         for value in null_values:
             assert utilities.is_null(value)

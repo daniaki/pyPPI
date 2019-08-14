@@ -16,7 +16,7 @@ from .metadata import (
     InterproTerm,
     Keyword,
     GeneSymbol,
-    AnnotationMixin,
+    Annotation,
 )
 from .protein import Protein
 from .interaction import (
@@ -51,7 +51,7 @@ __all__ = [
     "InterproTerm",
     "Keyword",
     "GeneSymbol",
-    "AnnotationMixin",
+    "Annotation",
     # protein
     "Protein",
     # interaction

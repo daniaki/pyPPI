@@ -92,22 +92,4 @@ def create_interactions(interactions: Iterable[InteractionData]) -> None:
 def create_proteins(proteins: Iterable[str]) -> Dict[str, models.Protein]:
     client = uniprot.UniprotClient()
     proteins: List[uniprot.UniprotEntry] = client.get_entries(proteins)
-
-    # go_terms = []
-    # pfam_terms = []
-    # interpro_terms = []
-    # keywords = []
-
-    # protein: uniprot.UniprotEntry
-    # for protein in proteins:
-    #     models.GeneOntologyTerm()
-
-    # result: Dict[str, models.Protein] = {}
-    # for protein in proteins:
-    #     models.Protein.update_or_create(
-    #         identifier=protein.accessions[0],
-    #         sequence=protein.sequence,
-    #         organism=protein.taxonomy,
-    #         aliases=protein.accessions,
-    #         go=[],
-    #     )
+    return {}

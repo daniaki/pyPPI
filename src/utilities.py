@@ -26,6 +26,8 @@ def is_null(value: Any) -> bool:
     bool
         True if the value is considered null.
     """
+    if not value:
+        return True
     return NULL_RE.fullmatch(str(value)) is not None
 
 

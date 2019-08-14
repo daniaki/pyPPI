@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import pandas as pd
 import peewee
@@ -29,6 +29,9 @@ class InteractionDatabase(BaseModel):
         help_text="Interaction database name.",
     )
 
+    def __str__(self):
+        return str(self.name)
+
     def save(self, *args, **kwargs):
         self.name = self.name.strip().capitalize()
         return super().save(*args, **kwargs)
@@ -42,6 +45,9 @@ class InteractionLabel(BaseModel):
         max_length=64,
         help_text="Interaction type labels.",
     )
+
+    def __str__(self):
+        return str(self.text)
 
     def save(self, *args, **kwargs):
         self.text = self.text.strip().capitalize()
@@ -71,6 +77,12 @@ class InteractionEvidence(BaseModel):
             # create a unique on pubmed/psimi
             (("pubmed_id", "psimi_id"), True),
         )
+
+    def __str__(self):
+        try:
+            return "{}|{}".format(self.pubmed, self.psimi)
+        except peewee.DoesNotExist:
+            return str(None)
 
 
 class Interaction(BaseModel):
@@ -116,6 +128,24 @@ class Interaction(BaseModel):
             (("source_id", "target_id"), True),
         )
 
+    def __str__(self):
+        return str(self.compact)
+
+    @property
+    def compact(self) -> Tuple[Optional[str], Optional[str]]:
+        """Return source, target string tuple"""
+        try:
+            source: Optional[str] = str(self.source)
+        except peewee.DoesNotExist:
+            source = None
+
+        try:
+            target: Optional[str] = str(self.target)
+        except peewee.DoesNotExist:
+            target = None
+
+        return (source, target)
+
     @classmethod
     def to_dataframe(
         cls, queryset: Optional[peewee.ModelSelect] = None
@@ -139,10 +169,6 @@ class Interaction(BaseModel):
 
         # df column, m2m attribute name, m2m model attribute to use as
         # string value
-        metadata = [
-            ("database", "databases", "name"),
-            ("label", "labels", "text"),
-        ]
         for interaction in queryset:
             source = interaction.source.identifier.identifier
             target = interaction.target.identifier.identifier
@@ -153,37 +179,22 @@ class Interaction(BaseModel):
             for (column, attr) in features:
                 joined = ",".join(
                     sorted(
-                        [a.to_str() for a in getattr(interaction.source, attr)]
-                        + [
-                            a.to_str()
-                            for a in getattr(interaction.target, attr)
-                        ]
+                        [str(a) for a in getattr(interaction.source, attr)]
+                        + [str(a) for a in getattr(interaction.target, attr)]
                     )
                 )
                 data[column] = joined or None
 
-            for (column, attr, rel_attr) in metadata:
-                joined = ",".join(
-                    sorted(
-                        [
-                            getattr(elem, rel_attr)
-                            for elem in getattr(interaction, attr)
-                        ]
-                    )
-                )
-                data[column] = joined or None
-
-            # Format evidence
+            # Other interaction metadata not used during training
+            data["database"] = (
+                ",".join(sorted([str(db) for db in interaction.databases]))
+                or None
+            )
+            data["label"] = (
+                ",".join(sorted([str(l) for l in interaction.labels])) or None
+            )
             data["evidence"] = (
-                ",".join(
-                    sorted(
-                        "{}|{}".format(
-                            evidence.pubmed.identifier,
-                            getattr(evidence.psimi, "identifier", None),
-                        )
-                        for evidence in interaction.evidence
-                    )
-                )
+                ",".join(sorted([str(e) for e in interaction.evidence]))
                 or None
             )
 

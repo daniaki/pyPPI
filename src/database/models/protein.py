@@ -1,6 +1,7 @@
 import peewee
 
 from ...constants import GeneOntologyCategory
+from ...utilities import is_null
 from ...settings import DATABASE
 from .base import BaseModel
 from .identifiers import PsimiIdentifier, PubmedIdentifier, UniprotIdentifier
@@ -61,6 +62,12 @@ class Protein(BaseModel):
         help_text="Protein has been reviewed (Swiss-prot).",
     )
 
+    def __str__(self):
+        try:
+            return str(self.identifier)
+        except peewee.DoesNotExist:
+            return str(None)
+
     def _select_go(self, category: str):
         return (
             GeneOntologyTerm.select()
@@ -81,8 +88,10 @@ class Protein(BaseModel):
 
     @property
     def go_cc(self):
-        return self._select_go(GeneOntologyCategory.cellular_compartment)
+        return self._select_go(GeneOntologyCategory.cellular_component)
 
     def save(self, *args, **kwargs):
-        self.sequence = self.sequence.strip().upper()
+        self.sequence = (
+            None if is_null(self.sequence) else self.sequence.strip().upper()
+        )
         return super().save(*args, **kwargs)

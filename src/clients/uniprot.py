@@ -23,12 +23,15 @@ class UniprotEntry:
     @property
     def go_terms(self) -> List[Dict[str, str]]:
         terms = []
-        for term in self.root.find_all("dbreference", type="GO"):
+        for term in self.root.find_all("dbReference", type="GO"):
+            details = term.find_all("property", type="term")
+            if not details:
+                continue
             terms.append(
                 {
                     "id": term["id"],
-                    "category": term.property["value"].split(":")[0],
-                    "name": term.property["value"].split(":")[1],
+                    "category": details[0]["value"][0],
+                    "name": details[0]["value"][2:],
                 }
             )
         return terms
@@ -36,20 +39,29 @@ class UniprotEntry:
     @property
     def pfam_terms(self) -> List[Dict[str, str]]:
         terms = []
-        for term in self.root.find_all("dbreference", type="Pfam"):
-            terms.append({"id": term["id"], "name": term.property["value"]})
+        for term in self.root.find_all("dbReference", type="Pfam"):
+            details = term.find_all("property", type="entry name")
+            if not details:
+                continue
+            terms.append({"id": term["id"], "name": details[0]["value"]})
         return terms
 
     @property
     def interpro_terms(self) -> List[Dict[str, str]]:
         terms = []
-        for term in self.root.find_all("dbreference", type="InterPro"):
-            terms.append({"id": term["id"], "name": term.property["value"]})
+        for term in self.root.find_all("dbReference", type="InterPro"):
+            details = term.find_all("property", type="entry name")
+            if not details:
+                continue
+            terms.append({"id": term["id"], "name": details[0]["value"]})
         return terms
 
     @property
-    def sequence(self) -> str:
-        return self.root.find("sequence").text.replace("\n", "")
+    def sequence(self) -> Optional[str]:
+        node = self.root.find("sequence")
+        if not node:
+            return None
+        return node.text.replace("\n", "")
 
     @property
     def function(self) -> List[str]:
@@ -63,16 +75,25 @@ class UniprotEntry:
         return [elem.text for elem in self.root.find_all("accession")]
 
     @property
-    def name(self) -> str:
-        return self.root.find("name").text
+    def name(self) -> Optional[str]:
+        node = self.root.find("name")
+        if not node:
+            return None
+        return node.text
 
     @property
-    def full_name(self) -> str:
-        return self.root.find("recommendedname").find("fullname").text
+    def full_name(self) -> Optional[str]:
+        names = self.root.find("recommendedName")
+        if names and names.find("fullName"):
+            return names.find("fullName").text
+        return None
 
     @property
-    def short_name(self) -> str:
-        return self.root.find("recommendedname").find("shortname").text
+    def short_name(self) -> Optional[str]:
+        names = self.root.find("recommendedName")
+        if names and names.find("shortName"):
+            return names.find("shortName").text
+        return None
 
     @property
     def db(self) -> str:
@@ -88,18 +109,23 @@ class UniprotEntry:
 
     @property
     def genes(self) -> List[Dict[str, str]]:
-        genes = []
-        for gene in self.root.find("gene").find_all("name"):
+        genes: List[Dict[str, str]] = []
+        node = self.root.find("gene")
+        if not node:
+            return genes
+        for gene in node.find_all("name"):
             genes.append({"gene": gene.text, "relation": gene["type"]})
         return genes
 
     @property
-    def taxonomy(self) -> int:
-        return int(
-            self.root.find("organism").find(
-                "dbReference", type="NCBI Taxonomy"
-            )["id"]
-        )
+    def taxonomy(self) -> Optional[int]:
+        organism = self.root.find("organism")
+        if not organism:
+            return None
+        node = organism.find("dbReference", type="NCBI Taxonomy")
+        if not node:
+            return None
+        return int(node["id"])
 
 
 class UniprotClient:

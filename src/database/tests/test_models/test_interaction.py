@@ -8,6 +8,12 @@ from ... import models
 from .. import DatabaseTestMixin
 
 
+class TestInteractionDatabaseModel(DatabaseTestMixin):
+    def test_capitalizes_and_strips_text(self):
+        instance = models.InteractionDatabase.create(name="  KEGG  ")
+        assert instance.name == "Kegg"
+
+
 class TestInteractionLabelModel(DatabaseTestMixin):
     def test_capitalizes_label(self):
         label = models.InteractionLabel.create(text="activation")
@@ -15,9 +21,21 @@ class TestInteractionLabelModel(DatabaseTestMixin):
 
 
 class TestInteractionEvidence(DatabaseTestMixin):
+    def test_str_returns_string_of_identifiers(self):
+        psimi = models.PsimiIdentifier.create(identifier="0001")
+        pmid = models.PubmedIdentifier.create(identifier="8619402")
+        evidence = models.InteractionEvidence.create(pubmed=pmid, psimi=psimi)
+        assert str(evidence) == "PUBMED:8619402|MI:0001"
+
+        evidence.psimi = None
+        assert str(evidence) == "PUBMED:8619402|None"
+
+        evidence.pubmed = None
+        assert str(evidence) == str(None)
+
     def test_unique_index_on_source_target(self):
-        psimi = models.PsimiIdentifier.create(identifier="1")
-        pmid = models.PubmedIdentifier.create(identifier="1123")
+        psimi = models.PsimiIdentifier.create(identifier="0001")
+        pmid = models.PubmedIdentifier.create(identifier="8619402")
         _ = models.InteractionEvidence.create(pubmed=pmid, psimi=psimi)
         with pytest.raises(IntegrityError):
             models.InteractionEvidence.create(pubmed=pmid, psimi=psimi)
@@ -27,17 +45,35 @@ class TestInteractionModel(DatabaseTestMixin):
     def setup(self):
         super().setup()
         self.protein_a = models.Protein.create(
-            identifier=models.UniprotIdentifier.create(identifier="P1234"),
+            identifier=models.UniprotIdentifier.create(identifier="P12345"),
             organism=9606,
             gene=models.GeneSymbol.create(text="BRCA1"),
             sequence="MLPGA",
         )
         self.protein_b = models.Protein.create(
-            identifier=models.UniprotIdentifier.create(identifier="P5678"),
+            identifier=models.UniprotIdentifier.create(identifier="P56785"),
             organism=9606,
             gene=models.GeneSymbol.create(text="BRCA2"),
             sequence="EDALM",
         )
+
+    def test_compact_returns_identifier_string_tuple(self):
+        instance = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        assert instance.compact == (str(self.protein_a), str(self.protein_b))
+
+        instance.target = None
+        assert instance.compact == (str(self.protein_a), None)
+
+        instance.source = None
+        assert instance.compact == (None, None)
+
+    def test_str_returns_str_of_compact(self):
+        instance = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        assert str(instance) == str(instance.compact)
 
     def test_unique_index_on_source_target(self):
         _ = models.Interaction.create(
@@ -52,24 +88,30 @@ class TestInteractionModel(DatabaseTestMixin):
         self
     ):
         go1 = models.GeneOntologyTerm.create(
-            identifier=models.GeneOntologyIdentifier.create(identifier="1"),
+            identifier=models.GeneOntologyIdentifier.create(
+                identifier="0000001"
+            ),
             name="",
             description="",
             category=GeneOntologyCategory.molecular_function,
         )
         go2 = models.GeneOntologyTerm.create(
-            identifier=models.GeneOntologyIdentifier.create(identifier="2"),
+            identifier=models.GeneOntologyIdentifier.create(
+                identifier="0000002"
+            ),
             name="",
             description="",
             category=GeneOntologyCategory.molecular_function,
         )
         pfam = models.PfamTerm.create(
-            identifier=models.PfamIdentifier.create(identifier="PF1"),
+            identifier=models.PfamIdentifier.create(identifier="PF00001"),
             name="",
             description="",
         )
         ipr = models.InterproTerm.create(
-            identifier=models.InterproIdentifier.create(identifier="IPR1"),
+            identifier=models.InterproIdentifier.create(
+                identifier="IPR000001"
+            ),
             name="",
             description="",
         )
@@ -85,14 +127,14 @@ class TestInteractionModel(DatabaseTestMixin):
         expected = pd.DataFrame(
             data=[
                 {
-                    "source": "P1234",
-                    "target": "P5678",
-                    "go_mf": "GO:1,GO:2",
+                    "source": "P12345",
+                    "target": "P56785",
+                    "go_mf": "GO:0000001,GO:0000002",
                     "go_bp": None,
                     "go_cc": None,
                     "keyword": None,
-                    "interpro": "IPR1",
-                    "pfam": "PF1",
+                    "interpro": "IPR000001",
+                    "pfam": "PF00001",
                     "label": None,
                     "evidence": None,
                     "database": None,
@@ -111,7 +153,7 @@ class TestInteractionModel(DatabaseTestMixin):
                 "evidence",
                 "database",
             ],
-            index=["P1234,P5678"],
+            index=["P12345,P56785"],
         )
         assert_frame_equal(result, expected, check_dtype=False)
 
@@ -125,9 +167,9 @@ class TestInteractionModel(DatabaseTestMixin):
         label_2 = models.InteractionLabel.create(text="Methylation")
         i.labels.add([label_1, label_2])
 
-        psimi1 = models.PsimiIdentifier.create(identifier="1")
-        psimi2 = models.PsimiIdentifier.create(identifier="2")
-        pmid = models.PubmedIdentifier.create(identifier="1123")
+        psimi1 = models.PsimiIdentifier.create(identifier="0001")
+        psimi2 = models.PsimiIdentifier.create(identifier="0002")
+        pmid = models.PubmedIdentifier.create(identifier="8619402")
         evidence1 = models.InteractionEvidence.create(
             pubmed=pmid, psimi=psimi1
         )
@@ -145,8 +187,8 @@ class TestInteractionModel(DatabaseTestMixin):
         expected = pd.DataFrame(
             data=[
                 {
-                    "source": "P1234",
-                    "target": "P5678",
+                    "source": "P12345",
+                    "target": "P56785",
                     "go_mf": None,
                     "go_bp": None,
                     "go_cc": None,
@@ -154,7 +196,7 @@ class TestInteractionModel(DatabaseTestMixin):
                     "interpro": None,
                     "pfam": None,
                     "label": "Activation,Methylation",
-                    "evidence": "PUBMED:1123|MI:1,PUBMED:1123|MI:2",
+                    "evidence": "PUBMED:8619402|MI:0001,PUBMED:8619402|MI:0002",
                     "database": "Hprd,Kegg",
                 }
             ],
@@ -171,6 +213,6 @@ class TestInteractionModel(DatabaseTestMixin):
                 "evidence",
                 "database",
             ],
-            index=["P1234,P5678"],
+            index=["P12345,P56785"],
         )
         assert_frame_equal(result, expected, check_dtype=False)

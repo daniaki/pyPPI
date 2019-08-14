@@ -26,9 +26,9 @@ class InteractionData:
 @dataclass
 class GeneOntologyTermData:
     identifier: str
-    name: str
     category: str
     obsolete: bool
+    name: Optional[str] = field(default=None)
     description: Optional[str] = field(default=None)
 
     def __post_init__(self):
@@ -39,12 +39,20 @@ class GeneOntologyTermData:
 @dataclass
 class PfamTermData:
     identifier: str
-    name: str
-    description: str
+    name: Optional[str] = field(default=None)
+    description: Optional[str] = field(default=None)
 
 
 @dataclass
 class InterproTermData:
     identifier: str
-    name: str
-    entry_type: str
+    name: Optional[str] = field(default=None)
+    description: Optional[str] = field(default=None)
+    entry_type: Optional[str] = field(default=None)
+
+
+@dataclass
+class KeywordTermData:
+    identifier: str
+    name: Optional[str] = field(default=None)
+    description: Optional[str] = field(default=None)

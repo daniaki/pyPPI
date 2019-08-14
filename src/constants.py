@@ -46,20 +46,20 @@ PSIMI_NAME_TO_IDENTIFIER: Dict[str, str] = {
 class GeneOntologyCategory:
     molecular_function = "Molecular function"
     biological_process = "Biological process"
-    cellular_compartment = "Cellular compartment"
+    cellular_component = "Cellular component"
 
     @classmethod
     def list(cls):
         return [
             cls.molecular_function,
             cls.biological_process,
-            cls.cellular_compartment,
+            cls.cellular_component,
         ]
 
     @classmethod
     def letter_to_category(cls, letter: str) -> str:
         if letter.upper() == "C":
-            return cls.cellular_compartment
+            return cls.cellular_component
         elif letter.upper() == "P":
             return cls.biological_process
         elif letter.upper() == "F":

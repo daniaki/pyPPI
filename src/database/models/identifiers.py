@@ -1,7 +1,8 @@
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Callable
 
 import peewee
 
+from ... import validators
 from .base import BaseModel
 
 
@@ -32,14 +33,26 @@ class IdentifierMixin:
             )
         return identifier
 
-    def prefix(self, prefix: str, sep: str = ":") -> str:
+    def prefix(
+        self, prefix: Optional[str] = None, sep: Optional[str] = None
+    ) -> str:
         identifier = self._get_identifier()
-        if not identifier.lower().startswith(f"{prefix.lower()}{sep}"):
-            return f"{prefix}{sep}{identifier}"
+        if not prefix:
+            return identifier
+        if not identifier.lower().startswith(f"{prefix.lower()}"):
+            if sep:
+                return f"{prefix}{sep}{identifier}"
+            return f"{prefix}{identifier}"
         return identifier
 
-    def unprefix(self, sep: str = ":") -> str:
-        return self._get_identifier().split(sep)[-1]
+    def unprefix(
+        self, prefix: Optional[str] = None, sep: Optional[str] = None
+    ) -> str:
+        identifier = self._get_identifier()
+        if not prefix:
+            return identifier
+        skip_to = len(prefix) + len(str(sep or ""))
+        return self._get_identifier()[skip_to:]
 
 
 class ExternalIdentifier(IdentifierMixin, BaseModel):
@@ -66,12 +79,34 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
         help_text="The identifier's database name.",
     )
 
+    def __str__(self):
+        return str(self.identifier)
+
+    def format(self) -> str:
+        """
+        How to format identifier. Called after prefix is performed and must
+        accept a single input and return a single string.
+        """
+        return str.upper(self.identifier)
+
+    def validate(self) -> str:
+        """
+        How to validate identifier. Called after formatter is called and must
+        accept a single input and return a single boolean.
+        """
+        raise NotImplementedError()
+
     def save(self, *args, **kwargs):
         if self.DB_NAME is None:
             raise NotImplementedError("Concrete table must define DB_NAME.")
+
         if self.PREFIX:
             self.identifier = self.prefix(self.PREFIX, self.SEP)
-        self.identifier = self.identifier.upper()
+
+        self.identifier = self.format()
+        if not self.validate():
+            raise ValueError(f"'{self.identifier}' is not a valid identifier.")
+
         self.dbname = self.DB_NAME
         return super().save(*args, **kwargs)
 
@@ -81,11 +116,17 @@ class GeneOntologyIdentifier(ExternalIdentifier):
     PREFIX = "GO"
     SEP = ":"
 
+    def validate(self):
+        return validators.is_go(self.identifier)
+
 
 class PubmedIdentifier(ExternalIdentifier):
     DB_NAME = "PubMed"
-    PREFIX = "pubmed"
+    PREFIX = "PUBMED"
     SEP = ":"
+
+    def validate(self):
+        return validators.is_pubmed(self.identifier)
 
 
 class PsimiIdentifier(ExternalIdentifier):
@@ -93,11 +134,17 @@ class PsimiIdentifier(ExternalIdentifier):
     PREFIX = "MI"
     SEP = ":"
 
+    def validate(self):
+        return validators.is_psimi(self.identifier)
+
 
 class UniprotIdentifier(ExternalIdentifier):
     DB_NAME = "UniProt"
     PREFIX = None
     SEP = None
+
+    def validate(self):
+        return validators.is_uniprot(self.identifier)
 
 
 class KeywordIdentifier(ExternalIdentifier):
@@ -105,14 +152,23 @@ class KeywordIdentifier(ExternalIdentifier):
     PREFIX = "KW"
     SEP = "-"
 
+    def validate(self):
+        return validators.is_keyword(self.identifier)
+
 
 class InterproIdentifier(ExternalIdentifier):
     DB_NAME = "InterPro"
-    PREFIX = None
+    PREFIX = "IPR"
     SEP = None
+
+    def validate(self):
+        return validators.is_interpro(self.identifier)
 
 
 class PfamIdentifier(ExternalIdentifier):
     DB_NAME = "PFAM"
-    PREFIX = None
+    PREFIX = "PF"
     SEP = None
+
+    def validate(self):
+        return validators.is_pfam(self.identifier)
