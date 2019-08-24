@@ -93,7 +93,6 @@ class Columns:
 
 
 class Paths:
-    psimi_obo: Path = DATA_DIR / "mi.obo.gz"
     go_obo: Path = DATA_DIR / "go.obo.gz"
     interpro_entries: Path = DATA_DIR / "entry.list"
     pfam_clans: Path = DATA_DIR / "Pfam-A.clans.tsv.gz"
@@ -114,7 +113,6 @@ class Urls:
     interpro_entries: str = (
         "ftp://ftp.ebi.ac.uk/pub/databases/interpro/entry.list"
     )
-    psimi_obo: str = "http://purl.obolibrary.org/obo/mi.obo"
     go_obo: str = "http://purl.obolibrary.org/obo/go.obo"
     pfam_clans: str = (
         "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/"
