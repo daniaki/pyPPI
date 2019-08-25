@@ -35,6 +35,26 @@ class TestAnnotationMixin(DatabaseTestMixin):
         instance.identifier = None
         assert str(instance) == str(None)
 
+    def test_get_by_identifier_filters_by_uppercase(self):
+        instance_1 = self.driver.create(identifier=self.identifier)
+        instance_2 = self.driver.create(
+            identifier=models.KeywordIdentifier.create(identifier="KW-0002")
+        )
+        instance_3 = self.driver.create(
+            identifier=models.KeywordIdentifier.create(identifier="KW-0003")
+        )
+
+        query = self.driver.get_by_identifier(
+            [
+                str(instance_1.identifier).lower(),
+                str(instance_2.identifier).capitalize(),
+            ]
+        )
+        assert query.count() == 2
+        assert instance_1 in query
+        assert instance_2 in query
+        assert instance_3 not in query
+
 
 class TestGeneOntologyTermModel(DatabaseTestMixin):
     def test_converts_single_letter_category_to_full_category(self):
