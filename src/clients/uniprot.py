@@ -4,7 +4,7 @@ import requests
 from csv import DictReader
 from requests import Response
 from collections import defaultdict
-from typing import Union, Optional, List, Dict, Set
+from typing import Union, Optional, List, Dict, Set, Iterable
 
 from bs4 import BeautifulSoup
 
@@ -146,7 +146,7 @@ class UniprotClient:
 
     def get_entries(
         self,
-        identifiers: str,
+        identifiers: Iterable[str],
         fr: str = "ACC+ID",
         to: str = "ACC",
         fmt: str = "xml",
