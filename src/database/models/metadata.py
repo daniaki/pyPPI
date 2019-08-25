@@ -1,4 +1,5 @@
 import peewee
+from typing import Iterable
 
 from ...constants import GeneOntologyCategory
 from ...utilities import is_null
@@ -42,6 +43,20 @@ class Annotation(BaseModel):
             return str(self.identifier)
         except peewee.DoesNotExist:
             return str(None)
+
+    @classmethod
+    def get_by_identifier(
+        cls, identifiers: Iterable[str]
+    ) -> peewee.ModelSelect:
+        related_model = cls.identifier.rel_model
+        return (
+            cls.select()
+            .join(related_model)
+            .where(
+                peewee.fn.Upper(related_model.identifier)
+                << set(i.upper() for i in identifiers)
+            )
+        )
 
     def save(self, *args, **kwargs):
         self.name = None if is_null(self.name) else self.name

@@ -1,4 +1,5 @@
 import peewee
+from typing import Iterable
 
 from ...constants import GeneOntologyCategory
 from ...utilities import is_null
@@ -28,6 +29,16 @@ class Protein(BaseModel):
     organism = peewee.IntegerField(
         null=False, default=None, help_text="Numeric organism code. Eg 9606."
     )
+    sequence = peewee.TextField(
+        null=False,
+        default=None,
+        help_text="The protein sequence in single letter format.",
+    )
+    reviewed = peewee.BooleanField(
+        null=True,
+        default=None,
+        help_text="Protein has been reviewed (Swiss-prot).",
+    )
     aliases = peewee.ManyToManyField(
         model=UniprotIdentifier, backref="alias_proteins"
     )
@@ -51,24 +62,15 @@ class Protein(BaseModel):
     alt_genes = peewee.ManyToManyField(
         model=GeneSymbol, backref="proteins_alt"
     )
-    sequence = peewee.TextField(
-        null=False,
-        default=None,
-        help_text="The protein sequence in single letter format.",
-    )
-    reviewed = peewee.BooleanField(
-        null=True,
-        default=None,
-        help_text="Protein has been reviewed (Swiss-prot).",
-    )
 
     def __str__(self):
         try:
+            # Accessing the identifier field results in a database lookup.
             return str(self.identifier)
         except peewee.DoesNotExist:
             return str(None)
 
-    def _select_go(self, category: str):
+    def _select_go(self, category: str) -> peewee.ModelSelect:
         return (
             GeneOntologyTerm.select()
             .join(Protein.go_annotations.get_through_model())
@@ -78,16 +80,29 @@ class Protein(BaseModel):
             .where(GeneOntologyTerm.category == category)
         )
 
+    @classmethod
+    def get_by_identifier(
+        cls, identifiers: Iterable[str]
+    ) -> peewee.ModelSelect:
+        return (
+            cls.select()
+            .join(UniprotIdentifier)
+            .where(
+                peewee.fn.Upper(UniprotIdentifier.identifier)
+                << set(i.upper() for i in identifiers)
+            )
+        )
+
     @property
-    def go_mf(self):
+    def go_mf(self) -> peewee.ModelSelect:
         return self._select_go(GeneOntologyCategory.molecular_function)
 
     @property
-    def go_bp(self):
+    def go_bp(self) -> peewee.ModelSelect:
         return self._select_go(GeneOntologyCategory.biological_process)
 
     @property
-    def go_cc(self):
+    def go_cc(self) -> peewee.ModelSelect:
         return self._select_go(GeneOntologyCategory.cellular_component)
 
     def save(self, *args, **kwargs):
