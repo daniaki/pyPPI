@@ -4,16 +4,16 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
-ipython = "*"
 v = {editable = true,version = "*"}
+ipython = "*"
 mypy = "*"
 pylint = "*"
-pytest = "*"
 black = "*"
 rope = "*"
 mock = "*"
 pytest-sugar = "*"
 pytest-cov = "*"
+pytest = "==5.0.1"
 
 [packages]
 flask = "*"
