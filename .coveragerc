@@ -1,5 +1,9 @@
 [run]
-omit=*/test*,*/__init__.py
+omit=
+    */test*
+    */__init__.py
+    setup.py
+    test.py
 
 [paths]
 source = src/*
