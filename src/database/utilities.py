@@ -1,4 +1,5 @@
 from logging import getLogger
+from dataclasses import asdict
 from typing import Iterable, List, Dict, Set, Any, Iterable, Optional
 
 from peewee import ModelSelect
@@ -44,7 +45,7 @@ def create_annotations(
         # by argument unpacking.
         term.identifier = identifiers[term.identifier]
         if not instance:
-            create.append(model(**term.asdict()))
+            create.append(model(**asdict(term)))
 
     # Bulk update/create then return a query of all instances matching
     # the identifiers in the dataclass objects from terms parameter.
@@ -81,11 +82,12 @@ def create_proteins(proteins: Iterable[str]) -> ModelSelect:
     client = UniprotClient()
     entries: List[UniprotEntry] = client.get_entries(proteins)
 
-    # Loop through and collec the identifiers, genes and all annotations to 
-    # bulk create first.    
+    # Loop through and collec the identifiers, genes and all annotations to
+    # bulk create first.
+    annotations: Dict[str, Any] = {}
     entry: UniprotEntry
     for entry in entries:
-        entry.pfam_terms
+        entry.
 
     # Bulk create and create lookup dictionaries indexed by identifier
     # for identifiers and annotations, and gene symbol for the genes.
@@ -98,7 +100,7 @@ def create_proteins(proteins: Iterable[str]) -> ModelSelect:
 
 
 @DATABASE.atomic()
-def create_interactions(interactions: Iterable[InteractionData]) -> None:
+def create_interactions(interactions: Iterable[types.InteractionData]) -> None:
     pass
     # # Collect all UniProt identifiers to pass to create_proteins.
     # # create_proteins will download the uniprot entries and create the
