@@ -39,6 +39,15 @@ class Protein(BaseModel):
         default=None,
         help_text="Protein has been reviewed (Swiss-prot).",
     )
+    gene = peewee.ForeignKeyField(
+        model=GeneSymbol,
+        null=True,
+        default=None,
+        backref="proteins",
+        help_text="Gene symbol related to this protein.",
+    )
+
+    # --- M2M --- #
     aliases = peewee.ManyToManyField(
         model=UniprotIdentifier, backref="alias_proteins"
     )
@@ -52,13 +61,6 @@ class Protein(BaseModel):
         model=PfamTerm, backref="proteins"
     )
     keywords = peewee.ManyToManyField(model=Keyword, backref="proteins")
-    gene = peewee.ForeignKeyField(
-        model=GeneSymbol,
-        null=True,
-        default=None,
-        backref="proteins",
-        help_text="Gene symbol related to this protein.",
-    )
     alt_genes = peewee.ManyToManyField(
         model=GeneSymbol, backref="proteins_alt"
     )
@@ -105,8 +107,8 @@ class Protein(BaseModel):
     def go_cc(self) -> peewee.ModelSelect:
         return self._select_go(GeneOntologyCategory.cellular_component)
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.sequence = (
             None if is_null(self.sequence) else self.sequence.strip().upper()
         )
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
