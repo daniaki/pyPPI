@@ -101,3 +101,9 @@ class KeywordTermData:
 
     def __hash__(self):
         return hash(astuple(self))
+
+
+@dataclass(frozen=True)
+class GeneData:
+    symbol: str
+    relation: str
