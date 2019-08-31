@@ -32,9 +32,9 @@ class InteractionDatabase(BaseModel):
     def __str__(self):
         return str(self.name)
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.name = self.name.strip().capitalize()
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
 
 
 class InteractionLabel(BaseModel):
@@ -49,9 +49,9 @@ class InteractionLabel(BaseModel):
     def __str__(self):
         return str(self.text)
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.text = self.text.strip().capitalize()
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
 
 
 class InteractionEvidence(BaseModel):

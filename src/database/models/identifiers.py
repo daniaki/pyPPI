@@ -82,6 +82,15 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
     def __str__(self):
         return str(self.identifier)
 
+    @classmethod
+    def get_by_identifier(
+        cls, identifiers: Iterable[str]
+    ) -> peewee.ModelSelect:
+        return cls.select().where(
+            peewee.fn.Upper(cls.identifier)
+            << set(i.upper() for i in identifiers)
+        )
+
     def format(self) -> str:
         """
         How to format identifier. Called after prefix is performed and must
@@ -96,7 +105,7 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
         """
         raise NotImplementedError()
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         if self.DB_NAME is None:
             raise NotImplementedError("Concrete table must define DB_NAME.")
 
@@ -108,7 +117,8 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
             raise ValueError(f"'{self.identifier}' is not a valid identifier.")
 
         self.dbname = self.DB_NAME
-        return super().save(*args, **kwargs)
+
+        return super().format_for_save()
 
 
 class GeneOntologyIdentifier(ExternalIdentifier):

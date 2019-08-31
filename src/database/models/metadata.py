@@ -48,7 +48,7 @@ class Annotation(BaseModel):
     def get_by_identifier(
         cls, identifiers: Iterable[str]
     ) -> peewee.ModelSelect:
-        related_model = cls.identifier.rel_model
+        related_model = getattr(cls.identifier, "rel_model")
         return (
             cls.select()
             .join(related_model)
@@ -58,12 +58,12 @@ class Annotation(BaseModel):
             )
         )
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.name = None if is_null(self.name) else self.name
         self.description = (
             None if is_null(self.description) else self.description
         )
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
 
 
 class GeneOntologyTerm(Annotation):
@@ -86,7 +86,7 @@ class GeneOntologyTerm(Annotation):
         help_text="Term is obsolete according to the GO.",
     )
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.category = self.category.strip().capitalize()
         if len(self.category) == 1:
             self.category = GeneOntologyCategory.letter_to_category(
@@ -97,7 +97,7 @@ class GeneOntologyTerm(Annotation):
                 f"'{self.category}' is not a supported category. "
                 f"Supported categories are {GeneOntologyCategory.list()}"
             )
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
 
 
 class InterproTerm(Annotation):
@@ -116,13 +116,13 @@ class InterproTerm(Annotation):
         max_length=32,
     )
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.entry_type = (
             None
             if is_null(self.entry_type)
             else self.entry_type.strip().capitalize()
         )
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
 
 
 class PfamTerm(Annotation):
@@ -155,6 +155,6 @@ class GeneSymbol(BaseModel):
     def __str__(self):
         return str(self.text)
 
-    def save(self, *args, **kwargs):
+    def format_for_save(self):
         self.text = None if is_null(self.text) else self.text.strip().upper()
-        return super().save(*args, **kwargs)
+        return super().format_for_save()
