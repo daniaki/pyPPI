@@ -102,5 +102,14 @@ class TestCreateEvidence(DatabaseTestMixin):
         assert models.PsimiIdentifier.count() == 1
 
 
-# class
+
+class TestCreateProteins(DatabaseTestMixin):
+    pass
+
+
+class TestCreateInteractions(DatabaseTestMixin):
+    pass
+
+
+class
 

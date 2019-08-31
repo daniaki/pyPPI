@@ -257,8 +257,6 @@ class UniprotClient:
         response: Response = requests.post(url, data)
         if not response.ok:
             response.raise_for_status()
-
-        print(response.text)
         return [
             UniprotEntry(entry)
             for entry in BeautifulSoup(response.text, "xml").find_all("entry")
