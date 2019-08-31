@@ -22,7 +22,7 @@ class UniprotEntry:
         return self.primary_accession
 
     @property
-    def keyword_annotations(self) -> List[types.KeywordTermData]:
+    def keywords(self) -> List[types.KeywordTermData]:
         kws = []
         for kw in self.root.find_all("keyword", recursive=False):
             kws.append(
@@ -33,7 +33,7 @@ class UniprotEntry:
         return kws
 
     @property
-    def go_annotations(self) -> List[types.GeneOntologyTermData]:
+    def go_terms(self) -> List[types.GeneOntologyTermData]:
         terms = []
         for term in self.root.find_all(
             "dbReference", type="GO", recursive=False
@@ -55,7 +55,7 @@ class UniprotEntry:
         return terms
 
     @property
-    def pfam_annotations(self) -> List[types.PfamTermData]:
+    def pfam_terms(self) -> List[types.PfamTermData]:
         terms = []
         for term in self.root.find_all(
             "dbReference", type="Pfam", recursive=False
@@ -73,7 +73,7 @@ class UniprotEntry:
         return terms
 
     @property
-    def interpro_annotations(self) -> List[types.InterproTermData]:
+    def interpro_terms(self) -> List[types.InterproTermData]:
         terms = []
         for term in self.root.find_all(
             "dbReference", type="InterPro", recursive=False
@@ -106,14 +106,20 @@ class UniprotEntry:
         return comments
 
     @property
+    def accessions(self) -> List[str]:
+        return [
+            elem.text.upper()
+            for elem in self.root.find_all("accession", recursive=False)
+        ]
+
+    @property
     def primary_accession(self) -> str:
         return self.accessions[0]
 
     @property
-    def accessions(self) -> List[str]:
+    def alias_accessions(self) -> List[str]:
         return [
-            elem.text
-            for elem in self.root.find_all("accession", recursive=False)
+            elem for elem in self.accessions if elem != self.primary_accession
         ]
 
     @property
@@ -165,14 +171,27 @@ class UniprotEntry:
         return self.root["version"]
 
     @property
-    def genes(self) -> List[Dict[str, str]]:
-        genes: List[Dict[str, str]] = []
+    def genes(self) -> List[types.GeneData]:
+        genes: List[types.GeneData] = []
         node = self.root.find("gene", recursive=False)
         if not node:
             return genes
         for gene in node.find_all("name"):
-            genes.append({"gene": gene.text, "relation": gene["type"]})
+            genes.append(
+                types.GeneData(
+                    symbol=gene.text.upper(), relation=gene["type"].lower()
+                )
+            )
         return genes
+
+    @property
+    def primary_gene(self) -> Optional[types.GeneData]:
+        primary = [gene for gene in self.genes if gene.relation == "primary"]
+        return None if not primary else primary[0]
+
+    @property
+    def synonym_genes(self) -> List[types.GeneData]:
+        return [gene for gene in self.genes if gene.relation == "synonym"]
 
     @property
     def taxonomy(self) -> Optional[int]:
