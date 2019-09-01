@@ -10,6 +10,15 @@ class TestBaseModel(DatabaseTestMixin):
         super().setup()
         self.instance = UniprotIdentifier.create(identifier="P12345")
 
+    def test_none_returns_no_rows(self):
+        assert UniprotIdentifier.none().count() == 0
+
+    def test_all_returns_all_rows(self):
+        assert UniprotIdentifier.all().count() == 1
+
+    def test_count_returns_all_row_count(self):
+        assert UniprotIdentifier.count() == 1
+
     def test_updates_modified_date_on_save(self):
         now = self.instance.modified
         self.instance.save()

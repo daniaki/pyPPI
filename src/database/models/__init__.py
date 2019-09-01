@@ -7,7 +7,6 @@ from .identifiers import (
     PubmedIdentifier,
     PsimiIdentifier,
     KeywordIdentifier,
-    IdentifierMixin,
     ExternalIdentifier,
 )
 from .metadata import (
@@ -43,7 +42,6 @@ __all__ = [
     "PubmedIdentifier",
     "PsimiIdentifier",
     "KeywordIdentifier",
-    "IdentifierMixin",
     "ExternalIdentifier",
     # metadata
     "GeneOntologyTerm",
@@ -81,7 +79,7 @@ MODELS = (
     # Protein
     Protein,
     Protein.aliases.get_through_model(),
-    Protein.alt_genes.get_through_model(),
+    Protein.genes.get_through_model(),
     Protein.go_annotations.get_through_model(),
     Protein.interpro_annotations.get_through_model(),
     Protein.pfam_annotations.get_through_model(),

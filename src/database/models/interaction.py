@@ -1,4 +1,5 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Iterable
+from functools import reduce
 
 import pandas as pd
 import peewee
@@ -6,7 +7,7 @@ import playhouse.fields
 
 from ...settings import DATABASE
 from .base import BaseModel
-from .identifiers import PsimiIdentifier, PubmedIdentifier
+from .identifiers import PsimiIdentifier, PubmedIdentifier, UniprotIdentifier
 from .protein import Protein
 
 
@@ -33,7 +34,7 @@ class InteractionDatabase(BaseModel):
         return str(self.name)
 
     def format_for_save(self):
-        self.name = self.name.strip().capitalize()
+        self.name = self.name.strip().lower()
         return super().format_for_save()
 
 
@@ -50,7 +51,7 @@ class InteractionLabel(BaseModel):
         return str(self.text)
 
     def format_for_save(self):
-        self.text = self.text.strip().capitalize()
+        self.text = self.text.strip().lower()
         return super().format_for_save()
 
 
@@ -83,6 +84,92 @@ class InteractionEvidence(BaseModel):
             return "{}|{}".format(self.pubmed, self.psimi)
         except peewee.DoesNotExist:
             return str(None)
+
+    @classmethod
+    def filter_by_index(
+        cls,
+        identifiers: List[Tuple[str, Optional[str]]],
+        query: Optional[peewee.ModelSelect] = None,
+    ) -> peewee.ModelSelect:
+        """
+        Filter evidence table for tuples with matching pubmed and psimi 
+        identifiers. Identifiers will be formatted prior to filtering.
+        
+        Parameters
+        ----------
+        identifiers : List[Tuple[str, str]]
+            String tuples using a (pubmed, psimi) format.
+        query : Optional[ModelSelect], optional
+            Query to filter. Defaults to all rows.
+        
+        Returns
+        -------
+        peewee.ModelSelect
+        """
+        query = query or cls.all()
+        full_queries = []
+        null_queries = []
+        for (pmid, psimi) in identifiers:
+            if psimi is None:
+                # Create single column queries if psimi is None.
+                null_queries.append(
+                    (
+                        peewee.fn.Upper(PubmedIdentifier.identifier)
+                        == PubmedIdentifier.format(pmid)
+                    )
+                )
+            else:
+                # Create queries to search for each tuple using an AND query.
+                full_queries.append(
+                    (
+                        peewee.fn.Upper(PubmedIdentifier.identifier)
+                        == PubmedIdentifier.format(pmid)
+                    )
+                    & (
+                        peewee.fn.Upper(PsimiIdentifier.identifier)
+                        == PsimiIdentifier.format(psimi)
+                    )
+                )
+
+        # Search all tuple element using an OR query.
+        result_full = None
+        result_null = None
+        if full_queries:
+            result_full = (
+                query.select(cls, PubmedIdentifier, PsimiIdentifier)
+                .join(PubmedIdentifier, on=(cls.pubmed == PubmedIdentifier.id))
+                .switch(cls)
+                .join(PsimiIdentifier, on=(cls.psimi == PsimiIdentifier.id))
+                .where(
+                    reduce(
+                        lambda x, y: x | y, full_queries[1:], full_queries[0]
+                    )
+                )
+                .switch(cls)
+                .select(cls)
+            )
+        if null_queries:
+            result_null = (
+                query.select(cls, PubmedIdentifier)
+                .join(PubmedIdentifier, on=(cls.pubmed == PubmedIdentifier.id))
+                .switch(cls)
+                .select(cls, PubmedIdentifier)
+                .where(
+                    reduce(
+                        lambda x, y: x | y, null_queries[1:], null_queries[0]
+                    )
+                )
+                .switch(cls)
+                .select(cls)
+            )
+
+        if result_full and result_null:
+            return result_full | result_null
+        elif result_full:
+            return result_full
+        elif result_null:
+            return result_null
+        return cls.none()
 
 
 class Interaction(BaseModel):
@@ -145,6 +232,57 @@ class Interaction(BaseModel):
             target = None
 
         return (source, target)
+
+    @classmethod
+    def filter_by_index(
+        cls,
+        identifiers: List[Tuple[str, str]],
+        query: Optional[peewee.ModelSelect] = None,
+    ) -> peewee.ModelSelect:
+        cls.bulk_create
+        """
+        Filter by source and target identifiers. Identifiers will be formatted 
+        prior to filtering.
+        
+        Parameters
+        ----------
+        identifiers : List[Tuple[str, str]]
+            Uniprot identifiers using a (source, target) format.
+        query : Optional[ModelSelect], optional
+            Query to filter. Defaults to all rows.
+        
+        Returns
+        -------
+        peewee.ModelSelect
+        """
+        query = query or cls.all()
+        # Create table alias for target column (can't use `UniprotIdentifier`
+        # column twice)
+        UA = UniprotIdentifier.alias()
+        # Create queries to search for each tuple using an AND query.
+        queries = [
+            (
+                (
+                    peewee.fn.Upper(UniprotIdentifier.identifier)
+                    == UniprotIdentifier.format(source)
+                )
+                & (
+                    peewee.fn.Upper(UA.identifier)
+                    == UniprotIdentifier.format(target)
+                )
+            )
+            for source, target in identifiers
+        ]
+        # Search all tuple element using an OR query.
+        return (
+            query.select(cls, UniprotIdentifier, UA)
+            .join(UniprotIdentifier, on=(cls.source == UniprotIdentifier.id))
+            .switch(cls)
+            .join(UA, on=(cls.target == UA.id).alias("target"))
+            .where(reduce(lambda x, y: x | y, queries[1:], queries[0]))
+            .switch(cls)
+            .select(cls)  # Context switch back to interaction.
+        )
 
     @classmethod
     def to_dataframe(

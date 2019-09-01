@@ -39,15 +39,9 @@ class Protein(BaseModel):
         default=None,
         help_text="Protein has been reviewed (Swiss-prot).",
     )
-    gene = peewee.ForeignKeyField(
-        model=GeneSymbol,
-        null=True,
-        default=None,
-        backref="proteins",
-        help_text="Gene symbol related to this protein.",
-    )
 
     # --- M2M --- #
+    genes = peewee.ManyToManyField(model=GeneSymbol, backref="proteins")
     aliases = peewee.ManyToManyField(
         model=UniprotIdentifier, backref="alias_proteins"
     )
@@ -61,9 +55,6 @@ class Protein(BaseModel):
         model=PfamTerm, backref="proteins"
     )
     keywords = peewee.ManyToManyField(model=Keyword, backref="proteins")
-    alt_genes = peewee.ManyToManyField(
-        model=GeneSymbol, backref="proteins_alt"
-    )
 
     def __str__(self):
         try:

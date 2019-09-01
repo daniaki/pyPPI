@@ -18,6 +18,10 @@ class BaseModel(peewee.Model):
         database = DATABASE
 
     @classmethod
+    def none(cls) -> peewee.ModelSelect:
+        return cls.select().where(cls.id == -1)
+
+    @classmethod
     def all(cls) -> peewee.ModelSelect:
         return cls.select()
 

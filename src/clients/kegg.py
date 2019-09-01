@@ -11,8 +11,10 @@ from bs4 import BeautifulSoup
 
 from ..settings import LOGGER_NAME
 
-logger = logging.getLogger(LOGGER_NAME)
 
+__all__ = ["EntryID", "Entries", "Entry", "Relation", "Kegg", "KeggPathway"]
+
+logger = logging.getLogger(LOGGER_NAME)
 
 EntryID = str
 Entries = Dict[EntryID, "Entry"]

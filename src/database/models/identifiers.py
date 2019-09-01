@@ -7,7 +7,6 @@ from .base import BaseModel
 
 
 __all__ = [
-    "IdentifierMixin",
     "ExternalIdentifier",
     "GeneOntologyIdentifier",
     "PfamIdentifier",
@@ -19,43 +18,36 @@ __all__ = [
 ]
 
 
-class IdentifierMixin:
-    def _get_identifier(self) -> str:
-        identifier: Optional[str] = getattr(self, "identifier", None)
-        if not getattr(self, "identifier", None):
-            raise AttributeError(
-                f"{self.__class__.__name__} is missing attribute 'identifier'."
-            )
-        if not isinstance(identifier, str):
-            klass = type(identifier).__name__
-            raise TypeError(
-                f"Expected 'identifier' to be 'str'. Found '{klass}'"
-            )
+def add_prefix(
+    identifier: str, prefix: Optional[str] = None, sep: Optional[str] = None
+):
+    """
+    Adds a prefix separated by a delimiter to an accession. Prefix will
+    only be added if it isn't already in the accession.
+
+    Parameters
+    ----------
+    identifier : str
+        String accession.
+    prefix : Optional[str], optional
+        Prefix to append. Identifier returned as is if not provided.
+    sep : Optional[str], optional
+        Delimiter to separate accession and prefix with.
+
+    Returns
+    -------
+    str
+    """
+    if not prefix:
         return identifier
-
-    def prefix(
-        self, prefix: Optional[str] = None, sep: Optional[str] = None
-    ) -> str:
-        identifier = self._get_identifier()
-        if not prefix:
-            return identifier
-        if not identifier.lower().startswith(f"{prefix.lower()}"):
-            if sep:
-                return f"{prefix}{sep}{identifier}"
-            return f"{prefix}{identifier}"
-        return identifier
-
-    def unprefix(
-        self, prefix: Optional[str] = None, sep: Optional[str] = None
-    ) -> str:
-        identifier = self._get_identifier()
-        if not prefix:
-            return identifier
-        skip_to = len(prefix) + len(str(sep or ""))
-        return self._get_identifier()[skip_to:]
+    if not identifier.lower().startswith(f"{prefix.lower()}"):
+        if sep:
+            return f"{prefix}{sep}{identifier}"
+        return f"{prefix}{identifier}"
+    return identifier
 
 
-class ExternalIdentifier(IdentifierMixin, BaseModel):
+class ExternalIdentifier(BaseModel):
     # Database name of the identifier.
     DB_NAME: Optional[str] = None
     # Prefix for appending to an identifier if missing. For example the
@@ -91,14 +83,16 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
             << set(i.upper() for i in identifiers)
         )
 
-    def format(self) -> str:
+    @classmethod
+    def format(cls, identifier: str) -> str:
         """
         How to format identifier. Called after prefix is performed and must
         accept a single input and return a single string.
         """
-        return str.upper(self.identifier)
+        return add_prefix(identifier, cls.PREFIX, cls.SEP).upper()
 
-    def validate(self) -> str:
+    @classmethod
+    def validate(cls, identifier: str) -> str:
         """
         How to validate identifier. Called after formatter is called and must
         accept a single input and return a single boolean.
@@ -109,11 +103,11 @@ class ExternalIdentifier(IdentifierMixin, BaseModel):
         if self.DB_NAME is None:
             raise NotImplementedError("Concrete table must define DB_NAME.")
 
-        if self.PREFIX:
-            self.identifier = self.prefix(self.PREFIX, self.SEP)
+        if self.identifier is None:
+            raise TypeError(f"'{self.identifier}' is cannot be 'None'.")
 
-        self.identifier = self.format()
-        if not self.validate():
+        self.identifier = self.format(self.identifier)
+        if not self.validate(self.identifier):
             raise ValueError(f"'{self.identifier}' is not a valid identifier.")
 
         self.dbname = self.DB_NAME
@@ -126,8 +120,9 @@ class GeneOntologyIdentifier(ExternalIdentifier):
     PREFIX = "GO"
     SEP = ":"
 
-    def validate(self):
-        return validators.is_go(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_go(identifier)
 
 
 class PubmedIdentifier(ExternalIdentifier):
@@ -135,8 +130,9 @@ class PubmedIdentifier(ExternalIdentifier):
     PREFIX = "PUBMED"
     SEP = ":"
 
-    def validate(self):
-        return validators.is_pubmed(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_pubmed(identifier)
 
 
 class PsimiIdentifier(ExternalIdentifier):
@@ -144,8 +140,9 @@ class PsimiIdentifier(ExternalIdentifier):
     PREFIX = "MI"
     SEP = ":"
 
-    def validate(self):
-        return validators.is_psimi(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_psimi(identifier)
 
 
 class UniprotIdentifier(ExternalIdentifier):
@@ -153,8 +150,9 @@ class UniprotIdentifier(ExternalIdentifier):
     PREFIX = None
     SEP = None
 
-    def validate(self):
-        return validators.is_uniprot(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_uniprot(identifier)
 
 
 class KeywordIdentifier(ExternalIdentifier):
@@ -162,8 +160,9 @@ class KeywordIdentifier(ExternalIdentifier):
     PREFIX = "KW"
     SEP = "-"
 
-    def validate(self):
-        return validators.is_keyword(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_keyword(identifier)
 
 
 class InterproIdentifier(ExternalIdentifier):
@@ -171,8 +170,9 @@ class InterproIdentifier(ExternalIdentifier):
     PREFIX = "IPR"
     SEP = None
 
-    def validate(self):
-        return validators.is_interpro(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_interpro(identifier)
 
 
 class PfamIdentifier(ExternalIdentifier):
@@ -180,5 +180,6 @@ class PfamIdentifier(ExternalIdentifier):
     PREFIX = "PF"
     SEP = None
 
-    def validate(self):
-        return validators.is_pfam(self.identifier)
+    @classmethod
+    def validate(cls, identifier: str):
+        return validators.is_pfam(identifier)

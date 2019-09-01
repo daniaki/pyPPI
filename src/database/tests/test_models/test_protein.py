@@ -32,7 +32,6 @@ class TestProteinModel(DatabaseTestMixin):
         self.protein = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P12345"),
             organism=9606,
-            gene=models.GeneSymbol.create(text="BRCA1"),
             sequence="aaa",
         )
         self.protein.go_annotations.add([self.cc, self.bp, self.mf])
@@ -55,10 +54,11 @@ class TestProteinModel(DatabaseTestMixin):
         protein_2 = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P12346"),
             organism=9606,
-            gene=models.GeneSymbol.create(text="BRCA2"),
             sequence="aaa",
         )
-        query = models.Protein.get_by_identifier([str(self.protein.identifier)])
+        query = models.Protein.get_by_identifier(
+            [str(self.protein.identifier)]
+        )
         assert query.count() == 1
         assert self.protein in query
         assert protein_2 not in query

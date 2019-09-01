@@ -14,9 +14,14 @@ from ..constants import GeneOntologyCategory
 from ..parsers import types
 
 
+__all__ = ["UniprotClient", "UniprotEntry"]
+
+
 class UniprotEntry:
     def __init__(self, root: BeautifulSoup):
         self.root: BeautifulSoup = root
+        if self.root.find("entry"):
+            self.root = self.root.find("entry")
 
     def __str__(self):
         return self.primary_accession

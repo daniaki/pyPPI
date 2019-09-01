@@ -6,54 +6,26 @@ from ....tests.test_utilities import null_values
 from ... import models
 
 
-class TestIdentifierMixin:
-    class Driver(models.IdentifierMixin):
-        def __init__(self, identifier: str):
-            self.identifier = identifier
-
-    def test_attribute_error_missing_identifier_attr_in_class(self):
-        class MissingDriver(models.IdentifierMixin):
-            pass
-
-        with pytest.raises(AttributeError):
-            MissingDriver()._get_identifier()
-
-    def test_type_error_identifier_not_a_string(self):
-        instance = self.Driver(identifier=1)
-        with pytest.raises(TypeError):
-            instance._get_identifier()
-
+class TestAddPrefix:
     def test_prefix_passthrough_if_prefix_not_defined(self):
-        value = self.Driver(identifier="0000001").prefix(None, ":")
+        value = models.identifiers.add_prefix("0000001", None, ":")
         assert value == "0000001"
 
     def test_prefix_prepends_prefix_if_not_starts_with(self):
-        value = self.Driver(identifier="0000001").prefix("GO", ":")
+        value = models.identifiers.add_prefix("0000001", "GO", ":")
         assert value == "GO:0000001"
         # Check case insensitive
-        value = self.Driver(identifier="go:0000001").prefix("GO", ":")
+        value = models.identifiers.add_prefix("go:0000001", "GO", ":")
         assert value == "go:0000001"
         # Check no sep
-        value = self.Driver(identifier="000001").prefix("IPR", None)
+        value = models.identifiers.add_prefix("000001", "IPR", None)
         assert value == "IPR000001"
-
-    def test_unprefix_passthrough_if_prefix_not_defined(self):
-        value = self.Driver(identifier="GO:0000001").unprefix(None, ":")
-        assert value == "GO:0000001"
-
-    def test_unprefix_removes_prefix_with_sep(self):
-        value = self.Driver(identifier="go:0000001").unprefix("GO", ":")
-        assert value == "0000001"
-
-    def test_unprefix_removes_prefix_without_sep(self):
-        value = self.Driver(identifier="IPR000001").unprefix("IPR", None)
-        assert value == "000001"
 
 
 class TestExternalIdentiferModel(DatabaseTestMixin):
     def test_not_implemented_error_validate(self):
         with pytest.raises(NotImplementedError):
-            models.ExternalIdentifier().validate()
+            models.ExternalIdentifier.validate("")
 
     def test_str_returns_identifier_string(self):
         i = models.PubmedIdentifier.create(identifier="PUBMED:8619402")
@@ -63,6 +35,14 @@ class TestExternalIdentiferModel(DatabaseTestMixin):
         i = models.ExternalIdentifier()
         with pytest.raises(NotImplementedError):
             i.save()
+
+    def test_raises_typeerror_identifier_is_none(self):
+        with pytest.raises(TypeError):
+            models.PubmedIdentifier.create(identifier=None)
+
+    def test_raises_value_error_identifier_does_not_validate(self):
+        with pytest.raises(ValueError):
+            models.PubmedIdentifier.create(identifier="aaa")
 
     def test_prepends_prefix_if_defined(self):
         i = models.PubmedIdentifier.create(identifier="8619402")
@@ -84,33 +64,33 @@ class TestExternalIdentiferModel(DatabaseTestMixin):
         i = models.PubmedIdentifier.create(identifier="pubmed:8619402")
         assert i.dbname == models.PubmedIdentifier.DB_NAME
 
+    def test_can_get_by_identifier(self):
+        i1 = models.PubmedIdentifier.create(identifier="pubmed:8619402")
+        _ = models.PubmedIdentifier.create(identifier="pubmed:8619403")
+
+        query = models.PubmedIdentifier.get_by_identifier([str(i1)])
+        assert query.count() == 1
+        assert query.first().id == i1.id
+
 
 class TestIdentifierValidators(DatabaseTestMixin):
     # model, valid identifier, invalid identifiers
     specs = (
         (
             models.InterproIdentifier,
-            ("IPR000001", "000001"),
+            ("IPR000001",),
             ("IPR", "0000001", "random"),
         ),
         (
             models.GeneOntologyIdentifier,
-            ("GO:0000001", "0000001"),
+            ("GO:0000001",),
             ("GO:", "000", "GO0000001", "random"),
         ),
-        (
-            models.PfamIdentifier,
-            ("PF00001", "00001"),
-            ("PF", "PF001", "random"),
-        ),
-        (
-            models.PsimiIdentifier,
-            ("MI:0001", "0001"),
-            (":0001", "MI", "random"),
-        ),
+        (models.PfamIdentifier, ("PF00001",), ("PF", "PF001", "random")),
+        (models.PsimiIdentifier, ("MI:0001",), (":0001", "MI", "random")),
         (
             models.KeywordIdentifier,
-            ("0001", "KW-0001"),
+            ("KW-0001",),
             ("KW0001", "00001", "KW-", "random"),
         ),
         (
@@ -123,17 +103,13 @@ class TestIdentifierValidators(DatabaseTestMixin):
     def test_fails_on_null_values(self):
         for model, _, _ in self.specs:
             for value in null_values:
-                with pytest.raises(ValueError):
-                    model.create(identifier=value)
+                assert not model.validate(identifier=value)
 
     def test_specs(self):
         for (model, valid, invalid) in self.specs:
             for valid_id in valid:
-                instance = model.create(identifier=valid_id)
-                assert instance.validate()
-                instance.delete_instance()
+                assert model.validate(identifier=valid_id) is not None
 
             for invalid_id in invalid:
-                with pytest.raises(ValueError):
-                    model.create(identifier=invalid_id)
+                assert model.validate(identifier=invalid_id) is None
 
