@@ -107,6 +107,8 @@ class Paths:
 
     # Path where classifiers will be saved.
     trained_models: Path = MODELS_DIR
+    kegg_cache: Path = DATA_DIR / "kegg.cache.gz"
+    uniprot_cache: Path = DATA_DIR / "uniprot.cache.gz"
 
 
 class Urls:
