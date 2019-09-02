@@ -38,7 +38,7 @@ def create_terms(
     # to bulk create.
     create: List[models.Annotation] = []
     # Term is a dataclass term defined in parser.types
-    for term in terms:
+    for term in set(terms):
         # Replace the str identifier in the dataclass instance with real
         # identifier so we can create a model instance from the asdict method
         # by argument unpacking.
@@ -58,17 +58,20 @@ def create_identifiers(
     identifiers: Iterable[str], model: models.ExternalIdentifier
 ) -> ModelSelect:
     # Create new identifiers list with formatted accessions so we can
-    # perform database lookups. This allows users to pass in un-prefixed ids
-    instances = [model(identifier=i).format_for_save() for i in identifiers]
-    identifiers = [str(i) for i in instances]
-    existing = set(str(i) for i in model.get_by_identifier(identifiers))
+    # perform database lookups.
+    normalized_identifiers: Set[str] = set(
+        model(identifier=i).format_for_save().identifier
+        for i in identifiers
+    )
+    
+    # Get all existing model identifiers
+    existing: Set[str] = set(str(i) for i in model.all())
 
     # Loop through and bulk create only the missing identifiers.
     create: List[models.ExternalIdentifier] = []
-    instance: models.ExternalIdentifier
-    for instance in instances:
-        if str(instance) not in existing:
-            create.append(instance)
+    for identifier in  zip(normalized_identifiers):
+        if identifier not in existing:
+            create.append(model(identifier=identifier))
     if create:
         model.bulk_create(create)
 
@@ -79,7 +82,9 @@ def create_identifiers(
 def create_gene_symbols(symbols: Iterable[str]) -> ModelSelect:
     # Create new symbols list with formatted text so we can
     # perform database lookups.
-    instances = [models.GeneSymbol(text=s).format_for_save() for s in symbols]
+    instances = [
+        models.GeneSymbol(text=s).format_for_save() for s in set(symbols)
+    ]
     symbols = [str(i) for i in instances]
     existing = set(
         str(i)
@@ -117,7 +122,7 @@ def create_evidence(
 
     instances: List[models.InteractionEvidence] = []
     evidence: types.InteractionEvidenceData
-    for evidence in evidences:
+    for evidence in set(evidences):
         # Format identifier strings before query.
         instance, _ = models.InteractionEvidence.get_or_create(
             pubmed=models.PubmedIdentifier.get(
@@ -126,7 +131,8 @@ def create_evidence(
             psimi=models.PsimiIdentifier.get_or_none(
                 identifier=(
                     models.PsimiIdentifier.format(evidence.psimi)
-                    if evidence.psimi else None
+                    if evidence.psimi
+                    else None
                 )
             ),
         )
@@ -135,12 +141,18 @@ def create_evidence(
 
 
 @DATABASE.atomic()
-def create_proteins(proteins: Iterable[str]) -> List[models.Protein]:
-    client = UniprotClient()
+def create_proteins(
+    proteins: Iterable[str], client: Optional[UniprotClient] = None
+) -> List[models.Protein]:
+    if client is None:
+        client = UniprotClient()
+
+    logger.info("Downloading UniProt entries.")
     entries: List[UniprotEntry] = client.get_entries(proteins)
 
     # Loop through and collect the identifiers, genes and all annotations to
     # bulk create first.
+    logger.info("Updating Protein table.")
     terms: Dict[str, Set[Any]] = defaultdict(set)
     gene_symbols: Set[types.GeneData] = set()
     accessions: Set[str] = set()
@@ -187,6 +199,7 @@ def create_proteins(proteins: Iterable[str]) -> List[models.Protein]:
             instance.organism = entry.taxonomy
             instance.sequence = entry.sequence
             instance.reviewed = entry.reviewed
+            instance.format_for_save()
             instance.save()
 
         # Update the M2M relations.
@@ -237,8 +250,10 @@ def create_proteins(proteins: Iterable[str]) -> List[models.Protein]:
 
 @DATABASE.atomic()
 def create_interactions(
-    interactions: Iterable[types.InteractionData]
+    interactions: Iterable[types.InteractionData],
+    client: Optional[UniprotClient] = None,
 ) -> List[models.Interaction]:
+
     # First aggregate all interaction data instances.
     aggregated: Dict[int, types.InteractionData] = dict()
     interaction: types.InteractionData
@@ -275,20 +290,12 @@ def create_interactions(
     create_evidence(evidences)
     proteins: Dict[str, models.Protein] = {
         str(protein): protein
-        for protein in create_proteins(uniprot_accessions)
+        for protein in create_proteins(uniprot_accessions, client=client)
     }
     for db in databases:
         models.InteractionDatabase.get_or_create(name=db.lower())
     for label in labels:
         models.InteractionLabel.get_or_create(text=label.lower())
-
-    # Filter existing interactions by source and target.
-    existing: Dict[Tuple[str, str], models.Interaction] = {
-        i.compact: i
-        for i in models.Interaction.filter_by_index([
-            (agg.source, agg.target) for _, agg in aggregated.items()
-        ])
-    }
 
     # Loop through and update/create interactions.
     instances: List[models.Interaction] = []
@@ -310,16 +317,13 @@ def create_interactions(
             continue
 
         # Get/Create instance and update M2M fields.
-        instance = existing.get(
-            (source, target),
-            models.Interaction(
-                source=proteins[source],
-                target=proteins[target],
-            )
+        instance, _ = models.Interaction.get_or_create(
+            source=proteins[source], target=proteins[target]
         )
-        instance.organism = interaction.organism
-        instance.save()
-    
+        if instance.organism != interaction.organism:
+            instance.organism = interaction.organism
+            instance.save()
+
         # Filter by capitalization since save will capitalize values before
         # commiting to databse.
         instance.labels = models.InteractionLabel.filter(
@@ -332,7 +336,7 @@ def create_interactions(
         )
         # Get related evidence terms by pubmed/psimi id.
         instance.evidence = models.InteractionEvidence.filter_by_index(
-            identifiers=[astuple(e) for e in interaction.evidence],
+            identifiers=[(e.pubmed, e.psimi) for e in interaction.evidence]
         )
         instances.append(instance)
 
