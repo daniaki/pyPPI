@@ -34,6 +34,7 @@ __all__ = [
     "interaction",
     "metadata",
     "protein",
+    "MODELS",
     # identifiers
     "GeneOntologyIdentifier",
     "PfamIdentifier",

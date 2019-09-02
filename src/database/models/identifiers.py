@@ -1,4 +1,4 @@
-from typing import Iterable, Optional, Callable
+from typing import Iterable, Optional, Callable, Any
 
 import peewee
 
@@ -92,7 +92,7 @@ class ExternalIdentifier(BaseModel):
         return add_prefix(identifier, cls.PREFIX, cls.SEP).upper()
 
     @classmethod
-    def validate(cls, identifier: str) -> str:
+    def validate(cls, identifier: str) -> Optional[Any]:
         """
         How to validate identifier. Called after formatter is called and must
         accept a single input and return a single boolean.
@@ -104,11 +104,14 @@ class ExternalIdentifier(BaseModel):
             raise NotImplementedError("Concrete table must define DB_NAME.")
 
         if self.identifier is None:
-            raise TypeError(f"'{self.identifier}' is cannot be 'None'.")
+            raise TypeError(f"The 'identifier' attribute cannot be null.")
 
         self.identifier = self.format(self.identifier)
         if not self.validate(self.identifier):
-            raise ValueError(f"'{self.identifier}' is not a valid identifier.")
+            raise ValueError(
+                f"'{self.identifier}' is not a valid "
+                f"'{self.__class__.__name__}' identifier."
+            )
 
         self.dbname = self.DB_NAME
 
