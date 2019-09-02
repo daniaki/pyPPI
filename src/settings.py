@@ -54,15 +54,10 @@ LOGGING = {
     },
     "loggers": {
         PROJECT_NAME: {
-            "handlers": [PROJECT_NAME],
+            "handlers": [PROJECT_NAME, STREAM_LOGGER],
             "level": "INFO",
-            "propagate": True,
-        },
-        STREAM_LOGGER: {
-            "handlers": [PROJECT_NAME],
-            "level": "INFO",
-            "propagate": True,
-        },
+            "propagate": False,
+        }
     },
 }
 
