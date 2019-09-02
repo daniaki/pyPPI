@@ -1,16 +1,19 @@
 import copy
 import io
 import logging
+import gzip
+import pickle
 from collections import OrderedDict
 from itertools import product
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
+from tqdm import tqdm
 import requests
 from bs4 import BeautifulSoup
 
 from ..settings import LOGGER_NAME
-
+from ..constants import Paths
 
 __all__ = ["EntryID", "Entries", "Entry", "Relation", "Kegg", "KeggPathway"]
 
@@ -138,8 +141,32 @@ class Kegg:
 
     BASE_URL: str = "http://rest.kegg.jp/"
 
-    def __init__(self):
+    def __init__(self, use_cache: Optional[bool] = False):
         self.cache: Dict[str, Any] = {}
+        self.use_cache = use_cache
+        if self.use_cache:
+            self._load_cache()
+
+    def _delete_cache(self):
+        self.cache = {}
+        self._save_cache()
+
+    def _load_cache(self):
+        if Paths.kegg_cache.exists():
+            self.cache = pickle.load(gzip.open(Paths.kegg_cache, "rb"))
+
+    def _save_cache(self, overwrite: Optional[bool] = False):
+        if overwrite:
+            pickle.dump(self.cache, gzip.open(Paths.kegg_cache, "wb"))
+        else:
+            existing = (
+                pickle.load(gzip.open(Paths.kegg_cache, "rb"))
+                if Paths.kegg_cache.exists()
+                else {}
+            )
+            # Updates existing cache instead of over-writting
+            existing.update(self.cache)
+            pickle.dump(existing, gzip.open(Paths.kegg_cache, "wb"))
 
     @classmethod
     def url_builder(cls, operation: str, arguments: Union[str, List[str]]):
@@ -194,6 +221,8 @@ class Kegg:
             self.get(url), columns=["accession", "code", "name", "taxonomy"]
         )
         self.cache[url] = organisms
+        self._save_cache()
+
         return organisms
 
     def pathways(self, organism: str) -> pd.DataFrame:
@@ -206,6 +235,8 @@ class Kegg:
             self.get(url), columns=["accession", "name"]
         )
         self.cache[url] = pathways
+        self._save_cache()
+
         return pathways
 
     def genes(self, organism: str) -> pd.DataFrame:
@@ -218,6 +249,8 @@ class Kegg:
             self.get(url), columns=["accession", "names"]
         )
         self.cache[url] = genes
+        self._save_cache()
+
         return genes
 
     def gene_detail(self, accession: str) -> str:
@@ -228,6 +261,8 @@ class Kegg:
 
         detail: str = self.get(url).content.decode()
         self.cache[url] = detail
+        self._save_cache()
+
         return detail
 
     def pathway_detail(self, accession: str) -> KeggPathway:
@@ -235,11 +270,13 @@ class Kegg:
         url = self.url_builder("get", [accession.split(":")[-1], "kgml"])
 
         if url in self.cache:
-            return self.cache[url]
+            response_data = self.cache[url]
+        else:
+            response_data = self.get(url).content.decode()
+            self.cache[url] = response_data
+            self._save_cache()
 
-        pathway: KeggPathway = KeggPathway(xml=self.get(url).content.decode())
-        self.cache[url] = pathway
-        return pathway
+        return KeggPathway(xml=response_data)
 
     def convert(
         self, source: str = "hsa", destination: str = "uniprot"
@@ -265,5 +302,6 @@ class Kegg:
                 mapping[src] = [dst]
 
         self.cache[url] = mapping
+        self._save_cache()
 
         return mapping

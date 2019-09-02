@@ -1,20 +1,27 @@
 import io
+import gzip
+import json
+import logging
 from collections import OrderedDict
-import requests
 
+import requests
 from csv import DictReader
 from requests import Response
 from collections import defaultdict
-from typing import Union, Optional, List, Dict, Set, Iterable
+from typing import Union, Optional, List, Dict, Set, Iterable, Any
 
 from bs4 import BeautifulSoup
 
 from ..utilities import is_null
-from ..constants import GeneOntologyCategory
+from ..constants import GeneOntologyCategory, Paths
 from ..parsers import types
+from ..settings import LOGGER_NAME
 
 
 __all__ = ["UniprotClient", "UniprotEntry"]
+
+
+logger = logging.getLogger(LOGGER_NAME)
 
 
 class UniprotEntry:
@@ -210,21 +217,63 @@ class UniprotEntry:
 
 
 class UniprotClient:
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self, api_key: Optional[str] = None, use_cache: Optional[bool] = False
+    ):
         self.api_key: Optional[str] = api_key
         self.base: str = "https://www.uniprot.org"
+        self.use_cache = use_cache
+        self.cache: Dict[str, Any] = {}
+        if self.use_cache:
+            self._load_cache()
+
+    def _delete_cache(self):
+        self.cache = {}
+        self._save_cache()
+
+    def _load_cache(self):
+        if Paths.uniprot_cache.exists():
+            self.cache = json.load(gzip.open(Paths.uniprot_cache, "rt"))
+
+    def _save_cache(self, overwrite: Optional[bool] = False):
+        if not overwrite:
+            json.dump(self.cache, gzip.open(Paths.uniprot_cache, "wt"))
+        else:
+            existing = (
+                json.load(gzip.open(Paths.uniprot_cache, "rt"))
+                if Paths.uniprot_cache.exists()
+                else {}
+            )
+            # Updates existing cache instead of over-writting
+            existing.update(self.cache)
+            json.dump(existing, gzip.open(Paths.uniprot_cache, "wt"))
 
     def get_entry(self, identifier: str) -> UniprotEntry:
         url: str = f"{self.base}/uniprot/{identifier}.xml"
-        response: Response = requests.get(url)
-        if not response.ok:
-            response.raise_for_status()
-        return UniprotEntry(BeautifulSoup(response.text, "xml"))
+        cache_key = f"get-entry:{identifier}"
+
+        if cache_key in self.cache:
+            response_data = self.cache[cache_key]
+        else:
+            response: Response = requests.get(url)
+            if not response.ok:
+                logger.error(f"{response.content.decode()}")
+                response.raise_for_status()
+            response_data = response.text
+            self.cache[cache_key] = response_data
+            self._save_cache()
+
+        return UniprotEntry(BeautifulSoup(response_data, "xml"))
 
     def get_accession_map(
         self, identifiers: Iterable[str], fr: str = "ACC+ID", to: str = "ACC"
     ) -> Dict[str, List[str]]:
         url = f"{self.base}/uploadlists/"
+        cache_key = f"get-map:{hash(sorted(identifiers))}"
+
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
         data = {
             "query": "\n".join(list(identifiers)),
             "format": "tab",
@@ -233,6 +282,7 @@ class UniprotClient:
         }
         response: Response = requests.post(url, data)
         if not response.ok:
+            logger.error(f"{response.content.decode()}")
             response.raise_for_status()
 
         reader = DictReader(io.StringIO(response.text), delimiter="\t")
@@ -246,23 +296,44 @@ class UniprotClient:
         # Return all unique values that a key maps to. Must preserve order
         # that values are first encountered in. Using a set will not
         # preserve this ordering.
-        return {
+        result: Dict[str, List[str]] = {
             k: list(OrderedDict.fromkeys(v).keys())
             for (k, v) in mapping.items()
         }
 
+        # Set and save cache
+        self.cache[cache_key] = result
+        self._save_cache()
+
+        return result
+
     def get_entries(self, identifiers: Iterable[str]) -> List[UniprotEntry]:
         url = f"{self.base}/uploadlists/"
-        data = {
-            "query": "\n".join(list(identifiers)),
-            "format": "xml",
-            "from": "ACC+ID",
-            "to": "ACC",
-        }
-        response: Response = requests.post(url, data)
-        if not response.ok:
-            response.raise_for_status()
+
+        # Can take up to 10-20 minutes for large lists so cache result.
+        response: Response
+        cache_key = f"get-entries:{hash(sorted(identifiers))}"
+
+        if cache_key in self.cache:
+            response_data = self.cache[cache_key]
+        else:
+            data = {
+                "query": "\n".join(sorted(identifiers)),
+                "format": "xml",
+                "from": "ACC+ID",
+                "to": "ACC",
+            }
+            response = requests.post(url, data)
+            if not response.ok:
+                logger.error(f"{response.content.decode()}")
+                response.raise_for_status()
+            response_data = response.text
+
+            # Set and save cache
+            self.cache[cache_key] = response_data
+            self._save_cache()
+
         return [
             UniprotEntry(entry)
-            for entry in BeautifulSoup(response.text, "xml").find_all("entry")
+            for entry in BeautifulSoup(response_data, "xml").find_all("entry")
         ]
