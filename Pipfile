@@ -29,6 +29,8 @@ tqdm = "*"
 beautifulsoup4 = "*"
 lxml = "*"
 idutils = "*"
+jupyter = "*"
+metapub = "*"
 
 [requires]
 python_version = "3.7"
