@@ -67,3 +67,36 @@ class TestInnateParser:
 
         assert interactions[3].source == "P55211"
         assert interactions[3].target == "P55211"
+
+    def test_removes_doi_based_evidence(self):
+        path = self.base_path / "innate_dois.tsv"
+        interactions = list(innate.parse_interactions(path))
+        assert interactions[0].evidence == sorted(
+            [
+                InteractionEvidenceData(
+                    pubmed="pubmed:11734641", psimi="MI:0114"
+                ),
+                InteractionEvidenceData(
+                    pubmed="pubmed:11734640", psimi="MI:0118"
+                ),
+            ],
+            key=lambda e: hash(e),
+        )
+
+    def test_if_more_pmid_than_psimis_uses_same_psimi_value(self):
+        path = self.base_path / "innate_more_pmid_than_psimis.tsv"
+        interactions = list(innate.parse_interactions(path))
+        assert interactions[0].evidence == sorted(
+            [
+                InteractionEvidenceData(
+                    pubmed="pubmed:11734640", psimi="MI:0114"
+                ),
+                InteractionEvidenceData(
+                    pubmed="pubmed:11734641", psimi="MI:0114"
+                ),
+                InteractionEvidenceData(
+                    pubmed="pubmed:11734642", psimi="MI:0114"
+                ),
+            ],
+            key=lambda e: hash(e),
+        )

@@ -67,3 +67,29 @@ class TestPinaParser:
             key=lambda e: hash(e),
         )
 
+    def test_removes_doi_evidence(self):
+        path = self.base_path / "pina2_dois.tsv"
+        interactions = list(pina.parse_interactions(path))
+
+        assert len(interactions) == 2
+        assert interactions[0].source == "Q96BR9"
+        assert interactions[0].target == "Q9BXS5"
+        assert interactions[0].organism == 9606
+        assert interactions[0].databases == ["PINA2"]
+        assert interactions[0].evidence == sorted(
+            [
+                InteractionEvidenceData(
+                    pubmed="pubmed:16189514", psimi="MI:0096"
+                ),
+                InteractionEvidenceData(
+                    pubmed="pubmed:16189514", psimi="MI:0018"
+                ),
+            ],
+            key=lambda e: hash(e),
+        )
+
+        assert interactions[1].source == "Q96BR7"
+        assert interactions[1].target == "Q9BXS7"
+        assert interactions[1].organism == 9606
+        assert interactions[1].databases == ["PINA2"]
+        assert interactions[1].evidence == []
