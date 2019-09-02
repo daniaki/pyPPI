@@ -1,11 +1,15 @@
+import logging
 from itertools import product
 from typing import Dict, Generator, Iterable, List, Optional
 
-import tqdm
 import pandas as pd
+import tqdm
 
 from ..clients import kegg
+from ..settings import LOGGER_NAME
 from .types import InteractionData
+
+logger = logging.getLogger(LOGGER_NAME)
 
 
 def parse_interactions(
@@ -23,7 +27,11 @@ def parse_interactions(
     # Set up client, download kegg -> uniprot mapping and all pathways.
     if not client:
         client = kegg.Kegg()
+
+    logger.info("Downloading UniProt mapping. Please stand by.")
     to_uniprot: Dict[str, List[str]] = client.convert("hsa", "uniprot")
+
+    logger.info("Downloading pathways. Please stand by.")
     pathway_accessions: List[str] = list(client.pathways("hsa")["accession"])
     pathways: Generator[kegg.KeggPathway, None, None] = (
         client.pathway_detail(pathway) for pathway in pathway_accessions
@@ -46,6 +54,7 @@ def parse_interactions(
         .dropna(axis=0, how="any", inplace=False)
     )
 
+    logger.info("Generating interactions.")
     for row in interactions.to_dict("record"):
         sources = to_uniprot.get(row["source"], None)
         targets = to_uniprot.get(row["target"], None)
@@ -67,5 +76,5 @@ def parse_interactions(
                     target=target,
                     organism=9606,
                     labels=labels,
-                    databases=["KEGG"],
+                    databases=["kegg"],
                 )

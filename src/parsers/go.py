@@ -1,20 +1,27 @@
-from typing import Dict, List
+import gzip
+import logging
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
 from goatools.obo_parser import GODag, GOTerm
 
 from ..constants import GeneOntologyCategory
+from ..settings import LOGGER_NAME
 from ..utilities import is_null
 from . import open_file
 from .types import GeneOntologyTermData
 
+logger = logging.getLogger(LOGGER_NAME)
 
-def parse_go_obo(path: str) -> List[GeneOntologyTermData]:
+
+def parse_go_obo(path: Union[str, Path]) -> List[GeneOntologyTermData]:
     """
     Parses the GO obo saved at `path` into a list of `GeneOntologyTermData`
     instances.
     
     Parameters
-    ----------
+    ----------`
     path : str
         Path to load obo file from.
     
@@ -23,8 +30,22 @@ def parse_go_obo(path: str) -> List[GeneOntologyTermData]:
     list[GeneOntologyTermData]
         A list of `GeneOntologyTermData` instances.
     """
+    dag: GODag
+    if str(path).endswith(".gz"):
+        # Unzip into a temp file.
+        tmp = tempfile.NamedTemporaryFile(
+            mode="wt", suffix=".obo", prefix="uzipped"
+        )
+        new_path = Path(tempfile.gettempdir()) / str(tmp.name)
+        logger.info(f"Unzipping '{path}' into '{new_path}'")
+        with gzip.open(path, "rt") as zipped:
+            tmp.write(zipped.read())
+        dag = GODag(obo_file=new_path)
+        tmp.close()
+    else:
+        dag = GODag(obo_file=path)
+
     terms: List[GeneOntologyTermData] = []
-    dag: GODag = GODag(obo_file=path)
     namespaces = {
         "BP": GeneOntologyCategory.biological_process,
         "MF": GeneOntologyCategory.molecular_function,
@@ -44,5 +65,5 @@ def parse_go_obo(path: str) -> List[GeneOntologyTermData]:
                 category=namespaces[term.namespace],
             )
         )
-    return terms
 
+    return terms

@@ -9,6 +9,19 @@ from .types import InterproTermData
 
 
 def parse_entry_list(path: Union[str, Path]) -> List[InterproTermData]:
+    """
+    Parse the entry-list file into a list of Interpro data structures that
+    can be used to create database rows.
+    
+    Parameters
+    ----------
+    path : Union[str, Path]
+        Path or string path. Gzipped files supported.
+    
+    Returns
+    -------
+    List[InterproTermData]
+    """
     terms: List[InterproTermData] = []
     with open_file(path, mode="rt") as handle:
         reader = DictReader(

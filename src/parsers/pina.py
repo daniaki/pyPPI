@@ -57,15 +57,29 @@ def parse_interactions(
             if not sources or not targets:
                 continue
 
-            psimi_ids = psimi_re.findall(row[detection_method_column])
-            pmids = [m[0] for m in pubmed_re.findall(row[pmid_column])]
+            # These lines should be equal in length
+            assert len(row[pmid_column].split("|")) == len(
+                row[detection_method_column].split("|")
+            )
+            # Some PMIDs will be DOIs so ignore these.
+            evidence_ids = [
+                (pmid, psimi)
+                for (pmid, psimi) in zip(
+                    row[pmid_column].split("|"),
+                    row[detection_method_column].split("|"),
+                )
+                if pubmed_re.fullmatch(pmid)
+            ]
             evidence: List[InteractionEvidenceData] = []
-            if len(pmids):
-                assert len(pmids) == len(psimi_ids)
-                for pmid, psimi in zip(pmids, psimi_ids):
-                    evidence.append(
-                        InteractionEvidenceData(pubmed=pmid, psimi=psimi)
+            # Zip will remove trailing psimi
+            for (pmid, psimi) in evidence_ids:
+                match = psimi_re.match(psimi)
+                evidence.append(
+                    InteractionEvidenceData(
+                        pubmed=pmid, psimi=match.group() if match else None
                     )
+                )
+
             assert len(sources) == 1
             assert len(targets) == 1
             yield InteractionData(

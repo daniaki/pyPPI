@@ -103,7 +103,16 @@ class KeywordTermData:
         return hash(astuple(self))
 
 
-@dataclass(frozen=True)
+@dataclass
 class GeneData:
     symbol: str
     relation: str
+
+    def __hash__(self):
+        return hash(astuple(self))
+
+    def __post_init__(self):
+        if self.relation not in ("primary", "synonym"):
+            raise ValueError(
+                f"{self.relation} must be either 'primary' or 'synonym'"
+            )

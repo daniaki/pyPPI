@@ -56,19 +56,38 @@ def parse_interactions(
             if not sources or not targets:
                 continue
 
-            psimi_ids = psimi_re.findall(row[detection_method_column])
-            pmids = [m[0] for m in pubmed_re.findall(row[pmid_column])]
+            # These lines should be equal in length, unless one PSI-MI term
+            # has been provided for multiple PMIDs.
+            pmids = row[pmid_column].split("|")
+            psimis = row[detection_method_column].split("|")
+            try:
+                assert len(pmids) == len(psimis)
+                generator = zip(pmids, psimis)
+            except AssertionError:
+                # There should only be one MI term. Fail otherwise.
+                assert len(psimis) == 1
+                assert len(pmids) >= 1
+                # Pad psimi list to even out length
+                generator = zip(pmids, psimis * len(pmids))
+
+            # Some PMIDs will be DOIs so ignore these.
+            evidence_ids = [
+                (pmid, psimi)
+                for (pmid, psimi) in generator
+                if pubmed_re.fullmatch(pmid)
+            ]
 
             # Iterate through the list of tuples, each tuple being a list of
             # accessions found within a line for each of the two proteins.
             for source, target in itertools.product(sources, targets):
                 evidence: List[InteractionEvidenceData] = []
-                if len(pmids):
-                    assert len(psimi_ids) == len(pmids)
-                    for pmid, psimi in zip(pmids, psimi_ids):
-                        evidence.append(
-                            InteractionEvidenceData(pubmed=pmid, psimi=psimi)
+                for pmid, psimi in evidence_ids:
+                    match = None if not psimi else psimi_re.findall(psimi)
+                    evidence.append(
+                        InteractionEvidenceData(
+                            pubmed=pmid, psimi=None if not match else match[0]
                         )
+                    )
 
                 yield InteractionData(
                     source=source,
