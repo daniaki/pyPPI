@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Iterable
+from typing import List, Optional, Tuple, Iterable, Union
 from functools import reduce
 
 import pandas as pd
@@ -86,7 +86,7 @@ class InteractionEvidence(BaseModel):
             return str(None)
 
     @classmethod
-    def filter_by_index(
+    def filter_by_pubmed_and_psimi(
         cls,
         identifiers: List[Tuple[str, Optional[str]]],
         query: Optional[peewee.ModelSelect] = None,
@@ -189,14 +189,6 @@ class Interaction(BaseModel):
     )
 
     # Interaction metadata.
-    organism = peewee.IntegerField(
-        null=True,
-        default=None,
-        help_text=(
-            "Numeric organism code. Eg 9606. This can be None if the "
-            "interaction is a species hybrid."
-        ),
-    )
     labels = peewee.ManyToManyField(
         model=InteractionLabel, backref="interactions"
     )
@@ -234,62 +226,202 @@ class Interaction(BaseModel):
         return (source, target)
 
     @classmethod
-    def filter_by_index(
-        cls,
-        identifiers: List[Tuple[str, str]],
-        query: Optional[peewee.ModelSelect] = None,
+    def filter_by_pmid(
+        cls, pmids: Iterable[str], query: Optional[peewee.ModelSelect] = None
     ) -> peewee.ModelSelect:
-        cls.bulk_create
         """
-        Filter by source and target identifiers. Identifiers will be formatted 
-        prior to filtering.
+        Filter interactions by PubMed reference.
         
         Parameters
         ----------
-        identifiers : List[Tuple[str, str]]
-            Uniprot identifiers using a (source, target) format.
-        query : Optional[ModelSelect], optional
-            Query to filter. Defaults to all rows.
+        pmids : Iterable[str]
+            An iterable of PubMed identifiers.
+        
+        query : Optional[peewee.ModelSelect], optional
+            An existing ModelSelect query, by default None and applies
+            filter over all rows.
         
         Returns
         -------
         peewee.ModelSelect
         """
         query = query or cls.all()
-        # Create table alias for target column (can't use `UniprotIdentifier`
-        # column twice)
-        UA = UniprotIdentifier.alias()
-        # Create queries to search for each tuple using an AND query.
-        queries = [
-            (
-                (
-                    peewee.fn.Upper(UniprotIdentifier.identifier)
-                    == UniprotIdentifier.format(source)
-                )
-                & (
-                    peewee.fn.Upper(UA.identifier)
-                    == UniprotIdentifier.format(target)
-                )
-            )
-            for source, target in identifiers
-        ]
-        # Search all tuple element using an OR query.
+        pmids = set(PubmedIdentifier.format(pmid).lower() for pmid in pmids)
         return (
-            query.select(cls, UniprotIdentifier, UA)
-            .join(UniprotIdentifier, on=(cls.source == UniprotIdentifier.id))
+            query.select(cls, InteractionEvidence, PubmedIdentifier)
+            .join(cls.evidence.get_through_model())
+            .join(InteractionEvidence)
+            .join(PubmedIdentifier)
+            .where(peewee.fn.Lower(PubmedIdentifier.identifier).in_(pmids))
             .switch(cls)
-            .join(UA, on=(cls.target == UA.id).alias("target"))
-            .where(reduce(lambda x, y: x | y, queries[1:], queries[0]))
-            .switch(cls)
-            .select(cls)  # Context switch back to interaction.
         )
 
     @classmethod
+    def filter_by_database(
+        cls,
+        databases: Iterable[str],
+        query: Optional[peewee.ModelSelect] = None,
+    ) -> peewee.ModelSelect:
+        """
+        Filter interactions by database name.
+        
+        Parameters
+        ----------
+        databases : Iterable[str]
+            An iterable of database names.
+        
+        query : Optional[peewee.ModelSelect], optional
+            An existing ModelSelect query, by default None and applies
+            filter over all rows.
+        
+        Returns
+        -------
+        peewee.ModelSelect
+        """
+        query = query or cls.all()
+        dbs = set(db.lower() for db in databases)
+        return (
+            query.select(cls, InteractionDatabase)
+            .join(cls.databases.get_through_model())
+            .join(InteractionDatabase)
+            .where(peewee.fn.Lower(InteractionDatabase.name).in_(dbs))
+            .switch(cls)
+        )
+
+    @classmethod
+    def filter_by_label(
+        cls, labels: Iterable[str], query: Optional[peewee.ModelSelect] = None
+    ) -> peewee.ModelSelect:
+        """
+        Filter interactions by labels.
+        
+        Parameters
+        ----------
+        labels : Iterable[str]
+            An iterable of labels.
+        
+        query : Optional[peewee.ModelSelect], optional
+            An existing ModelSelect query, by default None and applies
+            filter over all rows.
+        
+        Returns
+        -------
+        peewee.ModelSelect
+        """
+        labels = set(l.lower() for l in labels)
+        query = query or cls.all()
+        return (
+            query.select(cls, InteractionLabel)
+            .join(cls.labels.get_through_model())
+            .join(InteractionLabel)
+            .where(peewee.fn.Lower(InteractionLabel.text).in_(labels))
+            .switch(cls)
+        )
+
+    @classmethod
+    def filter_by_source(
+        cls,
+        identifiers: Iterable[str],
+        query: Optional[peewee.ModelSelect] = None,
+    ) -> peewee.ModelSelect:
+        """
+        Filter interactions by UniProt accession appearing as a source node.
+        
+        Parameters
+        ----------
+        identifiers : Iterable[str]
+            An iterable of accessions.
+        
+        query : Optional[peewee.ModelSelect], optional
+            An existing ModelSelect query, by default None and applies
+            filter over all rows.
+        
+        Returns
+        -------
+        peewee.ModelSelect
+        """
+        identifiers = set(i.upper() for i in identifiers)
+        fn = peewee.fn.Lower(UniprotIdentifier.identifier)
+        query = query or cls.all()
+        return (
+            query.select(cls, Protein, UniprotIdentifier)
+            .join(Protein, on=(cls.source_id == Protein.id))
+            .join(
+                UniprotIdentifier,
+                on=(Protein.identifier == UniprotIdentifier.id),
+            )
+            .where(fn.in_(identifiers))
+            .switch(cls)
+        )
+
+    @classmethod
+    def filter_by_target(
+        cls,
+        identifiers: Iterable[str],
+        query: Optional[peewee.ModelSelect] = None,
+    ) -> peewee.ModelSelect:
+        """
+        Filter interactions by UniProt accession appearing as a target node.
+        
+        Parameters
+        ----------
+        identifiers : Iterable[str]
+            An iterable of accessions.
+        
+        query : Optional[peewee.ModelSelect], optional
+            An existing ModelSelect query, by default None and applies
+            filter over all rows.
+        
+        Returns
+        -------
+        peewee.ModelSelect
+        """
+        identifiers = set(i.lower() for i in identifiers)
+        fn = peewee.fn.Lower(UniprotIdentifier.identifier)
+        query = query or cls.all()
+        return (
+            query.select(cls, Protein, UniprotIdentifier)
+            .join(Protein, on=(cls.target == Protein.id))
+            .join(
+                UniprotIdentifier,
+                on=(Protein.identifier == UniprotIdentifier.id),
+            )
+            .where(fn.in_(identifiers))
+            .switch(cls)
+        )
+
+    # @classmethod
+    # def filter_by_edge(
+    #     cls,
+    #     edges: List[Tuple[str, str]],
+    #     query: Optional[peewee.ModelSelect] = None,
+    # ) -> peewee.ModelSelect:
+    #     cls.bulk_create
+    #     """
+    #     Filter by source and target node identifiers. Search is case
+    #     insensitive.
+        
+    #     Parameters
+    #     ----------
+    #     edges : List[Tuple[str, str]]
+    #         Uniprot identifiers using a (`source`, `target`) format.
+        
+    #     query : Optional[ModelSelect], optional
+    #         Query to filter. Defaults to all rows.
+        
+    #     Returns
+    #     -------
+    #     peewee.ModelSelect
+    #     """
+    #     indices = set(str(edge) for edge in edges)
+    #     return cls.select(cls).where(peewee.fn.Lower(cls.index).in_(indices))
+
+    @classmethod
     def to_dataframe(
-        cls, queryset: Optional[peewee.ModelSelect] = None
+        cls, query: Optional[peewee.ModelSelect] = None
     ) -> pd.DataFrame:
-        if queryset is None:
-            queryset = cls.select()
+        if query is None:
+            query = cls.select()
 
         interactions: List[dict] = []
         interaction: Interaction
@@ -307,7 +439,7 @@ class Interaction(BaseModel):
 
         # df column, m2m attribute name, m2m model attribute to use as
         # string value
-        for interaction in queryset:
+        for interaction in query:
             source = interaction.source.identifier.identifier
             target = interaction.target.identifier.identifier
             index.append(",".join(sorted([source, target])))
