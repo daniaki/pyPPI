@@ -2,10 +2,15 @@ import csv
 import itertools
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, Generator, List, Set, Union
+from typing import Dict, Generator, List, Set, Union, Optional
 
 from ..utilities import is_null
-from ..validators import uniprot_re, psimi_re, pubmed_re, validate_accession
+from ..validators import (
+    uniprot_re,
+    psimi_re,
+    is_uniprot,
+    is_pubmed,
+)
 from . import open_file
 from .types import InteractionData, InteractionEvidenceData
 
@@ -44,18 +49,27 @@ def parse_interactions(
 
             # These formats should contain ONE uniprot interactor in a
             # single line, or none. Continue parsing if the latter.
-            sources: List[str] = [
-                str(validate_accession(m[0]))
-                for m in uniprot_re.findall(row[uniprot_source_column])
-                if validate_accession(m[0]) is not None
-            ]
-            targets: List[str] = [
-                str(validate_accession(m[0]))
-                for m in uniprot_re.findall(row[uniprot_target_column])
-                if validate_accession(m[0]) is not None
-            ]
-            if not sources or not targets:
+            source: Optional[str] = None
+            target: Optional[str] = None
+
+            source_match = uniprot_re.search(row[uniprot_source_column])
+            target_match = uniprot_re.search(row[uniprot_target_column])
+            if source_match:
+                source = source_match.group().strip().upper()
+            if target_match:
+                target = target_match.group().strip().upper()
+
+            if not source or not target:
                 continue
+
+            if not is_uniprot(source):
+                raise ValueError(
+                    f"Source '{source}' is not a valid UniProt identifier."
+                )
+            if not is_uniprot(target):
+                raise ValueError(
+                    f"Target '{target}' is not a valid UniProt identifier."
+                )
 
             # These lines should be equal in length
             assert len(row[pmid_column].split("|")) == len(
@@ -63,15 +77,14 @@ def parse_interactions(
             )
             # Some PMIDs will be DOIs so ignore these.
             evidence_ids = [
-                (pmid, psimi)
+                (pmid.strip().upper(), psimi.strip().upper())
                 for (pmid, psimi) in zip(
                     row[pmid_column].split("|"),
                     row[detection_method_column].split("|"),
                 )
-                if pubmed_re.fullmatch(pmid)
+                if is_pubmed(pmid.strip().upper())
             ]
             evidence: List[InteractionEvidenceData] = []
-            # Zip will remove trailing psimi
             for (pmid, psimi) in evidence_ids:
                 match = psimi_re.match(psimi)
                 evidence.append(
@@ -80,12 +93,9 @@ def parse_interactions(
                     )
                 )
 
-            assert len(sources) == 1
-            assert len(targets) == 1
             yield InteractionData(
-                source=sources[0],
-                target=targets[0],
-                organism=9606,
+                source=source,
+                target=target,
                 evidence=list(sorted(set(evidence), key=lambda e: hash(e))),
-                databases=["PINA2"],
+                databases=["pina"],
             )

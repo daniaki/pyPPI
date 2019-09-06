@@ -7,6 +7,7 @@ import tqdm
 
 from ..clients import kegg
 from ..settings import LOGGER_NAME
+from ..validators import is_uniprot, format_accession
 from .types import InteractionData
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -20,6 +21,7 @@ def parse_interactions(
         "state change",
         "missing interaction",
     ),
+    organism: str = "hsa",
     show_progress: bool = True,
     client: Optional[kegg.Kegg] = None,
 ) -> Generator[InteractionData, None, None]:
@@ -28,11 +30,13 @@ def parse_interactions(
     if not client:
         client = kegg.Kegg()
 
-    logger.info("Downloading UniProt mapping. Please stand by.")
+    logger.info("Downloading Kegg to UniProt mapping.")
     to_uniprot: Dict[str, List[str]] = client.convert("hsa", "uniprot")
 
-    logger.info("Downloading pathways. Please stand by.")
-    pathway_accessions: List[str] = list(client.pathways("hsa")["accession"])
+    logger.info("Downloading HSA pathways.")
+    pathway_accessions: List[str] = list(
+        client.pathways(organism)["accession"]
+    )
     pathways: Generator[kegg.KeggPathway, None, None] = (
         client.pathway_detail(pathway) for pathway in pathway_accessions
     )
@@ -58,7 +62,11 @@ def parse_interactions(
     for row in interactions.to_dict("record"):
         sources = to_uniprot.get(row["source"], None)
         targets = to_uniprot.get(row["target"], None)
-        labels = [l for l in row["label"] if l not in exclude_labels]
+        labels = list(
+            sorted(
+                set(l.lower() for l in row["label"] if l not in exclude_labels)
+            )
+        )
 
         # Continue if there are no labels to parse for the interaction.
         if not labels:
@@ -71,10 +79,21 @@ def parse_interactions(
             # Otherwise product the lists and yield an interaction for
             # each source and target.
             for (source, target) in product(sources, targets):
+                source = source.strip().upper()
+                target = target.strip().upper()
+
+                if not is_uniprot(source):
+                    raise ValueError(
+                        f"Source '{source}' is not a valid UniProt identifier."
+                    )
+                if not is_uniprot(target):
+                    raise ValueError(
+                        f"Target '{target}' is not a valid UniProt identifier."
+                    )
+
                 yield InteractionData(
                     source=source,
                     target=target,
-                    organism=9606,
                     labels=labels,
                     databases=["kegg"],
                 )

@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Generator, Union, Optional
 
-from ..validators import validate_accession
+from ..validators import format_accession, is_uniprot
 from . import open_file
 from .types import InteractionData
 
@@ -29,15 +29,21 @@ def parse_interactions(
         for line in handle:
             xs = line.strip().split("\t")
 
-            source = validate_accession(xs[source_idx].strip().upper())
-            target = validate_accession(xs[target_idx].strip().upper())
+            source = format_accession(xs[source_idx].strip().upper())
+            target = format_accession(xs[target_idx].strip().upper())
 
             if not (source and target):
                 continue
 
+            if not is_uniprot(source):
+                raise ValueError(
+                    f"Source '{source}' is not a valid UniProt identifier."
+                )
+            if not is_uniprot(target):
+                raise ValueError(
+                    f"Target '{target}' is not a valid UniProt identifier."
+                )
+
             yield InteractionData(
-                source=source,
-                target=target,
-                organism=9606,
-                databases=["BioPlex"],
+                source=source, target=target, databases=["bioplex"]
             )

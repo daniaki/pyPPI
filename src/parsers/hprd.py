@@ -18,6 +18,7 @@ from typing import (
 
 from ..constants import PSIMI_NAME_TO_IDENTIFIER, UNIPROT_ORD_KEY, Columns
 from ..utilities import is_null
+from ..validators import is_pubmed, is_uniprot
 from . import open_file
 from .types import InteractionData, InteractionEvidenceData
 
@@ -71,7 +72,7 @@ class PTMEntry:
         modification_type: Optional[str] = None,
         reference_id: Union[str, Iterable[str]] = (),
         experiment_type: Union[str, Iterable[str]] = (),
-        **kwargs
+        **kwargs,
     ):
         self.enzyme_hprd_id = enzyme_hprd_id
         if self.enzyme_hprd_id == "-":
@@ -116,7 +117,7 @@ class HPRDXrefEntry:
         hprd_id: str,
         gene_symbol: Optional[str] = None,
         swissprot_id: Iterable[str] = (),
-        **kwargs
+        **kwargs,
     ):
         self.hprd_id = hprd_id
 
@@ -261,9 +262,9 @@ def parse_interactions(
 
         # Remove duplicated pubmed ids
         evidence = [
-            InteractionEvidenceData(pubmed=x.strip()) for
-            x in set(ptm.reference_id)
-            if not is_null(x)
+            InteractionEvidenceData(pubmed=x.strip().upper())
+            for x in set(ptm.reference_id)
+            if not is_null(x) and is_pubmed(x.strip().upper())
         ]
 
         uniprot_sources = getattr(
@@ -275,11 +276,22 @@ def parse_interactions(
 
         if uniprot_sources and uniprot_targets:
             for (source, target) in product(uniprot_sources, uniprot_targets):
+                source = source.strip().upper()
+                target = target.strip().upper()
+
+                if not is_uniprot(source):
+                    raise ValueError(
+                        f"Source '{source}' is not a valid UniProt identifier."
+                    )
+                if not is_uniprot(target):
+                    raise ValueError(
+                        f"Target '{target}' is not a valid UniProt identifier."
+                    )
+
                 yield InteractionData(
                     source=source,
                     target=target,
-                    organism=9606,
-                    labels=[label],
+                    labels=[label.lower()],
                     evidence=evidence,
-                    databases=["HPRD"],
+                    databases=["hprd"],
                 )

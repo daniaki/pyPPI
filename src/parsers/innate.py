@@ -1,9 +1,14 @@
 import csv
 import itertools
 from pathlib import Path
-from typing import Generator, List, Union
+from typing import Generator, List, Union, Optional
 
-from ..validators import psimi_re, pubmed_re, uniprot_re, validate_accession
+from ..validators import (
+    psimi_re,
+    uniprot_re,
+    is_uniprot,
+    is_pubmed,
+)
 from . import open_file
 from .types import InteractionData, InteractionEvidenceData
 
@@ -42,19 +47,29 @@ def parse_interactions(
                 continue
 
             # These formats might contain multiple uniprot interactors in a
-            # single line, or none. Continue parsing if the latter.
-            sources: List[str] = [
-                str(validate_accession(m[0]))
-                for m in uniprot_re.findall(row[uniprot_source_column])
-                if validate_accession(m[0]) is not None
-            ]
-            targets: List[str] = [
-                str(validate_accession(m[0]))
-                for m in uniprot_re.findall(row[uniprot_target_column])
-                if validate_accession(m[0]) is not None
-            ]
-            if not sources or not targets:
+            # single line, or none. Continue parsing if the latter. Take
+            # first identifier only.
+            source: Optional[str] = None
+            target: Optional[str] = None
+
+            source_match = uniprot_re.search(row[uniprot_source_column])
+            target_match = uniprot_re.search(row[uniprot_target_column])
+            if source_match:
+                source = source_match.group().strip().upper()
+            if target_match:
+                target = target_match.group().strip().upper()
+
+            if not source or not target:
                 continue
+
+            if not is_uniprot(source):
+                raise ValueError(
+                    f"Source '{source}' is not a valid UniProt identifier."
+                )
+            if not is_uniprot(target):
+                raise ValueError(
+                    f"Target '{target}' is not a valid UniProt identifier."
+                )
 
             # These lines should be equal in length, unless one PSI-MI term
             # has been provided for multiple PMIDs.
@@ -72,29 +87,25 @@ def parse_interactions(
 
             # Some PMIDs will be DOIs so ignore these.
             evidence_ids = [
-                (pmid, psimi)
+                (pmid.strip().upper(), psimi.strip().upper())
                 for (pmid, psimi) in generator
-                if pubmed_re.fullmatch(pmid)
+                if is_pubmed(pmid.strip().upper())
             ]
 
             # Iterate through the list of tuples, each tuple being a list of
             # accessions found within a line for each of the two proteins.
-            for source, target in itertools.product(sources, targets):
-                evidence: List[InteractionEvidenceData] = []
-                for pmid, psimi in evidence_ids:
-                    match = None if not psimi else psimi_re.findall(psimi)
-                    evidence.append(
-                        InteractionEvidenceData(
-                            pubmed=pmid, psimi=None if not match else match[0]
-                        )
+            evidence: List[InteractionEvidenceData] = []
+            for pmid, psimi in evidence_ids:
+                match = None if not psimi else psimi_re.search(psimi)
+                evidence.append(
+                    InteractionEvidenceData(
+                        pubmed=pmid, psimi=None if not match else match.group()
                     )
-
-                yield InteractionData(
-                    source=source,
-                    target=target,
-                    organism=9606,
-                    evidence=list(
-                        sorted(set(evidence), key=lambda e: hash(e))
-                    ),
-                    databases=["InnateDB"],
                 )
+
+            yield InteractionData(
+                source=source,
+                target=target,
+                evidence=list(sorted(set(evidence), key=lambda e: hash(e))),
+                databases=["innatedb"],
+            )
