@@ -14,6 +14,7 @@ mock = "*"
 pytest-sugar = "*"
 pytest-cov = "*"
 pytest = "==5.0.1"
+jupyterlab = "*"
 
 [packages]
 flask = "*"
