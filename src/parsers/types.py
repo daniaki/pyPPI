@@ -1,6 +1,7 @@
-from typing import List, Tuple, Optional, Dict
-from dataclasses import dataclass, field, astuple
+from typing import List, Tuple, Optional, Dict, Iterable
+from dataclasses import dataclass, field, astuple, asdict
 
+from ..database import models
 from ..constants import GeneOntologyCategory
 
 
@@ -25,15 +26,15 @@ class InteractionEvidenceData:
 class InteractionData:
     source: str
     target: str
-    organism: int
     labels: List[str] = field(default_factory=list)
     databases: List[str] = field(default_factory=list)
     evidence: List[InteractionEvidenceData] = field(default_factory=list)
 
     def __hash__(self):
-        return hash((self.source, self.target, self.organism))
+        return hash((self.source, self.target))
 
     def __add__(self, other):
+        """Returns new instance with aggregated fields."""
         if not isinstance(other, self.__class__):
             raise TypeError(
                 f"unsupported operand type(s) for +: "
@@ -42,18 +43,33 @@ class InteractionData:
 
         if hash(self) != hash(other):
             raise ValueError(
-                f"Cannot add instances with different source/target values or "
-                f"organism codes."
+                f"Cannot add instances with different source/target "
+                f"values nodes."
             )
 
         return InteractionData(
             source=self.source,
             target=self.target,
-            organism=self.organism,
             labels=sorted(set(self.labels + other.labels)),
             databases=sorted(set(self.databases + other.databases)),
             evidence=sorted(set(self.evidence + other.evidence)),
         )
+
+    @classmethod
+    def aggregate(
+        cls, interactions: Iterable["InteractionData"]
+    ) -> Iterable["InteractionData"]:
+        # First aggregate all interaction data instances.
+        aggregated: Dict[int, InteractionData] = dict()
+        interaction: InteractionData
+        for interaction in interactions:
+            # Interactions are hashable based on source, target and organism
+            # code. Order of source target is important.
+            if hash(interaction) in aggregated:
+                aggregated[hash(interaction)] += interaction
+            else:
+                aggregated[hash(interaction)] = interaction
+        return list(aggregated.values())
 
 
 @dataclass
@@ -110,9 +126,3 @@ class GeneData:
 
     def __hash__(self):
         return hash(astuple(self))
-
-    def __post_init__(self):
-        if self.relation not in ("primary", "synonym"):
-            raise ValueError(
-                f"{self.relation} must be either 'primary' or 'synonym'"
-            )
