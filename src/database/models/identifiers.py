@@ -2,7 +2,7 @@ from typing import Iterable, Optional, Callable, Any
 
 import peewee
 
-from ... import validators
+from ... import validators, utilities
 from .base import BaseModel
 
 
@@ -18,44 +18,9 @@ __all__ = [
 ]
 
 
-def add_prefix(
-    identifier: str, prefix: Optional[str] = None, sep: Optional[str] = None
-):
-    """
-    Adds a prefix separated by a delimiter to an accession. Prefix will
-    only be added if it isn't already in the accession.
-
-    Parameters
-    ----------
-    identifier : str
-        String accession.
-    prefix : Optional[str], optional
-        Prefix to append. Identifier returned as is if not provided.
-    sep : Optional[str], optional
-        Delimiter to separate accession and prefix with.
-
-    Returns
-    -------
-    str
-    """
-    if not prefix:
-        return identifier
-    if not identifier.lower().startswith(f"{prefix.lower()}"):
-        if sep:
-            return f"{prefix}{sep}{identifier}"
-        return f"{prefix}{identifier}"
-    return identifier
-
-
 class ExternalIdentifier(BaseModel):
     # Database name of the identifier.
     DB_NAME: Optional[str] = None
-    # Prefix for appending to an identifier if missing. For example the
-    # GO in GO:<accession>.
-    PREFIX: Optional[str] = None
-    # How to separate identifier and prefix. For example the ':' between
-    # GO and <accession>.
-    SEP: Optional[str] = ":"
 
     identifier = peewee.CharField(
         null=False,
@@ -78,6 +43,7 @@ class ExternalIdentifier(BaseModel):
     def get_by_identifier(
         cls, identifiers: Iterable[str]
     ) -> peewee.ModelSelect:
+        """Select identifiers by string accession values."""
         return cls.select().where(
             peewee.fn.Upper(cls.identifier)
             << set(i.upper() for i in identifiers)
@@ -89,100 +55,88 @@ class ExternalIdentifier(BaseModel):
         How to format identifier. Called after prefix is performed and must
         accept a single input and return a single string.
         """
-        return add_prefix(identifier, cls.PREFIX, cls.SEP).upper()
+        if utilities.is_null(identifier):
+            raise ValueError(f"'identifier' cannot be null.")
+        return identifier.strip().upper()
 
     @classmethod
-    def validate(cls, identifier: str) -> Optional[Any]:
+    def is_valid(cls, identifier: str) -> bool:
         """
         How to validate identifier. Called after formatter is called and must
         accept a single input and return a single boolean.
         """
         raise NotImplementedError()
 
+    @classmethod
+    def validate(cls, identifier: str) -> str:
+        if utilities.is_null(identifier):
+            raise ValueError(f"'identifier' cannot be null.")
+        if not cls.is_valid(identifier):
+            """Validate an accession is valid, or raise a `ValueError`."""
+            raise ValueError(
+                f"'{identifier}' is not a valid {cls.__name__}' identifier."
+            )
+        return identifier
+
     def format_for_save(self):
+        self.dbname = self.DB_NAME
         if self.DB_NAME is None:
             raise NotImplementedError("Concrete table must define DB_NAME.")
-
-        if self.identifier is None:
-            raise TypeError(f"The 'identifier' attribute cannot be null.")
-
-        self.identifier = self.format(self.identifier)
-        if not self.validate(self.identifier):
-            raise ValueError(
-                f"'{self.identifier}' is not a valid "
-                f"'{self.__class__.__name__}' identifier."
-            )
-
-        self.dbname = self.DB_NAME
-
+        self.identifier = self.validate(self.format(self.identifier))
         return super().format_for_save()
 
 
 class GeneOntologyIdentifier(ExternalIdentifier):
     DB_NAME = "Gene Ontology"
-    PREFIX = "GO"
-    SEP = ":"
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_go(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_go(identifier) is not None
 
 
 class PubmedIdentifier(ExternalIdentifier):
     DB_NAME = "PubMed"
-    PREFIX = "PUBMED"
-    SEP = ":"
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_pubmed(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_pubmed(identifier) is not None
 
 
 class PsimiIdentifier(ExternalIdentifier):
-    DB_NAME = "Psimi"
-    PREFIX = "MI"
-    SEP = ":"
+    DB_NAME = "MI Ontology"
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_psimi(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_psimi(identifier) is not None
 
 
 class UniprotIdentifier(ExternalIdentifier):
     DB_NAME = "UniProt"
-    PREFIX = None
-    SEP = None
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_uniprot(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_uniprot(identifier) is not None
 
 
 class KeywordIdentifier(ExternalIdentifier):
     DB_NAME = "UniProt KW"
-    PREFIX = "KW"
-    SEP = "-"
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_keyword(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_keyword(identifier) is not None
 
 
 class InterproIdentifier(ExternalIdentifier):
     DB_NAME = "InterPro"
-    PREFIX = "IPR"
-    SEP = None
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_interpro(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_interpro(identifier) is not None
 
 
 class PfamIdentifier(ExternalIdentifier):
     DB_NAME = "PFAM"
-    PREFIX = "PF"
-    SEP = None
 
     @classmethod
-    def validate(cls, identifier: str):
-        return validators.is_pfam(identifier)
+    def is_valid(cls, identifier: str) -> bool:
+        return validators.is_pfam(identifier) is not None
