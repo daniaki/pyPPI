@@ -6,7 +6,7 @@ import gzip
 import logging
 import urllib.request
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Union, Iterable
 
 from .constants import NULL_RE
 from .settings import LOGGER_NAME
@@ -15,6 +15,13 @@ __all__ = ["is_null", "download_from_url"]
 
 
 logger: logging.Logger = logging.getLogger(LOGGER_NAME)
+
+
+def chunks(ls: Iterable, batch_size: int):
+    """Chunk an iterable into sublists of size `batch_size`."""
+    items = list(ls)
+    for i in range(0, len(items), batch_size):
+        yield items[i : i + batch_size]
 
 
 def is_null(value: Any) -> bool:
