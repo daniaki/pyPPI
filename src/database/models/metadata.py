@@ -120,7 +120,7 @@ class InterproTerm(Annotation):
         self.entry_type = (
             None
             if is_null(self.entry_type)
-            else self.entry_type.strip().capitalize()
+            else self.entry_type.strip().lower()
         )
         return super().format_for_save()
 
