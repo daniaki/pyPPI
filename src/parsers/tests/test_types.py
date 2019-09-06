@@ -35,51 +35,47 @@ class TestInteractionEvidenceData:
         assert e3 in items
         assert e4 in items
 
+    def test_normalize(self):
+        e = types.InteractionEvidenceData("1", "mi:0001")
+        e.normalize().pubmed == "1"
+        e.normalize().psimi == "MI:0001"
+
+        e = types.InteractionEvidenceData("1", None)
+        e.normalize().pubmed == "1"
+        e.normalize().psimi == None
+
 
 class TestInteractionData:
     def test_hash_is_based_on_source_and_target(self):
-        instance = types.InteractionData(
-            source="P12345", target="P12346", organism=9606
-        )
-        assert hash(instance) == hash(
-            (instance.source, instance.target, instance.organism)
-        )
+        instance = types.InteractionData(source="P12345", target="P12346")
+        assert hash(instance) == hash((instance.source, instance.target))
 
     def test_type_error_adding_to_different_type(self):
         with pytest.raises(TypeError):
-            instance = types.InteractionData(
-                source="P12345", target="P12346", organism=9606
-            )
+            instance = types.InteractionData(source="P12345", target="P12346")
             instance + []
 
     def test_value_error_adding_instance_with_different_hash(self):
-        instance_1 = types.InteractionData(
-            source="P12345", target="P12346", organism=9606
-        )
-        instance_2 = types.InteractionData(
-            source="P12345", target="P12347", organism=9606
-        )
+        instance_1 = types.InteractionData(source="P12345", target="P12346")
+        instance_2 = types.InteractionData(source="P12345", target="P64321")
         with pytest.raises(ValueError):
             instance_1 + instance_2
 
     def test_add_sorts_and_removes_duplicate_labels(self):
         instance_1 = types.InteractionData(
-            source="P12345", target="P12346", organism=9606, labels=["b", "c"]
+            source="P12345", target="P12346", labels=["b", "c"]
         )
         instance_2 = types.InteractionData(
-            source="P12345", target="P12346", organism=9606, labels=["a"]
+            source="P12345", target="P12346", labels=["a"]
         )
         assert (instance_1 + instance_2).labels == ["a", "b", "c"]
 
     def test_add_sorts_and_removes_duplicate_databases(self):
         instance_1 = types.InteractionData(
-            source="P12345",
-            target="P12346",
-            organism=9606,
-            databases=["b", "c"],
+            source="P12345", target="P12346", databases=["b", "c"]
         )
         instance_2 = types.InteractionData(
-            source="P12345", target="P12346", organism=9606, databases=["a"]
+            source="P12345", target="P12346", databases=["a"]
         )
         assert (instance_1 + instance_2).databases == ["a", "b", "c"]
 
@@ -87,7 +83,6 @@ class TestInteractionData:
         instance_1 = types.InteractionData(
             source="P12345",
             target="P12346",
-            organism=9606,
             evidence=[
                 types.InteractionEvidenceData("3", "MI:0003"),
                 types.InteractionEvidenceData("2", "MI:0002"),
@@ -97,7 +92,6 @@ class TestInteractionData:
         instance_2 = types.InteractionData(
             source="P12345",
             target="P12346",
-            organism=9606,
             evidence=[types.InteractionEvidenceData("2", "MI:0002")],
         )
         assert (instance_1 + instance_2).evidence == [
@@ -111,7 +105,6 @@ class TestInteractionData:
         instance_1 = types.InteractionData(
             source="P12345",
             target="P12346",
-            organism=9606,
             databases=["kegg"],
             labels=["activation"],
             evidence=[
@@ -123,7 +116,6 @@ class TestInteractionData:
         instance_2 = types.InteractionData(
             source="P12345",
             target="P12346",
-            organism=1000,
             databases=["kegg"],
             labels=["methylation"],
             evidence=[
@@ -135,6 +127,87 @@ class TestInteractionData:
         assert len(items) == 2
         assert instance_1 in items
         assert instance_2 in items
+
+    def test_aggregate_adds_fields_of_instances_with_same_hash(self):
+        instance_1 = types.InteractionData(
+            source="P12345",
+            target="P12346",
+            databases=["kegg"],
+            labels=["activation"],
+            evidence=[
+                types.InteractionEvidenceData("3", "MI:0003"),
+                types.InteractionEvidenceData("2", "MI:0002"),
+                types.InteractionEvidenceData("1", "MI:0001"),
+            ],
+        )
+        instance_2 = types.InteractionData(
+            source="P12345",
+            target="P12346",
+            databases=["hprd", "kegg"],
+            labels=["methylation", "activation"],
+            evidence=[
+                types.InteractionEvidenceData("3", "MI:0003"),
+                types.InteractionEvidenceData("2", "MI:0002"),
+            ],
+        )
+
+        result = types.InteractionData.aggregate([instance_1, instance_2])
+        assert len(result) == 1
+
+        assert result[0].databases == ["hprd", "kegg"]
+        assert result[0].labels == ["activation", "methylation"]
+        assert result[0].evidence == sorted(instance_1.evidence)
+
+    def test_aggregate_does_not_modify_if_different_hash(self):
+        instance_1 = types.InteractionData(
+            source="P12345",
+            target="P12346",
+            databases=["kegg"],
+            labels=["activation"],
+            evidence=[
+                types.InteractionEvidenceData("3", "MI:0003"),
+                types.InteractionEvidenceData("2", "MI:0002"),
+                types.InteractionEvidenceData("1", "MI:0001"),
+            ],
+        )
+        instance_2 = types.InteractionData(
+            source="P12345",
+            target="P64321",
+            databases=["hprd", "kegg"],
+            labels=["methylation", "activation"],
+            evidence=[
+                types.InteractionEvidenceData("3", "MI:0003"),
+                types.InteractionEvidenceData("2", "MI:0002"),
+            ],
+        )
+
+        result = types.InteractionData.aggregate([instance_1, instance_2])
+        assert len(result) == 2
+        assert result[0] == instance_1
+        assert result[1] == instance_2
+
+    def test_normalize(self):
+        instance = types.InteractionData(
+            source="p12345",
+            target="p12346",
+            databases=["KEGG", "kegg"],
+            labels=["Methylation", "Activation"],
+            evidence=[
+                types.InteractionEvidenceData("1", "mi:0001"),
+                types.InteractionEvidenceData("1", "MI:0001"),
+                types.InteractionEvidenceData("3", "MI:0003"),
+            ],
+        )
+
+        new = instance.normalize()
+        assert new.source == "P12345"
+        assert new.target == "P12346"
+        assert new.databases == ["kegg"]
+        assert new.labels == ["activation", "methylation"]
+        assert new.evidence == [
+            types.InteractionEvidenceData("1", "MI:0001"),
+            types.InteractionEvidenceData("3", "MI:0003"),
+        ]
 
 
 class TestPfamTermData:
@@ -160,7 +233,9 @@ class TestPfamTermData:
 
 class TestInterproTermData:
     def test_hash_is_based_on_tuple(self):
-        instance = types.InterproTermData("1", "Name", "Description", "Type")
+        instance = types.InterproTermData(
+            "IPR0000001", "Name", "Description", "Type"
+        )
         assert hash(instance) == hash(
             (
                 instance.identifier,
@@ -171,10 +246,10 @@ class TestInterproTermData:
         )
 
     def test_set_drops_duplicates(self):
-        i1 = types.InterproTermData("1", "Name", "Description", "Type")
-        i2 = types.InterproTermData("1", "Name", "Description", "Type")
-        i3 = types.InterproTermData("1", None, "Description", "Type")
-        i4 = types.InterproTermData("1", "Name", "Description", None)
+        i1 = types.InterproTermData("IPR000001", "Name", "Description", "Type")
+        i2 = types.InterproTermData("IPR000001", "Name", "Description", "Type")
+        i3 = types.InterproTermData("IPR000001", None, "Description", "Type")
+        i4 = types.InterproTermData("IPR000001", "Name", "Description", None)
 
         items = set([i1, i2, i3, i4])
         assert len(items) == 3
@@ -186,16 +261,16 @@ class TestInterproTermData:
 
 class TestKeywordTermData:
     def test_hash_is_based_on_tuple(self):
-        instance = types.KeywordTermData("1", "Name", "Description")
+        instance = types.KeywordTermData("KW-0001", "Name", "Description")
         assert hash(instance) == hash(
             (instance.identifier, instance.name, instance.description)
         )
 
     def test_set_drops_duplicates(self):
-        i1 = types.KeywordTermData("1", "Name", "Description")
-        i2 = types.KeywordTermData("1", "Name", "Description")
-        i3 = types.KeywordTermData("1", None, "Description")
-        i4 = types.KeywordTermData("1", "Name", None)
+        i1 = types.KeywordTermData("KW-0001", "Name", "Description")
+        i2 = types.KeywordTermData("KW-0001", "Name", "Description")
+        i3 = types.KeywordTermData("KW-0001", None, "Description")
+        i4 = types.KeywordTermData("KW-0001", "Name", None)
 
         items = set([i1, i2, i3, i4])
         assert len(items) == 3
@@ -223,16 +298,6 @@ class TestGeneOntologyTermData:
                 instance.description,
             )
         )
-
-    def test_raises_value_error_if_category_is_unknown(self):
-        with pytest.raises(ValueError):
-            types.GeneOntologyTermData(
-                identifier="GO:123456",
-                category="Unknown",
-                name="A",
-                description=None,
-                obsolete=False,
-            )
 
     def test_set_drops_duplicates(self):
         i1 = types.GeneOntologyTermData(
@@ -277,10 +342,6 @@ class TestGeneData:
         instance = types.GeneData("BRCA1", "primary")
         assert hash(instance) == hash((instance.symbol, instance.relation))
 
-    def test_error_invalid_relation(self):
-        with pytest.raises(ValueError):
-            types.GeneData("BRCA1", "aa")
-
     def test_set_drops_duplicates(self):
         i1 = types.GeneData("BRCA1", "primary")
         i2 = types.GeneData("BRCA1", "primary")
@@ -293,4 +354,3 @@ class TestGeneData:
         assert i2 in items
         assert i3 in items
         assert i4 in items
-

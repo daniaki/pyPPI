@@ -6,10 +6,10 @@ from idutils import is_uniprot
 
 class TestIsPubmed:
     def test_passes(self):
-        assert validators.is_pubmed("pubmed:16333295")
         assert validators.is_pubmed("16333295")
 
     def test_fails(self):
+        assert not validators.is_pubmed("pubmed:16333295")
         assert not validators.is_pubmed("pubmed:16333295 Other")
 
 
@@ -52,31 +52,3 @@ class TestIsPsimi:
     def test_fails(self):
         assert not validators.is_psimi("MI:0004 random")
 
-
-class TestValidateAccession:
-    def test_returns_none_for_none_input(self):
-        assert validators.validate_accession(None) is None
-
-    def test_returns_none_null_accession(self):
-        for value in null_values:
-            assert validators.validate_accession(value) is None
-
-    def test_strips_and_formats(self):
-        assert (
-            validators.validate_accession(
-                accession=" P58753 ",
-                formatter=str.capitalize,
-                validator=is_uniprot,
-            )
-            == "P58753"
-        )
-
-    def test_return_none_validator_fails(self):
-        assert (
-            validators.validate_accession(
-                accession="1111",
-                formatter=str.capitalize,
-                validator=is_uniprot,
-            )
-            is None
-        )

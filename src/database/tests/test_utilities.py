@@ -16,10 +16,23 @@ DATA_DIR = Path(__file__).parent / "data"
 
 
 class TestCreateIdentifiers(DatabaseTestMixin):
-    def test_creates_new_formatted_identifiers(self):
+    def test_error_invalid_identifier(self):
         identifier = "0001"
+        with pytest.raises(ValueError):
+            utilities.create_identifiers(
+                identifiers=[identifier], model=models.KeywordIdentifier
+            )
+
+    def test_creates_identifier(self):
         query: ModelSelect = utilities.create_identifiers(
-            identifiers=[identifier], model=models.KeywordIdentifier
+            identifiers=["KW-0001"], model=models.KeywordIdentifier
+        )
+        assert query.count() == 1
+        assert str(query.first()) == "KW-0001"
+
+    def test_creates_identifiers_is_case_insensitive(self):
+        query: ModelSelect = utilities.create_identifiers(
+            identifiers=["kw-0001"], model=models.KeywordIdentifier
         )
         assert query.count() == 1
         assert str(query.first()) == "KW-0001"
@@ -28,6 +41,15 @@ class TestCreateIdentifiers(DatabaseTestMixin):
         identifier = models.KeywordIdentifier.create(identifier="KW-0001")
         query: ModelSelect = utilities.create_identifiers(
             identifiers=[str(identifier)], model=models.KeywordIdentifier
+        )
+        assert query.count() == 1
+        assert query.first().id == identifier.id
+
+    def test_gets_existing_identifier_case_insensitive(self):
+        identifier = models.KeywordIdentifier.create(identifier="KW-0001")
+        query: ModelSelect = utilities.create_identifiers(
+            identifiers=[str(identifier).lower()], 
+            model=models.KeywordIdentifier
         )
         assert query.count() == 1
         assert query.first().id == identifier.id
@@ -49,8 +71,8 @@ class TestCreateGeneSymbols(DatabaseTestMixin):
         assert query.first().id == symbol.id
 
 
-class TestCreateAnnotations(DatabaseTestMixin):
-    def test_creates_new_annotation_with_formatted_identifier(self):
+class TestCreateTerms(DatabaseTestMixin):
+    def test_creates_new_annotation_case_insensitive(self):
         term = types.GeneOntologyTermData(
             identifier="go:0000001",
             category=GeneOntologyCategory.cellular_component,
@@ -71,11 +93,37 @@ class TestCreateAnnotations(DatabaseTestMixin):
         assert instance.obsolete == term.obsolete
         assert instance.description == term.description
 
+    def test_returns_existing_case_insensitive(self):
+        instance = models.GeneOntologyTerm.create(
+            identifier=models.GeneOntologyIdentifier.create(
+                identifier="GO:0000001"
+            ),
+            category=GeneOntologyCategory.cellular_component,
+            name="Energy production",
+            obsolete=False,
+            description=None,
+        )
+
+        term = types.GeneOntologyTermData(
+            identifier="go:0000001",
+            category=GeneOntologyCategory.cellular_component,
+            name="Energy production",
+            obsolete=False,
+            description=None,
+        )
+
+        query: ModelSelect = utilities.create_terms(
+            terms=[term], model=models.GeneOntologyTerm
+        )
+        assert models.GeneOntologyIdentifier.count() == 1
+        assert query.count() == 1
+        assert instance.id == query.first().id
+
 
 class TestCreateEvidence(DatabaseTestMixin):
-    def test_creates_new_evidence_with_identifiers(self):
+    def test_creates_new_evidence_with_identifiers_case_insensitive(self):
         evidence = types.InteractionEvidenceData(
-            pubmed="1234", psimi="MI:0001"
+            pubmed="1234", psimi="mi:0001"
         )
 
         assert models.PubmedIdentifier.count() == 0
@@ -87,22 +135,23 @@ class TestCreateEvidence(DatabaseTestMixin):
         assert models.PsimiIdentifier.count() == 1
 
         instance: models.InteractionEvidence = query[0]
-        assert str(instance.pubmed) == "PUBMED:1234"
+        assert str(instance.pubmed) == "1234"
         assert str(instance.psimi) == "MI:0001"
 
-    def test_gets_existing_evidence(self):
+    def test_gets_existing_evidence_case_insensitive(self):
         instance = models.InteractionEvidence.create(
             pubmed=models.PubmedIdentifier.create(identifier="1234"),
             psimi=models.PsimiIdentifier.create(identifier="MI:0001"),
         )
-        evidence = types.InteractionEvidenceData(
-            pubmed="1234", psimi="MI:0001"
-        )
+        evidence = [
+            types.InteractionEvidenceData(pubmed="1234", psimi="mi:0001"),
+            types.InteractionEvidenceData(pubmed="1234", psimi="MI:0001"),
+        ]
 
         assert models.PubmedIdentifier.count() == 1
         assert models.PsimiIdentifier.count() == 1
 
-        query = utilities.create_evidence([evidence])
+        query = utilities.create_evidence(evidence)
         assert len(query) == 1
         assert query[0].id == instance.id
         assert models.PubmedIdentifier.count() == 1
@@ -130,14 +179,12 @@ class TestCreateProteins(DatabaseTestMixin):
         assert models.Keyword.count() == 0
         assert models.GeneSymbol.count() == 0
 
-    def test_creates_new_protein(self):
-        protein = "P38398"
-        UniprotClient.get_entries = mock.MagicMock(return_value=[self.entry])
-
+    def test_creates_protein_row_from_unirprot_entry(self):
         # Check all tables are empty before call.
         self.assert_tables_empty()
 
-        query = utilities.create_proteins([protein])
+        query = utilities.create_proteins([self.entry])
+
         assert len(query) == 1
         instance: models.Protein = query[0]
         # Check all tables have been populated.
@@ -150,6 +197,10 @@ class TestCreateProteins(DatabaseTestMixin):
         )
         assert models.PfamIdentifier.count() == len(self.entry.pfam_terms)
         assert models.KeywordIdentifier.count() == len(self.entry.keywords)
+        assert models.GeneOntologyTerm.count() == len(self.entry.go_terms)
+        assert models.InterproTerm.count() == len(self.entry.interpro_terms)
+        assert models.PfamTerm.count() == len(self.entry.pfam_terms)
+        assert models.Keyword.count() == len(self.entry.keywords)
         assert models.GeneSymbol.count() == len(self.entry.genes)
 
         # Check fields have been set appropriately.
@@ -157,7 +208,7 @@ class TestCreateProteins(DatabaseTestMixin):
         assert instance.sequence == self.entry.sequence
         assert instance.organism == 9606
         assert instance.reviewed == self.entry.reviewed
-        assert instance.aliases.count() == len(self.entry.alias_accessions)
+        assert instance.aliases.count() == len(self.entry.accessions)
         assert instance.go_annotations.count() == len(self.entry.go_terms)
         assert instance.interpro_annotations.count() == len(
             self.entry.interpro_terms
@@ -167,19 +218,18 @@ class TestCreateProteins(DatabaseTestMixin):
         assert instance.genes.count() == len(self.entry.genes)
 
     def test_updates_existing_protein(self):
-        protein = models.Protein.create(
+        _ = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P38398"),
             sequence="LMN",
             organism=1000,
             reviewed=False,
         )
 
-        UniprotClient.get_entries = mock.MagicMock(return_value=[self.entry])
-
-        query = utilities.create_proteins([str(protein)])
+        query = utilities.create_proteins([self.entry])
         assert len(query) == 1
-        instance: models.Protein = query[0]
+
         # Check all tables have been populated.
+        instance: models.Protein = query[0]
         assert models.UniprotIdentifier.count() == len(self.entry.accessions)
         assert models.GeneOntologyIdentifier.count() == len(
             self.entry.go_terms
@@ -189,6 +239,10 @@ class TestCreateProteins(DatabaseTestMixin):
         )
         assert models.PfamIdentifier.count() == len(self.entry.pfam_terms)
         assert models.KeywordIdentifier.count() == len(self.entry.keywords)
+        assert models.GeneOntologyTerm.count() == len(self.entry.go_terms)
+        assert models.InterproTerm.count() == len(self.entry.interpro_terms)
+        assert models.PfamTerm.count() == len(self.entry.pfam_terms)
+        assert models.Keyword.count() == len(self.entry.keywords)
         assert models.GeneSymbol.count() == len(self.entry.genes)
 
         # Check fields have been set appropriately.
@@ -196,7 +250,7 @@ class TestCreateProteins(DatabaseTestMixin):
         assert instance.sequence == self.entry.sequence
         assert instance.organism == 9606
         assert instance.reviewed == self.entry.reviewed
-        assert instance.aliases.count() == len(self.entry.alias_accessions)
+        assert instance.aliases.count() == len(self.entry.accessions)
         assert instance.go_annotations.count() == len(self.entry.go_terms)
         assert instance.interpro_annotations.count() == len(
             self.entry.interpro_terms
@@ -219,33 +273,20 @@ class TestCreateInteractions(DatabaseTestMixin):
                 open(DATA_DIR / "P02760.xml", "rt").read(), "xml"
             )
         )
-        UniprotClient.get_entries = mock.MagicMock(
-            return_value=[self.entry_a, self.entry_b]
-        )
+        utilities.create_proteins([self.entry_a, self.entry_b])
 
     def assert_tables_empty(self):
-        assert models.UniprotIdentifier.count() == 0
         assert models.Interaction.count() == 0
         assert models.InteractionEvidence.count() == 0
         assert models.InteractionLabel.count() == 0
         assert models.InteractionDatabase.count() == 0
         assert models.PsimiIdentifier.count() == 0
         assert models.PubmedIdentifier.count() == 0
-        assert models.GeneOntologyIdentifier.count() == 0
-        assert models.GeneOntologyTerm.count() == 0
-        assert models.InterproIdentifier.count() == 0
-        assert models.InterproTerm.count() == 0
-        assert models.PfamIdentifier.count() == 0
-        assert models.PfamTerm.count() == 0
-        assert models.KeywordIdentifier.count() == 0
-        assert models.Keyword.count() == 0
-        assert models.GeneSymbol.count() == 0
 
     def test_creates_new_interaction(self):
         interaction = types.InteractionData(
             source="P38398",
             target="P02760",
-            organism=9606,
             labels=["Activation", "Methylation"],
             databases=["Kegg"],
             evidence=[
@@ -260,9 +301,8 @@ class TestCreateInteractions(DatabaseTestMixin):
         instance: models.Interaction = query[0]
 
         assert instance.evidence.count() == 1
-        assert str(instance.evidence.first().pubmed) == "PUBMED:123456"
+        assert str(instance.evidence.first().pubmed) == "123456"
         assert str(instance.evidence.first().psimi) == "MI:0001"
-        assert instance.organism == 9606
         assert instance.compact == ("P38398", "P02760")
         assert sorted([str(l) for l in instance.labels]) == [
             "activation",
@@ -275,7 +315,6 @@ class TestCreateInteractions(DatabaseTestMixin):
             types.InteractionData(
                 source="P38398",
                 target="P02760",
-                organism=9606,
                 labels=["Activation"],
                 databases=["Kegg"],
                 evidence=[
@@ -284,13 +323,12 @@ class TestCreateInteractions(DatabaseTestMixin):
                     ),
                     types.InteractionEvidenceData(
                         pubmed="123456", psimi="MI:0002"
-                    )
+                    ),
                 ],
             ),
             types.InteractionData(
                 source="P38398",
                 target="P38398",
-                organism=9606,
                 labels=["Activation", "Methylation"],
                 databases=["Hprd"],
                 evidence=[
@@ -311,32 +349,27 @@ class TestCreateInteractions(DatabaseTestMixin):
         assert sorted(
             [(str(e.pubmed), str(e.psimi)) for e in query[0].evidence],
             key=lambda e: e[-1],
-        ) == [("PUBMED:123456", "MI:0001"), ("PUBMED:123456", "MI:0002")]
-        assert query[0].organism == 9606
+        ) == [("123456", "MI:0001"), ("123456", "MI:0002")]
         assert query[0].compact == ("P38398", "P02760")
-        assert sorted([str(l) for l in query[0].labels]) == [
-            "activation",
-        ]
+        assert sorted([str(l) for l in query[0].labels]) == ["activation"]
         assert sorted([str(d) for d in query[0].databases]) == ["kegg"]
 
         # @1
         assert sorted(
             [(str(e.pubmed), str(e.psimi)) for e in query[1].evidence],
             key=lambda e: e[-1],
-        ) == [("PUBMED:123456", "MI:0002")]
-        assert query[1].organism == 9606
+        ) == [("123456", "MI:0002")]
         assert query[1].compact == ("P38398", "P38398")
         assert sorted([str(l) for l in query[1].labels]) == [
-            "activation", "methylation"
+            "activation",
+            "methylation",
         ]
         assert sorted([str(d) for d in query[1].databases]) == ["hprd"]
 
-
     def test_updates_existing_interaction(self):
         interaction = models.Interaction.create(
-            source=models.UniprotIdentifier.create(identifier="P38398"),
-            target=models.UniprotIdentifier.create(identifier="P02760"),
-            organism=1000,
+            source=models.UniprotIdentifier.get(identifier="P38398"),
+            target=models.UniprotIdentifier.get(identifier="P02760"),
         )
         interaction.labels = [models.InteractionLabel.create(text="a")]
         interaction.databases = [
@@ -353,7 +386,6 @@ class TestCreateInteractions(DatabaseTestMixin):
             types.InteractionData(
                 source="P38398",
                 target="P02760",
-                organism=9606,
                 labels=["Activation", "methylation"],
                 databases=["Kegg", "HPRD"],
                 evidence=[
@@ -373,9 +405,8 @@ class TestCreateInteractions(DatabaseTestMixin):
         assert sorted(
             [(str(e.pubmed), str(e.psimi)) for e in instance.evidence],
             key=lambda e: e[-1],
-        ) == [("PUBMED:123456", "MI:0001")]
+        ) == [("123456", "MI:0001")]
 
-        assert instance.organism == 9606
         assert instance.compact == ("P38398", "P02760")
 
         assert sorted([str(l) for l in instance.labels]) == [
@@ -384,82 +415,43 @@ class TestCreateInteractions(DatabaseTestMixin):
         ]
         assert sorted([str(d) for d in instance.databases]) == ["hprd", "kegg"]
 
-    def test_error_interaction_data_missing_source(self):
-        interaction = types.InteractionData(
-            source=None, target="P02760", organism=9606
-        )
+    def test_error_source_not_a_valid_accession(self):
+        interaction = types.InteractionData(source="aaa", target="P02760")
         with pytest.raises(ValueError):
             utilities.create_interactions([interaction])
 
-    def test_error_interaction_data_missing_target(self):
-        interaction = types.InteractionData(
-            source="P38398", target=None, organism=9606
-        )
+    def test_error_target_not_a_valid_accession(self):
+        interaction = types.InteractionData(source="P38398", target="aaa")
         with pytest.raises(ValueError):
             utilities.create_interactions([interaction])
 
     def test_skips_interaction_if_source_not_found_on_uniprot(self):
-        interaction = types.InteractionData(
-            source="P38398", target="P02760", organism=9606
-        )
-        UniprotClient.get_entries = mock.MagicMock(return_value=[self.entry_b])
+        interaction = types.InteractionData(source="P38398", target="P12345")
         query = utilities.create_interactions([interaction])
         assert len(query) == 0
 
     def test_skips_interaction_if_target_not_found_on_uniprot(self):
-        interaction = types.InteractionData(
-            source="P38398", target="P02760", organism=9606
-        )
-        UniprotClient.get_entries = mock.MagicMock(return_value=[self.entry_a])
+        interaction = types.InteractionData(source="P12345", target="P02760")
         query = utilities.create_interactions([interaction])
         assert len(query) == 0
 
-    def test_aggregates_interaction_data_structs(self):
-        interactions = [
-            types.InteractionData(
-                source="P38398",
-                target="P02760",
-                organism=9606,
-                labels=["Activation"],
-                databases=["Kegg"],
-                evidence=[
-                    types.InteractionEvidenceData(
-                        pubmed="123456", psimi="MI:0001"
-                    )
-                ],
-            ),
-            types.InteractionData(
-                source="P38398",
-                target="P02760",
-                organism=9606,
-                labels=["Activation", "Methylation"],
-                databases=["Hprd"],
-                evidence=[
-                    types.InteractionEvidenceData(
-                        pubmed="123456", psimi="MI:0002"
-                    )
-                ],
-            ),
-        ]
 
-        self.assert_tables_empty()
-        query = utilities.create_interactions(interactions)
+class TestUpdateAccessions:
+    def test_removes_interactions_with_no_source_mapping(self):
+        mapping = {"P38398": []}
+        instance = types.InteractionData(source="P38398", target="P02760")
+        assert not utilities.update_accessions([instance], mapping=mapping)
 
-        assert len(query) == 1
-        instance: models.Interaction = query[0]
+    def test_removes_interactions_with_no_target_mapping(self):
+        mapping = {"P02760": []}
+        instance = types.InteractionData(source="P38398", target="P02760")
+        assert not utilities.update_accessions([instance], mapping=mapping)
 
-        assert instance.evidence.count() == 2
-        assert models.InteractionEvidence.count() == 2
-        assert sorted(
-            [(str(e.pubmed), str(e.psimi)) for e in instance.evidence],
-            key=lambda e: e[-1],
-        ) == [("PUBMED:123456", "MI:0001"), ("PUBMED:123456", "MI:0002")]
+    def test_maps_old_accession_to_first_item_in_mapping_result(self):
+        mapping = {"P38398": ["A", "B"], "P02760": ["C", "D"]}
+        instance = types.InteractionData(source="P38398", target="P02760")
+        result = utilities.update_accessions([instance], mapping=mapping)
 
-        assert instance.organism == 9606
-        assert instance.compact == ("P38398", "P02760")
-
-        assert sorted([str(l) for l in instance.labels]) == [
-            "activation",
-            "methylation",
-        ]
-        assert sorted([str(d) for d in instance.databases]) == ["hprd", "kegg"]
+        assert len(result) == 1
+        assert result[0].source == "A"
+        assert result[0].target == "C"

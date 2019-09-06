@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from .. import pfam
 
 
@@ -7,17 +9,11 @@ class TestPfamParser:
     def setup(self):
         self.base = Path(__file__).parent / "data" / "pfam"
 
-    def test_skips_non_pfam_identifiers(self):
+    def test_error_non_pfam_identifiers(self):
         path = self.base / "invalid_identifier.tsv"
-        terms = pfam.parse_clans_file(path)
 
-        assert len(terms) == 1
-        assert terms[0].identifier == "PF00001"
-        assert terms[0].name == "7tm_1"
-        assert (
-            terms[0].description
-            == "7 transmembrane receptor (rhodopsin family)"
-        )
+        with pytest.raises(AssertionError):
+            pfam.parse_clans_file(path)
 
     def test_parses_pfam_identifiers(self):
         path = self.base / "clans.tsv"

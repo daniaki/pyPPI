@@ -60,7 +60,7 @@ class TestGeneOntologyTermModel(DatabaseTestMixin):
     def test_converts_single_letter_category_to_full_category(self):
         term = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(
-                identifier="0000001"
+                identifier="GO:0000001"
             ),
             name="",
             description="",
@@ -71,7 +71,7 @@ class TestGeneOntologyTermModel(DatabaseTestMixin):
     def test_raises_error_invalid_category(self):
         term = models.GeneOntologyTerm(
             identifier=models.GeneOntologyIdentifier.create(
-                identifier="0000001"
+                identifier="GO:0000001"
             ),
             name="",
             description="",
@@ -83,7 +83,7 @@ class TestGeneOntologyTermModel(DatabaseTestMixin):
     def test_capitalizes_and_strips_category(self):
         term = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(
-                identifier="0000001"
+                identifier="GO:0000001"
             ),
             name="",
             description="",
@@ -93,14 +93,14 @@ class TestGeneOntologyTermModel(DatabaseTestMixin):
 
 
 class TestInterproTerm(DatabaseTestMixin):
-    def test_capitalize_and_strips_entry_type(self):
+    def test_lowercases_and_strips_entry_type(self):
         instance = models.InterproTerm.create(
             identifier=models.InterproIdentifier.create(
                 identifier="IPR000001"
             ),
             entry_type="  active site  ",
         )
-        assert instance.entry_type == "Active site"
+        assert instance.entry_type == "active site"
 
     def test_sets_entry_text_as_none_if_null(self):
         instance = models.InterproTerm.create(
@@ -128,15 +128,9 @@ class TestGeneSymbolModel(DatabaseTestMixin):
 
 
 class TestKeywordModel(DatabaseTestMixin):
-    def test_appends_prefix(self):
+    def test_format_capitalizes(self):
         kw = models.Keyword.create(
-            identifier=models.KeywordIdentifier.create(identifier="0001"),
+            identifier=models.KeywordIdentifier.create(identifier="kw-0001"),
             description="",
         )
         assert kw.identifier.identifier == "KW-0001"
-
-        kw = models.Keyword.create(
-            identifier=models.KeywordIdentifier.create(identifier="KW-0002"),
-            description="",
-        )
-        assert kw.identifier.identifier == "KW-0002"

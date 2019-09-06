@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from .. import interpro
 
 
@@ -7,10 +9,10 @@ class TestInterproParser:
     def setup(self):
         self.base = Path(__file__).parent / "data" / "interpro"
 
-    def test_skips_invalid_identifiers(self):
+    def test_error_invalid_identifiers(self):
         path = self.base / "invalid_identifier.tsv"
-        terms = interpro.parse_entry_list(path)
-        assert len(terms) == 0
+        with pytest.raises(AssertionError):
+            interpro.parse_entry_list(path)
 
     def test_parses_identifiers(self):
         path = self.base / "basic.tsv"

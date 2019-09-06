@@ -22,39 +22,40 @@ class TestInteractionLabelModel(DatabaseTestMixin):
 
 class TestInteractionEvidence(DatabaseTestMixin):
     def test_str_returns_string_of_identifiers(self):
-        psimi = models.PsimiIdentifier.create(identifier="0001")
+        psimi = models.PsimiIdentifier.create(identifier="MI:0001")
         pmid = models.PubmedIdentifier.create(identifier="8619402")
         evidence = models.InteractionEvidence.create(pubmed=pmid, psimi=psimi)
-        assert str(evidence) == "PUBMED:8619402|MI:0001"
+        assert str(evidence) == "8619402|MI:0001"
 
         evidence.psimi = None
-        assert str(evidence) == "PUBMED:8619402|None"
+        assert str(evidence) == "8619402|None"
 
         evidence.pubmed = None
         assert str(evidence) == str(None)
 
     def test_unique_index_on_psimi_and_pubmed(self):
-        psimi = models.PsimiIdentifier.create(identifier="0001")
+        psimi = models.PsimiIdentifier.create(identifier="MI:0001")
         pmid = models.PubmedIdentifier.create(identifier="8619402")
         _ = models.InteractionEvidence.create(pubmed=pmid, psimi=psimi)
 
         # Test can create with same pmid but different pismi
         _ = models.InteractionEvidence.create(
-            pubmed=pmid, psimi=models.PsimiIdentifier.create(identifier="0002")
+            pubmed=pmid,
+            psimi=models.PsimiIdentifier.create(identifier="MI:0002"),
         )
 
         with pytest.raises(IntegrityError):
             models.InteractionEvidence.create(pubmed=pmid, psimi=psimi)
 
-    def test_filter_by_index_returns_none_if_no_queries(self):
+    def test_filter_by_pubmed_and_psimi_returns_none_if_no_queries(self):
         _ = models.InteractionEvidence.create(
             pubmed=models.PubmedIdentifier.create(identifier="1"),
             psimi=models.PsimiIdentifier.create(identifier="MI:0001"),
         )
-        query = models.InteractionEvidence.filter_by_index([])
+        query = models.InteractionEvidence.filter_by_pubmed_and_psimi([])
         assert query.count() == 0
 
-    def test_filter_by_index_format_insensitive(self):
+    def test_filter_by_pubmed_and_psimi_case_insensitive(self):
         pmid = models.PubmedIdentifier.create(identifier="1")
         e1 = models.InteractionEvidence.create(
             pubmed=pmid,
@@ -66,14 +67,14 @@ class TestInteractionEvidence(DatabaseTestMixin):
         )
 
         # Should prefix 'pubmed' to 1
-        query = models.InteractionEvidence.filter_by_index(
-            [("1", "mi:0001"), ("pubmed:2", "mi:0002")]
+        query = models.InteractionEvidence.filter_by_pubmed_and_psimi(
+            [("1", "mi:0001"), ("2", "mi:0002")]
         )
         assert query.count() == 1
         assert e1 in query
         assert e2 not in query
 
-    def test_filter_by_index_returns_full_and_half_queries(self):
+    def test_filter_by_pubmed_and_psimi_allows_null_psimi(self):
         e1 = models.InteractionEvidence.create(
             pubmed=models.PubmedIdentifier.create(identifier="1"),
             psimi=models.PsimiIdentifier.create(identifier="MI:0001"),
@@ -83,22 +84,12 @@ class TestInteractionEvidence(DatabaseTestMixin):
         )
 
         # Should prefix 'pubmed' to 1
-        query = models.InteractionEvidence.filter_by_index(
-            [("1", "mi:0001"), ("pubmed:2", None)]
+        query = models.InteractionEvidence.filter_by_pubmed_and_psimi(
+            [("1", "mi:0001"), ("2", None)]
         )
         assert query.count() == 2
         assert e1 in query
         assert e2 in query
-
-    def test_filter_by_index_filter_null_psimi(self):
-        e = models.InteractionEvidence.create(
-            pubmed=models.PubmedIdentifier.create(identifier="1"), psimi=None
-        )
-        query = models.InteractionEvidence.filter_by_index(
-            [("PUBMED:1", None)]
-        )
-        assert query.count() == 1
-        assert e in query
 
 
 class TestInteractionModel(DatabaseTestMixin):
@@ -147,7 +138,7 @@ class TestInteractionModel(DatabaseTestMixin):
     ):
         go1 = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(
-                identifier="0000001"
+                identifier="GO:0000001"
             ),
             name="",
             description="",
@@ -155,7 +146,7 @@ class TestInteractionModel(DatabaseTestMixin):
         )
         go2 = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(
-                identifier="0000002"
+                identifier="GO:0000002"
             ),
             name="",
             description="",
@@ -177,9 +168,7 @@ class TestInteractionModel(DatabaseTestMixin):
         self.protein_a.pfam_annotations = [pfam]
         self.protein_a.interpro_annotations = [ipr]
 
-        models.Interaction.create(
-            source=self.protein_a, target=self.protein_b, organism=9606
-        )
+        models.Interaction.create(source=self.protein_a, target=self.protein_b)
 
         result = models.Interaction.to_dataframe()
         expected = pd.DataFrame(
@@ -219,14 +208,14 @@ class TestInteractionModel(DatabaseTestMixin):
         self
     ):
         i = models.Interaction.create(
-            source=self.protein_a, target=self.protein_b, organism=9606
+            source=self.protein_a, target=self.protein_b
         )
         label_1 = models.InteractionLabel.create(text="activation")
         label_2 = models.InteractionLabel.create(text="methylation")
         i.labels = [label_1, label_2]
 
-        psimi1 = models.PsimiIdentifier.create(identifier="0001")
-        psimi2 = models.PsimiIdentifier.create(identifier="0002")
+        psimi1 = models.PsimiIdentifier.create(identifier="MI:0001")
+        psimi2 = models.PsimiIdentifier.create(identifier="MI:0002")
         pmid = models.PubmedIdentifier.create(identifier="8619402")
         evidence1 = models.InteractionEvidence.create(
             pubmed=pmid, psimi=psimi1
@@ -254,7 +243,7 @@ class TestInteractionModel(DatabaseTestMixin):
                     "interpro": None,
                     "pfam": None,
                     "label": "activation,methylation",
-                    "evidence": "PUBMED:8619402|MI:0001,PUBMED:8619402|MI:0002",
+                    "evidence": "8619402|MI:0001,8619402|MI:0002",
                     "database": "hprd,kegg",
                 }
             ],
@@ -275,21 +264,21 @@ class TestInteractionModel(DatabaseTestMixin):
         )
         assert_frame_equal(result, expected, check_dtype=False)
 
-    def test_filter_by_index_format_insensitive(self):
-        i1 = models.Interaction.create(
-            source=self.protein_a, target=self.protein_b, organism=9606
-        )
-        i2 = models.Interaction.create(
-            source=self.protein_a, target=self.protein_a, organism=9606
-        )
+    # def test_filter_by_edge_format_insensitive(self):
+    #     i1 = models.Interaction.create(
+    #         source=self.protein_a, target=self.protein_b
+    #     )
+    #     i2 = models.Interaction.create(
+    #         source=self.protein_a, target=self.protein_a
+    #     )
 
-        query = models.Interaction.filter_by_index(
-            [
-                (str(self.protein_a).lower(), str(self.protein_b).lower()),
-                (str(self.protein_b), str(self.protein_a)),
-            ]
-        )
-        assert query.count() == 1
-        assert i1 in query
-        assert i2 not in query
+    #     query = models.Interaction.filter_by_edge(
+    #         [
+    #             (str(self.protein_a).lower(), str(self.protein_b).lower()),
+    #             (str(self.protein_b), str(self.protein_a)),
+    #         ]
+    #     )
+    #     assert query.count() == 1
+    #     assert i1 in query
+    #     assert i2 not in query
 

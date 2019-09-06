@@ -8,6 +8,21 @@ from .. import utilities
 null_values = ("none", "na", "nan", "n/a", "undefined", "unknown", "null", " ")
 
 
+class TestChunks:
+    def test_chunks_list_into_batch_size(self):
+        ls = range(0, 100)
+        assert all(len(sl) == 10 for sl in utilities.chunks(ls, 10))
+
+    def test_returns_empty_list(self):
+        assert not list(utilities.chunks([], 10))
+
+    def test_returns_whole_list(self):
+        ls = list(range(0, 100))
+        chunks = list(utilities.chunks(ls, len(ls)))
+        assert len(chunks) == 1
+        assert len(chunks[0]) == len(ls)
+
+
 class TestIsNull:
     def test_true_for_falsey_values(self):
         for value in ["", 0, None, []]:

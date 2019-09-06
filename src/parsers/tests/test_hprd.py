@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import List
 
+import pytest
+
 from .. import hprd
 from ..types import InteractionEvidenceData
 
@@ -257,20 +259,25 @@ class TestParseInteractions:
         )
         assert len(interactions) == 9
 
-    def test_sets_organism_as_9606_and_database_as_HPRD(self):
+    def test_sets_database_as_hprd(self):
         interactions = list(
             hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
         )
-        assert interactions[0].organism == 9606
-        assert interactions[0].databases == ["HPRD"]
+        assert interactions[0].databases == ["hprd"]
+
+    def test_lowercases_labels(self):
+        interactions = list(
+            hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
+        )
+        assert interactions[0].labels == ["proteolytic cleavage"]
 
     def test_removes_duplicate_reference_ids(self):
-        self.ptms[1].reference_id = ["A", "A"]
+        self.ptms[1].reference_id = ["12345", "12345"]
         interactions = list(
             hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
         )
         assert interactions[0].evidence == [
-            InteractionEvidenceData(pubmed='A')
+            InteractionEvidenceData(pubmed="12345")
         ]
 
     def test_removes_falsey_reference_ids(self):
@@ -279,4 +286,28 @@ class TestParseInteractions:
             hprd.parse_interactions(ptms=[self.ptms[1]], xrefs=self.xrefs)
         )
         assert interactions[0].evidence == []
-    
+
+    def test_error_invalid_source(self):
+        self.ptms[0].enzyme_hprd_id = "03635"
+        self.xrefs["03635"].swissprot_id = ["AAA"]
+        with pytest.raises(ValueError):
+            hprd.parse_interactions(ptms=[self.ptms[0]], xrefs=self.xrefs)
+
+    def test_error_invalid_target(self):
+        self.ptms[0].substrate_hprd_id = "03635"
+        self.xrefs["03635"].swissprot_id = ["AAA"]
+        with pytest.raises(ValueError):
+            hprd.parse_interactions(ptms=[self.ptms[0]], xrefs=self.xrefs)
+
+    def test_formats_uniprot_ids(self):
+        self.ptms[0].enzyme_hprd_id = "03635"
+        self.ptms[0].substrate_hprd_id = "03637"
+        self.xrefs["03635"].swissprot_id = [" p12345 "]
+        self.xrefs["03637"].swissprot_id = [" p12346 "]
+
+        interactions = list(
+            hprd.parse_interactions(ptms=[self.ptms[0]], xrefs=self.xrefs)
+        )
+        assert len(interactions) == 1
+        assert interactions[0].source == "P12345"
+        assert interactions[0].target == "P12346"
