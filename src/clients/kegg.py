@@ -1,19 +1,22 @@
 import copy
+import gzip
 import io
 import logging
-import gzip
 import pickle
 from collections import OrderedDict
 from itertools import product
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
-from tqdm import tqdm
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from tqdm import tqdm
+from urllib3.util.retry import Retry
 
-from ..settings import LOGGER_NAME
 from ..constants import Paths
+from ..settings import LOGGER_NAME
+
 
 __all__ = ["EntryID", "Entries", "Entry", "Relation", "Kegg", "KeggPathway"]
 
@@ -139,13 +142,23 @@ class Kegg:
             KEGG three letter organism code.
     """
 
-    BASE_URL: str = "http://rest.kegg.jp/"
-
-    def __init__(self, use_cache: Optional[bool] = False):
+    def __init__(
+        self,
+        base: str = "http://rest.kegg.jp/",
+        use_cache: bool = False,
+        max_retries: int = 5,
+    ):
+        self.base = base
         self.cache: Dict[str, Any] = {}
         self.use_cache = use_cache
         if self.use_cache:
             self._load_cache()
+
+        # Create re-try handler and mount it to the session using the base
+        # url as the prefix
+        self.session = requests.Session()
+        retries = Retry(total=max_retries, respect_retry_after_header=True)
+        self.session.mount(self.base, HTTPAdapter(max_retries=retries))
 
     def _delete_cache(self):
         self.cache = {}
@@ -155,7 +168,11 @@ class Kegg:
         if Paths.kegg_cache.exists():
             self.cache = pickle.load(gzip.open(Paths.kegg_cache, "rb"))
 
-    def _save_cache(self, overwrite: Optional[bool] = False):
+    def _save_cache(self, overwrite: bool = False):
+        if not self.use_cache:
+            # Bypass saving if use has requested not to use cache.
+            return
+
         if overwrite:
             pickle.dump(self.cache, gzip.open(Paths.kegg_cache, "wb"))
         else:
@@ -168,21 +185,12 @@ class Kegg:
             existing.update(self.cache)
             pickle.dump(existing, gzip.open(Paths.kegg_cache, "wb"))
 
-    @classmethod
-    def url_builder(cls, operation: str, arguments: Union[str, List[str]]):
+    def _url_builder(self, operation: str, arguments: Union[str, List[str]]):
         if isinstance(arguments, str):
             arguments = [arguments]
         if not arguments:
             raise ValueError("At least one argument is required.")
-        return "{}{}/{}/".format(cls.BASE_URL, operation, "/".join(arguments))
-
-    @staticmethod
-    def get(url: str) -> requests.Response:
-        response: requests.Response = requests.get(url)
-        if not response.ok:
-            logger.error(f"{response.content.decode()}")
-            response.raise_for_status()
-        return response
+        return "{}{}/{}/".format(self.base, operation, "/".join(arguments))
 
     @staticmethod
     def parse_json(response: requests.Response):
@@ -210,9 +218,16 @@ class Kegg:
         else:
             return pd.read_csv(handle, delimiter=delimiter, header=None)
 
+    def get(self, url: str) -> requests.Response:
+        response: requests.Response = self.session.get(url)
+        if not response.ok:
+            logger.error(f"{response.content.decode()}")
+            response.raise_for_status()
+        return response
+
     @property
     def organisms(self) -> pd.DataFrame:
-        url = self.url_builder("list", "organism")
+        url = self._url_builder("list", "organism")
 
         if url in self.cache:
             return self.cache[url]
@@ -226,7 +241,7 @@ class Kegg:
         return organisms
 
     def pathways(self, organism: str) -> pd.DataFrame:
-        url: str = self.url_builder("list", ["pathway", organism])
+        url: str = self._url_builder("list", ["pathway", organism])
 
         if url in self.cache:
             return self.cache[url]
@@ -240,7 +255,7 @@ class Kegg:
         return pathways
 
     def genes(self, organism: str) -> pd.DataFrame:
-        url = self.url_builder("list", organism)
+        url = self._url_builder("list", organism)
 
         if url in self.cache:
             return self.cache[url]
@@ -254,7 +269,7 @@ class Kegg:
         return genes
 
     def gene_detail(self, accession: str) -> str:
-        url = self.url_builder("get", accession)
+        url = self._url_builder("get", accession)
 
         if url in self.cache:
             return self.cache[url]
@@ -267,7 +282,7 @@ class Kegg:
 
     def pathway_detail(self, accession: str) -> KeggPathway:
         # Remove 'path:' prefix if present.
-        url = self.url_builder("get", [accession.split(":")[-1], "kgml"])
+        url = self._url_builder("get", [accession.split(":")[-1], "kgml"])
 
         if url in self.cache:
             response_data = self.cache[url]
@@ -281,7 +296,7 @@ class Kegg:
     def convert(
         self, source: str = "hsa", destination: str = "uniprot"
     ) -> Dict[str, List[str]]:
-        url = self.url_builder("conv", [source, destination])
+        url = self._url_builder("conv", [source, destination])
 
         if url in self.cache:
             return self.cache[url]

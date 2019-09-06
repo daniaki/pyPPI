@@ -1,21 +1,22 @@
-import io
 import gzip
+import io
 import json
 import logging
-from collections import OrderedDict
-
-import requests
+from collections import OrderedDict, defaultdict
 from csv import DictReader
+from typing import Any, Dict, Iterable, List, Optional, Set, Generator
+
+import tqdm
+import requests
+from bs4 import BeautifulSoup, Tag
 from requests import Response
-from collections import defaultdict
-from typing import Union, Optional, List, Dict, Set, Iterable, Any
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-from bs4 import BeautifulSoup
-
-from ..utilities import is_null
 from ..constants import GeneOntologyCategory, Paths
 from ..parsers import types
 from ..settings import LOGGER_NAME
+from ..utilities import is_null, chunks
 
 
 __all__ = ["UniprotClient", "UniprotEntry"]
@@ -27,8 +28,21 @@ logger = logging.getLogger(LOGGER_NAME)
 class UniprotEntry:
     def __init__(self, root: BeautifulSoup):
         self.root: BeautifulSoup = root
-        if self.root.find("entry"):
-            self.root = self.root.find("entry")
+        if not isinstance(self.root, Tag):
+            raise TypeError(
+                f"Root element must have type 'Tag'. "
+                f"Found '{type(self.root).__name__}'."
+            )
+
+        if self.root.name != "entry":
+            if self.root.find("entry"):
+                self.root = self.root.find("entry")
+
+        if self.root.name != "entry":
+            raise ValueError(
+                f"Root element tag name must be 'entry' . "
+                f"Found '{self.root.name}'."
+            )
 
     def __str__(self):
         return self.primary_accession
@@ -39,7 +53,8 @@ class UniprotEntry:
         for kw in self.root.find_all("keyword", recursive=False):
             kws.append(
                 types.KeywordTermData(
-                    identifier=kw["id"].upper(), name=kw.text.strip() or None
+                    identifier=kw["id"].strip().upper(),
+                    name=kw.text.strip() or None,
                 )
             )
         return kws
@@ -56,7 +71,7 @@ class UniprotEntry:
 
             terms.append(
                 types.GeneOntologyTermData(
-                    identifier=term["id"].upper(),
+                    identifier=term["id"].strip().upper(),
                     category=GeneOntologyCategory.letter_to_category(
                         details[0]["value"][0].strip()
                     ),
@@ -78,7 +93,7 @@ class UniprotEntry:
 
             terms.append(
                 types.PfamTermData(
-                    identifier=term["id"].upper(),
+                    identifier=term["id"].strip().upper(),
                     name=details[0]["value"].strip(),
                 )
             )
@@ -95,7 +110,7 @@ class UniprotEntry:
                 continue
             terms.append(
                 types.InterproTermData(
-                    identifier=term["id"].upper(),
+                    identifier=term["id"].strip().upper(),
                     name=details[0]["value"].strip(),
                 )
             )
@@ -120,7 +135,7 @@ class UniprotEntry:
     @property
     def accessions(self) -> List[str]:
         return [
-            elem.text.upper()
+            elem.text.strip().upper()
             for elem in self.root.find_all("accession", recursive=False)
         ]
 
@@ -197,13 +212,8 @@ class UniprotEntry:
         return genes
 
     @property
-    def primary_gene(self) -> Optional[types.GeneData]:
-        primary = [gene for gene in self.genes if gene.relation == "primary"]
-        return None if not primary else primary[0]
-
-    @property
-    def synonym_genes(self) -> List[types.GeneData]:
-        return [gene for gene in self.genes if gene.relation == "synonym"]
+    def primary_genes(self) -> List[types.GeneData]:
+        return [gene for gene in self.genes if gene.relation == "primary"]
 
     @property
     def taxonomy(self) -> Optional[int]:
@@ -218,14 +228,24 @@ class UniprotEntry:
 
 class UniprotClient:
     def __init__(
-        self, api_key: Optional[str] = None, use_cache: Optional[bool] = False
+        self,
+        base: str = "https://www.uniprot.org",
+        use_cache: bool = False,
+        max_retries: int = 5,
+        verbose: bool = False,
     ):
-        self.api_key: Optional[str] = api_key
-        self.base: str = "https://www.uniprot.org"
+        self.base = base
         self.use_cache = use_cache
         self.cache: Dict[str, Any] = {}
+        self.verbose = verbose
         if self.use_cache:
             self._load_cache()
+
+        # Create re-try handler and mount it to the session using the base
+        # url as the prefix
+        self.session = requests.Session()
+        retries = Retry(total=max_retries, respect_retry_after_header=True)
+        self.session.mount(self.base, HTTPAdapter(max_retries=retries))
 
     def _delete_cache(self):
         self.cache = {}
@@ -235,7 +255,11 @@ class UniprotClient:
         if Paths.uniprot_cache.exists():
             self.cache = json.load(gzip.open(Paths.uniprot_cache, "rt"))
 
-    def _save_cache(self, overwrite: Optional[bool] = False):
+    def _save_cache(self, overwrite: bool = False):
+        if not self.use_cache:
+            # Bypass saving if use has requested not to use cache.
+            return
+
         if not overwrite:
             json.dump(self.cache, gzip.open(Paths.uniprot_cache, "wt"))
         else:
@@ -248,92 +272,214 @@ class UniprotClient:
             existing.update(self.cache)
             json.dump(existing, gzip.open(Paths.uniprot_cache, "wt"))
 
-    def get_entry(self, identifier: str) -> UniprotEntry:
-        url: str = f"{self.base}/uniprot/{identifier}.xml"
-        cache_key = f"get-entry:{identifier}"
+    def _get_entry_from_cache(self, identifier):
+        return self.cache.get(identifier, {}).get("entry", None)
 
-        if cache_key in self.cache:
-            response_data = self.cache[cache_key]
+    def _get_mapping_from_cache(self, identifier, key):
+        return self.cache.get(identifier, {}).get(key, None)
+
+    def _set_entry_in_cache(self, identifier, value):
+        if identifier in self.cache:
+            self.cache[identifier].update({"entry": value})
         else:
-            response: Response = requests.get(url)
+            self.cache.update({identifier: {"entry": value}})
+
+    def _set_mapping_in_cache(self, identifier, key, value):
+        if identifier in self.cache:
+            self.cache[identifier].update({key: value})
+        else:
+            self.cache.update({identifier: {key: value}})
+
+    def get_entry(self, identifier: str) -> Optional[UniprotEntry]:
+        """
+        Download the XML file associated with a UniProt identifier.
+        
+        Each XML file will be parsed into a `UniProtEntry` instance which
+        wraps over a `BeautifulSoup` instance containing the raw 
+        XML. This object contains helper utilities to extract a limited number 
+        of fields. 
+        
+        Parameters
+        ----------
+        identifier : str
+            A UniProt protein identifier.
+        
+        Returns
+        -------
+        Optional[UniprotEntry]
+        """
+        url: str = f"{self.base}/uniprot/{identifier.upper()}.xml"
+        normalized = identifier.upper()
+
+        data = self._get_entry_from_cache(normalized)
+        if data is None:
+            response: Response = self.session.get(url)
             if not response.ok:
-                logger.error(f"{response.content.decode()}")
-                response.raise_for_status()
-            response_data = response.text
-            self.cache[cache_key] = response_data
+                if response.status_code == 404:
+                    return None
+                else:
+                    logger.error(f"{response.content.decode()}")
+                    response.raise_for_status()
+
+            data = response.text
+            self._set_entry_in_cache(normalized, data)
             self._save_cache()
 
-        return UniprotEntry(BeautifulSoup(response_data, "xml"))
+        return UniprotEntry(BeautifulSoup(data, "xml"))
 
-    def get_accession_map(
-        self, identifiers: Iterable[str], fr: str = "ACC+ID", to: str = "ACC"
-    ) -> Dict[str, List[str]]:
+    def get_entries(
+        self, identifiers: Iterable[str], batch_size: int = 250
+    ) -> Generator[Optional[UniprotEntry], None, None]:
+        """
+        Download the XML files associated with an iterable of UniProt 
+        identifiers. Each XML file will be parsed into a `UniProtEntry`
+        instance which wraps over a `BeautifulSoup` instance containing the raw 
+        XML. This object contains helper utilities to extract a limited number 
+        of fields. 
+        
+        Parameters
+        ----------
+        identifiers : Iterable[str]
+            An iterable of UniProt protein identifiers
+        batch_size : int, optional
+            Request batch size. Setting this too high will result in a 
+            connect reset, by default 250
+        
+        Returns
+        -------
+        Generator[Optional[UniprotEntry], None, None]
+            Identifiers for which no information could be found will have 
+            a `None` value.
+        """
         url = f"{self.base}/uploadlists/"
-        cache_key = f"get-map:{hash(sorted(identifiers))}"
+        unique = list(sorted(set(i.upper() for i in identifiers)))
 
-        if cache_key in self.cache:
-            return self.cache[cache_key]
+        not_in_cache = []
+        for identifier in unique:
+            hit = self._get_entry_from_cache(identifier)
+            if hit is None:
+                not_in_cache.append(identifier)
 
-        data = {
-            "query": "\n".join(list(identifiers)),
-            "format": "tab",
-            "from": fr,
-            "to": to,
-        }
-        response: Response = requests.post(url, data)
-        if not response.ok:
-            logger.error(f"{response.content.decode()}")
-            response.raise_for_status()
+        batches = list(chunks(not_in_cache, batch_size))
+        if self.verbose and batches:
+            logger.info(
+                f"Requesting {len(batches)} batches of size {batch_size}."
+            )
+            batches = tqdm.tqdm(batches, total=len(batches))
 
-        reader = DictReader(io.StringIO(response.text), delimiter="\t")
-        mapping: Dict[str, List[str]] = defaultdict(list)
-        for row in reader:
-            key = row["From"]
-            mapping[key] += [
-                x.strip() for x in row["To"].split(",") if not is_null(x)
-            ]
-
-        # Return all unique values that a key maps to. Must preserve order
-        # that values are first encountered in. Using a set will not
-        # preserve this ordering.
-        result: Dict[str, List[str]] = {
-            k: list(OrderedDict.fromkeys(v).keys())
-            for (k, v) in mapping.items()
-        }
-
-        # Set and save cache
-        self.cache[cache_key] = result
-        self._save_cache()
-
-        return result
-
-    def get_entries(self, identifiers: Iterable[str]) -> List[UniprotEntry]:
-        url = f"{self.base}/uploadlists/"
-
-        # Can take up to 10-20 minutes for large lists so cache result.
-        response: Response
-        cache_key = f"get-entries:{hash(sorted(identifiers))}"
-
-        if cache_key in self.cache:
-            response_data = self.cache[cache_key]
-        else:
+        for batch in batches:
             data = {
-                "query": "\n".join(sorted(identifiers)),
+                "query": " ".join(batch),
                 "format": "xml",
                 "from": "ACC+ID",
                 "to": "ACC",
             }
-            response = requests.post(url, data)
+            response: Response = self.session.post(url, data=data)
+            if not response.ok:
+                logger.error(f"{response.content.decode()}")
+                # Save cache before raising.
+                self._save_cache()
+                response.raise_for_status()
+
+            # Parse the result into separate entries for more modular caching.
+            for entry in BeautifulSoup(response.text, "xml").find_all("entry"):
+                uniprot_entry = UniprotEntry(entry)
+                for identifier in batch:
+                    if identifier in uniprot_entry.accessions:
+                        self._set_entry_in_cache(
+                            identifier, str(uniprot_entry.root)
+                        )
+
+        # Save updated cache all batches if new items were downloaded.
+        if len(not_in_cache):
+            self._save_cache()
+
+        if self.verbose:
+            logger.info("Parsing XML into UniprotEntry instances.")
+
+        for identifier in unique:
+            xml_data = self._get_entry_from_cache(identifier)
+            if xml_data is None:
+                yield None
+            else:
+                yield UniprotEntry(BeautifulSoup(xml_data, "xml"))
+
+    def get_mapping_table(
+        self,
+        identifiers: Iterable[str],
+        fr: str = "ACC+ID",
+        to: str = "ACC",
+        batch_size: int = 250,
+    ) -> Dict[str, List[str]]:
+        """
+        Download the a mapping file from a source (`fr`) database to a target 
+        (`to`) databse.
+        
+        Parameters
+        ----------
+        identifiers : Iterable[str]
+            An iterable of UniProt protein identifiers
+        batch_size : int, optional
+            Request batch size. Setting this too high will result in a 
+            connect reset, by default 250
+        
+        Returns
+        -------
+        Dict[str, List[str]]
+            Identifiers for which no information could be found will have 
+            an empty list.
+        """
+        url = f"{self.base}/uploadlists/"
+        unique = list(sorted(set(i.upper() for i in identifiers)))
+        mapping_key = f"{fr}-{to}-tab"
+
+        not_in_cache = []
+        for identifier in unique:
+            hit = self._get_mapping_from_cache(identifier, key=mapping_key)
+            if hit is None:
+                not_in_cache.append(identifier)
+
+        batches = list(chunks(not_in_cache, batch_size))
+        if self.verbose and batches:
+            logger.info(
+                f"Requesting {len(batches)} batches of size {batch_size}."
+            )
+            batches = tqdm.tqdm(batches, total=len(batches))
+
+        for batch in batches:
+            data = {
+                "query": " ".join(batch),
+                "format": "tab",
+                "from": fr,
+                "to": to,
+            }
+            response: Response = self.session.post(url, data=data)
             if not response.ok:
                 logger.error(f"{response.content.decode()}")
                 response.raise_for_status()
-            response_data = response.text
 
-            # Set and save cache
-            self.cache[cache_key] = response_data
+            mapping: Dict[str, List[str]] = defaultdict(list)
+            reader = DictReader(io.StringIO(response.text), delimiter="\t")
+            for row in reader:
+                key = row["From"]
+                # Must preserve order that values are first encountered in.
+                # Using a set will not preserve this ordering.
+                mapping[key] += [
+                    x.strip() for x in row["To"].split(",") if not is_null(x)
+                ]
+
+            # Add the mapping values under identifier->mapping_key
+            for identifier, values in mapping.items():
+                self._set_mapping_in_cache(identifier, mapping_key, values)
+
+        # Save updated cache
+        if len(not_in_cache):
             self._save_cache()
 
-        return [
-            UniprotEntry(entry)
-            for entry in BeautifulSoup(response_data, "xml").find_all("entry")
-        ]
+        result: Dict[str, List[str]] = {}
+        for identifier in unique:
+            result[identifier] = (
+                self._get_mapping_from_cache(identifier, key=mapping_key) or []
+            )
+
+        return result
