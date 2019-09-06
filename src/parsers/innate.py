@@ -3,19 +3,12 @@ import itertools
 from pathlib import Path
 from typing import Generator, List, Union, Optional
 
-from ..validators import (
-    psimi_re,
-    uniprot_re,
-    is_uniprot,
-    is_pubmed,
-)
+from ..validators import psimi_re, uniprot_re, is_uniprot, is_pubmed
 from . import open_file
 from .types import InteractionData, InteractionEvidenceData
 
 
-def parse_interactions(
-    path: Union[str, Path]
-) -> Generator[InteractionData, None, None]:
+def parse_interactions(path: Union[str, Path]) -> List[InteractionData]:
     """
     Parsing function for psimitab format files issued by `InnateDB`.
 
@@ -26,7 +19,7 @@ def parse_interactions(
 
     Returns
     -------
-    Generator[Interaction, None, None]
+    List[InteractionData]
     """
     uniprot_source_column = "alias_A"
     uniprot_target_column = "alias_B"
@@ -35,8 +28,9 @@ def parse_interactions(
     taxid_A_column = "ncbi_taxid_A"
     taxid_B_column = "ncbi_taxid_B"
 
-    # Remove header
+    interactions: List[InteractionData] = []
     with open_file(path, "rt") as handle:
+        # Remove header
         header = handle.readline().strip().split("\t")
         reader = csv.DictReader(handle, fieldnames=header, delimiter="\t")
 
@@ -62,15 +56,6 @@ def parse_interactions(
             if not source or not target:
                 continue
 
-            if not is_uniprot(source):
-                raise ValueError(
-                    f"Source '{source}' is not a valid UniProt identifier."
-                )
-            if not is_uniprot(target):
-                raise ValueError(
-                    f"Target '{target}' is not a valid UniProt identifier."
-                )
-
             # These lines should be equal in length, unless one PSI-MI term
             # has been provided for multiple PMIDs.
             pmids = row[pmid_column].split("|")
@@ -87,9 +72,9 @@ def parse_interactions(
 
             # Some PMIDs will be DOIs so ignore these.
             evidence_ids = [
-                (pmid.strip().upper(), psimi.strip().upper())
+                (pmid.split(":")[-1].strip().upper(), psimi.strip().upper())
                 for (pmid, psimi) in generator
-                if is_pubmed(pmid.strip().upper())
+                if is_pubmed(pmid.split(":")[-1].strip().upper())
             ]
 
             # Iterate through the list of tuples, each tuple being a list of
@@ -103,9 +88,15 @@ def parse_interactions(
                     )
                 )
 
-            yield InteractionData(
-                source=source,
-                target=target,
-                evidence=list(sorted(set(evidence), key=lambda e: hash(e))),
-                databases=["innatedb"],
+            interactions.append(
+                InteractionData(
+                    source=source,
+                    target=target,
+                    evidence=list(
+                        sorted(set(evidence), key=lambda e: hash(e))
+                    ),
+                    databases=["innatedb"],
+                )
             )
+
+    return interactions

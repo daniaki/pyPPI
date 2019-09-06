@@ -24,7 +24,7 @@ def parse_interactions(
     organism: str = "hsa",
     show_progress: bool = True,
     client: Optional[kegg.Kegg] = None,
-) -> Generator[InteractionData, None, None]:
+) -> List[InteractionData]
 
     # Set up client, download kegg -> uniprot mapping and all pathways.
     if not client:
@@ -59,6 +59,7 @@ def parse_interactions(
     )
 
     logger.info("Generating interactions.")
+    result: List[InteractionData] = []
     for row in interactions.to_dict("record"):
         sources = to_uniprot.get(row["source"], None)
         targets = to_uniprot.get(row["target"], None)
@@ -82,18 +83,17 @@ def parse_interactions(
                 source = source.strip().upper()
                 target = target.strip().upper()
 
-                if not is_uniprot(source):
+                if (not is_uniprot(source)) or (not is_uniprot(target)):
                     raise ValueError(
-                        f"Source '{source}' is not a valid UniProt identifier."
-                    )
-                if not is_uniprot(target):
-                    raise ValueError(
-                        f"Target '{target}' is not a valid UniProt identifier."
+                        f"Edge '{(source, target)}' contains invalid UniProt "
+                        f"identifiers."
                     )
 
-                yield InteractionData(
-                    source=source,
-                    target=target,
-                    labels=labels,
-                    databases=["kegg"],
+                result.append(
+                    InteractionData(
+                        source=source,
+                        target=target,
+                        labels=labels,
+                        databases=["kegg"],
+                    )
                 )

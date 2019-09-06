@@ -228,7 +228,7 @@ def parse_xref_mapping(
 
 def parse_interactions(
     ptms: Iterable[PTMEntry], xrefs=Dict[str, HPRDXrefEntry]
-) -> Generator[InteractionData, None, None]:
+) -> List[InteractionData]:
     """
     Parse the FLAT_FILES from HPRD into a list of interactions with pubmed and
     experiment type annotations.
@@ -243,8 +243,9 @@ def parse_interactions(
     
     Returns
     -------
-    list[types.InteractionData]
+    List[InteractionData]
     """
+    interactions: List[InteractionData] = []
     for ptm in ptms:
         label = None
         if ptm.modification_type is not None:
@@ -279,19 +280,20 @@ def parse_interactions(
                 source = source.strip().upper()
                 target = target.strip().upper()
 
-                if not is_uniprot(source):
+                if (not is_uniprot(source)) or (not is_uniprot(target)):
                     raise ValueError(
-                        f"Source '{source}' is not a valid UniProt identifier."
-                    )
-                if not is_uniprot(target):
-                    raise ValueError(
-                        f"Target '{target}' is not a valid UniProt identifier."
+                        f"Edge '{(source, target)}' contains invalid UniProt "
+                        f"identifiers."
                     )
 
-                yield InteractionData(
-                    source=source,
-                    target=target,
-                    labels=[label.lower()],
-                    evidence=evidence,
-                    databases=["hprd"],
+                interactions.append(
+                    InteractionData(
+                        source=source,
+                        target=target,
+                        labels=[label.lower()],
+                        evidence=evidence,
+                        databases=["hprd"],
+                    )
                 )
+
+    return interactions
