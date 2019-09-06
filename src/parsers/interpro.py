@@ -37,7 +37,7 @@ def parse_entry_list(path: Union[str, Path]) -> List[InterproTermData]:
                 continue
             terms.append(
                 InterproTermData(
-                    identifier=identifier,
+                    identifier=identifier.strip().upper(),
                     description=(
                         None
                         if is_null(row["ENTRY_NAME"])

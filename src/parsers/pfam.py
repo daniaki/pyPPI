@@ -37,7 +37,9 @@ def parse_clans_file(path: Union[str, Path]) -> List[PfamTermData]:
                 continue
             pfam_terms.append(
                 PfamTermData(
-                    identifier=identifier, name=name, description=description
+                    identifier=identifier.strip.upper(),
+                    name=name,
+                    description=description,
                 )
             )
 

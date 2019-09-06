@@ -58,7 +58,7 @@ def parse_go_obo(path: Union[str, Path]) -> List[GeneOntologyTermData]:
     for _, term in dag.items():
         terms.append(
             GeneOntologyTermData(
-                identifier=term.item_id,
+                identifier=term.item_id.strip().upper(),
                 name=None if is_null(term.name) else term.name.strip(),
                 obsolete=term.is_obsolete,
                 description=None,

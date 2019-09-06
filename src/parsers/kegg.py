@@ -7,7 +7,7 @@ import tqdm
 
 from ..clients import kegg
 from ..settings import LOGGER_NAME
-from ..validators import is_uniprot, format_accession
+from ..validators import is_uniprot
 from .types import InteractionData
 
 logger = logging.getLogger(LOGGER_NAME)
