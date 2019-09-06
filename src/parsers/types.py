@@ -21,6 +21,15 @@ class InteractionEvidenceData:
     def __ne__(self, other):
         return not self == other
 
+    def normalize(self):
+        # Ensure immutable
+        return self.__class__(
+            pubmed=models.PubmedIdentifier.format(self.pubmed),
+            psimi=None
+            if not self.psimi
+            else models.PsimiIdentifier.format(self.psimi),
+        )
+
 
 @dataclass
 class InteractionData:
@@ -71,6 +80,20 @@ class InteractionData:
                 aggregated[hash(interaction)] = interaction
         return list(aggregated.values())
 
+    def normalize(self):
+        # Ensure immutable
+        return self.__class__(
+            source=models.UniprotIdentifier.format(self.source),
+            target=models.UniprotIdentifier.format(self.target),
+            labels=list(sorted(set(l.lower() for l in list(self.labels)))),
+            databases=list(
+                sorted(set(db.lower() for db in list(self.databases)))
+            ),
+            evidence=list(
+                sorted(set(e.normalize() for e in list(self.evidence)))
+            ),
+        )
+
 
 @dataclass
 class GeneOntologyTermData:
@@ -82,10 +105,6 @@ class GeneOntologyTermData:
 
     def __hash__(self):
         return hash(astuple(self))
-
-    def __post_init__(self):
-        if self.category not in GeneOntologyCategory.list():
-            raise ValueError(f"'{self.category}' is not a valid GO category.")
 
 
 @dataclass
