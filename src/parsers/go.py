@@ -9,6 +9,7 @@ from goatools.obo_parser import GODag, GOTerm
 from ..constants import GeneOntologyCategory
 from ..settings import LOGGER_NAME
 from ..utilities import is_null
+from ..validators import is_go
 from . import open_file
 from .types import GeneOntologyTermData
 
@@ -56,6 +57,7 @@ def parse_go_obo(path: Union[str, Path]) -> List[GeneOntologyTermData]:
     }
     term: GOTerm
     for _, term in dag.items():
+        assert is_go(term.item_id.strip().upper())
         terms.append(
             GeneOntologyTermData(
                 identifier=term.item_id.strip().upper(),

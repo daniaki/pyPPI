@@ -5,6 +5,7 @@ from typing import List, Dict, Union
 
 from . import open_file
 from ..utilities import is_null
+from ..validators import is_interpro
 from .types import InterproTermData
 
 
@@ -30,14 +31,12 @@ def parse_entry_list(path: Union[str, Path]) -> List[InterproTermData]:
             delimiter="\t",
         )
         for row in reader:
-            identifier = (
-                None if is_null(row["ENTRY_AC"]) else row["ENTRY_AC"].strip()
-            )
-            if not identifier:
-                continue
+            identifier = row["ENTRY_AC"].strip().upper()
+            assert is_interpro(identifier)
+
             terms.append(
                 InterproTermData(
-                    identifier=identifier.strip().upper(),
+                    identifier=identifier,
                     description=(
                         None
                         if is_null(row["ENTRY_NAME"])
