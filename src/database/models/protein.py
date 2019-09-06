@@ -27,7 +27,7 @@ class Protein(BaseModel):
         backref="proteins",
     )
     organism = peewee.IntegerField(
-        null=False, default=None, help_text="Numeric organism code. Eg 9606."
+        null=False, default=None, help_text="NCBI organism code. Eg 9606."
     )
     sequence = peewee.TextField(
         null=False,
