@@ -1,7 +1,7 @@
 import re
 from typing import Optional, Callable, Pattern
 
-from idutils import is_uniprot, uniprot_regexp
+from idutils import uniprot_regexp
 
 from .utilities import is_null
 
@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 
-uniprot_re = re.compile(f"({uniprot_regexp.pattern[:-1]})")
+uniprot_re = re.compile(r"({})(-\d+)?".format(uniprot_regexp.pattern[:-1]))
 psimi_re = re.compile(r"MI:\d{4}")
 pubmed_re = re.compile(r"\d+")
 go_re = re.compile(r"GO:\d{7}")
@@ -54,3 +54,6 @@ def is_pfam(identifier):
 def is_keyword(identifier):
     return keyword_re.fullmatch(str(identifier))
 
+
+def is_uniprot(identifier):
+    return uniprot_re.fullmatch(str(identifier))
