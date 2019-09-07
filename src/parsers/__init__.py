@@ -1,7 +1,9 @@
 import gzip
+import logging
 from pathlib import Path
 from typing import Union, Callable
 
+from ..settings import LOGGER_NAME
 
 __all__ = [
     "bioplex",
@@ -15,6 +17,8 @@ __all__ = [
     "types",
     "open_file",
 ]
+
+logger = logging.getLogger(LOGGER_NAME)
 
 
 def open_file(path: Union[str, Path], mode="rt"):
@@ -41,3 +45,13 @@ def open_file(path: Union[str, Path], mode="rt"):
     else:
         func = open
     return func(path, mode=mode)
+
+
+def warn_if_isoform(source, target):
+    source_is_isoform = "-" in source
+    target_is_isoform = "-" in target
+    if source_is_isoform or target_is_isoform:
+        logger.warning(
+            f"Edge {(source, target)} contains UniProt isoform "
+            f"identifiers."
+        )
