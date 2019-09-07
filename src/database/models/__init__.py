@@ -17,7 +17,7 @@ from .metadata import (
     GeneSymbol,
     Annotation,
 )
-from .protein import Protein
+from .protein import Protein, ProteinData
 from .interaction import (
     Interaction,
     InteractionDatabase,
@@ -53,6 +53,7 @@ __all__ = [
     "Annotation",
     # protein
     "Protein",
+    "ProteinData",
     # interaction
     "Interaction",
     "InteractionDatabase",
@@ -79,12 +80,13 @@ MODELS = (
     GeneSymbol,
     # Protein
     Protein,
-    Protein.aliases.get_through_model(),
-    Protein.genes.get_through_model(),
-    Protein.go_annotations.get_through_model(),
-    Protein.interpro_annotations.get_through_model(),
-    Protein.pfam_annotations.get_through_model(),
-    Protein.keywords.get_through_model(),
+    ProteinData,
+    ProteinData.identifiers.get_through_model(),
+    ProteinData.genes.get_through_model(),
+    ProteinData.go_annotations.get_through_model(),
+    ProteinData.interpro_annotations.get_through_model(),
+    ProteinData.pfam_annotations.get_through_model(),
+    ProteinData.keywords.get_through_model(),
     # Interaction
     Interaction,
     InteractionDatabase,
