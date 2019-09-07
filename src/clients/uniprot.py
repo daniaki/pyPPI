@@ -316,6 +316,11 @@ class UniprotClient:
             response: Response = self.session.get(url)
             if not response.ok:
                 if response.status_code == 404:
+                    logger.warning(
+                        f"Could not find any record for '{normalized}'. "
+                        f"Maybe it is obsolete or has been deleted from "
+                        f"UniProt?"
+                    )
                     return None
                 else:
                     logger.error(f"{response.content.decode()}")
@@ -405,8 +410,8 @@ class UniprotClient:
             xml_data = self._get_entry_from_cache(identifier)
             if xml_data is None:
                 logger.warning(
-                    f"Could not find any records for '{identifier}'. Maybe "
-                    "it is obsolete or has been deleted from UniProt?"
+                    f"Could not find any record for '{identifier}'. Maybe "
+                    f"it is obsolete or has been deleted from UniProt?"
                 )
                 yield identifier, None
             else:
