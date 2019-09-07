@@ -4,7 +4,7 @@ import json
 import logging
 from collections import OrderedDict, defaultdict
 from csv import DictReader
-from typing import Any, Dict, Iterable, List, Optional, Set, Generator
+from typing import Any, Dict, Iterable, List, Optional, Set, Generator, Tuple
 
 import tqdm
 import requests
@@ -329,7 +329,7 @@ class UniprotClient:
 
     def get_entries(
         self, identifiers: Iterable[str], batch_size: int = 250
-    ) -> Generator[Optional[UniprotEntry], None, None]:
+    ) -> Generator[Tuple[str, Optional[UniprotEntry]], None, None]:
         """
         Download the XML files associated with an iterable of UniProt 
         identifiers. Each XML file will be parsed into a `UniProtEntry`
@@ -347,9 +347,9 @@ class UniprotClient:
         
         Returns
         -------
-        Generator[Optional[UniprotEntry], None, None]
+        Generator[Tuple[str. Optional[UniprotEntry]]
             Identifiers for which no information could be found will have 
-            a `None` value.
+            a `None` value. Returns identifier and associated entry.
         """
         url = f"{self.base}/uploadlists/"
         unique = list(sorted(set(i.upper() for i in identifiers)))
@@ -385,9 +385,13 @@ class UniprotClient:
             for entry in BeautifulSoup(response.text, "xml").find_all("entry"):
                 uniprot_entry = UniprotEntry(entry)
                 for identifier in batch:
-                    if identifier in uniprot_entry.accessions:
+                    isoform = identifier.split("-")[0]
+                    if isoform in uniprot_entry.accessions:
                         self._set_entry_in_cache(
                             identifier, str(uniprot_entry.root)
+                        )
+                        self._set_entry_in_cache(
+                            isoform, str(uniprot_entry.root)
                         )
 
         # Save updated cache all batches if new items were downloaded.
@@ -400,9 +404,13 @@ class UniprotClient:
         for identifier in unique:
             xml_data = self._get_entry_from_cache(identifier)
             if xml_data is None:
-                yield None
+                logger.warning(
+                    f"Could not find any records for '{identifier}'. Maybe "
+                    "it is obsolete or has been deleted from UniProt?"
+                )
+                yield identifier, None
             else:
-                yield UniprotEntry(BeautifulSoup(xml_data, "xml"))
+                yield identifier, UniprotEntry(BeautifulSoup(xml_data, "xml"))
 
     def get_mapping_table(
         self,
