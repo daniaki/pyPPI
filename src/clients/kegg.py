@@ -9,9 +9,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 import requests
+import tqdm
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
-from tqdm import tqdm
 from urllib3.util.retry import Retry
 
 from ..constants import Paths
@@ -292,6 +292,20 @@ class Kegg:
             self._save_cache()
 
         return KeggPathway(xml=response_data)
+
+    def parse_all_pathways(
+        self, organism: str, verbose: bool = False
+    ) -> List[KeggPathway]:
+        path_ids: List[str] = list(self.pathways(organism)["accession"])
+
+        if verbose:
+            logger.info(
+                f"Downloading and parsing {len(path_ids)} '{organism}' "
+                f"pathways."
+            )
+            path_ids = tqdm.tqdm(path_ids, total=len(path_ids))
+
+        return [self.pathway_detail(path_id) for path_id in path_ids]
 
     def convert(
         self, source: str = "hsa", destination: str = "uniprot"
