@@ -52,3 +52,23 @@ class TestIsPsimi:
     def test_fails(self):
         assert not validators.is_psimi("MI:0004 random")
 
+
+class TestIsUniProt:
+    def test_match(self):
+        assert (
+            validators.uniprot_re.search(
+                "sometext|Uniprotkb:O15084-12"
+            ).group()
+            == "O15084-12"
+        )
+        assert (
+            validators.uniprot_re.search("sometext|Uniprotkb:O15084").group()
+            == "O15084"
+        )
+
+    def test_passes(self):
+        assert validators.is_uniprot("O15084-12")
+        assert validators.is_uniprot("O15084")
+
+    def test_fails(self):
+        assert not validators.is_uniprot("O15084 random")

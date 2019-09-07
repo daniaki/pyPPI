@@ -74,7 +74,24 @@ class TestInteractionEvidence(DatabaseTestMixin):
         assert e1 in query
         assert e2 not in query
 
-    def test_filter_by_pubmed_and_psimi_allows_null_psimi(self):
+    def test_filter_by_pubmed_and_psimi_null_psimi(self):
+        e1 = models.InteractionEvidence.create(
+            pubmed=models.PubmedIdentifier.create(identifier="1"),
+            psimi=models.PsimiIdentifier.create(identifier="MI:0001"),
+        )
+        e2 = models.InteractionEvidence.create(
+            pubmed=models.PubmedIdentifier.create(identifier="2"), psimi=None
+        )
+
+        # Should prefix 'pubmed' to 1
+        query = models.InteractionEvidence.filter_by_pubmed_and_psimi(
+            [("2", None)]
+        )
+        assert query.count() == 1
+        assert e1 not in query
+        assert e2 in query
+
+    def test_filter_by_pubmed_and_psimi_allows_null_and_non_null_psimi(self):
         e1 = models.InteractionEvidence.create(
             pubmed=models.PubmedIdentifier.create(identifier="1"),
             psimi=models.PsimiIdentifier.create(identifier="MI:0001"),
@@ -95,15 +112,24 @@ class TestInteractionEvidence(DatabaseTestMixin):
 class TestInteractionModel(DatabaseTestMixin):
     def setup(self):
         super().setup()
+        self.identifier_a = models.UniprotIdentifier.create(
+            identifier="P12345"
+        )
+        self.identifier_b = models.UniprotIdentifier.create(
+            identifier="P56785"
+        )
+
         self.protein_a = models.Protein.create(
-            identifier=models.UniprotIdentifier.create(identifier="P12345"),
-            organism=9606,
-            sequence="MLPGA",
+            identifier=self.identifier_a,
+            data=models.ProteinData.create(
+                organism=9606, sequence="MLPGA", reviewed=True, version="1"
+            ),
         )
         self.protein_b = models.Protein.create(
-            identifier=models.UniprotIdentifier.create(identifier="P56785"),
-            organism=9606,
-            sequence="EDALM",
+            identifier=self.identifier_b,
+            data=models.ProteinData.create(
+                organism=9606, sequence="EDALM", reviewed=True, version="1"
+            ),
         )
 
     def test_compact_returns_identifier_string_tuple(self):
@@ -140,33 +166,23 @@ class TestInteractionModel(DatabaseTestMixin):
             identifier=models.GeneOntologyIdentifier.create(
                 identifier="GO:0000001"
             ),
-            name="",
-            description="",
             category=GeneOntologyCategory.molecular_function,
         )
         go2 = models.GeneOntologyTerm.create(
             identifier=models.GeneOntologyIdentifier.create(
                 identifier="GO:0000002"
             ),
-            name="",
-            description="",
             category=GeneOntologyCategory.molecular_function,
         )
         pfam = models.PfamTerm.create(
-            identifier=models.PfamIdentifier.create(identifier="PF00001"),
-            name="",
-            description="",
+            identifier=models.PfamIdentifier.create(identifier="PF00001")
         )
         ipr = models.InterproTerm.create(
-            identifier=models.InterproIdentifier.create(
-                identifier="IPR000001"
-            ),
-            name="",
-            description="",
+            identifier=models.InterproIdentifier.create(identifier="IPR000001")
         )
-        self.protein_a.go_annotations = [go2, go1]
-        self.protein_a.pfam_annotations = [pfam]
-        self.protein_a.interpro_annotations = [ipr]
+        self.protein_a.data.go_annotations = [go2, go1]
+        self.protein_a.data.pfam_annotations = [pfam]
+        self.protein_a.data.interpro_annotations = [ipr]
 
         models.Interaction.create(source=self.protein_a, target=self.protein_b)
 
@@ -263,6 +279,97 @@ class TestInteractionModel(DatabaseTestMixin):
             index=["P12345,P56785"],
         )
         assert_frame_equal(result, expected, check_dtype=False)
+
+    def test_filter_by_pmid(self):
+        i1 = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        i2 = models.Interaction.create(
+            source=self.protein_b, target=self.protein_a
+        )
+
+        e1 = models.InteractionEvidence.create(
+            pubmed=models.PubmedIdentifier.create(identifier="1")
+        )
+        e2 = models.InteractionEvidence.create(
+            pubmed=models.PubmedIdentifier.create(identifier="2")
+        )
+
+        i1.evidence = [e1]
+        i2.evidence = [e2]
+
+        query = models.Interaction.filter_by_pmid(["1"])
+        assert query.count() == 1
+        assert i1 in query
+        assert i2 not in query
+
+    def test_filter_by_label_case_insensitive(self):
+        i1 = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        i2 = models.Interaction.create(
+            source=self.protein_b, target=self.protein_a
+        )
+
+        l1 = models.InteractionLabel.create(text="activation")
+        l2 = models.InteractionLabel.create(text="methylation")
+
+        i1.labels = [l1]
+        i2.labels = [l2]
+
+        query = models.Interaction.filter_by_label(["Activation"])
+        assert query.count() == 1
+        assert i1 in query
+        assert i2 not in query
+
+    def test_filter_by_db_case_insensitive(self):
+        i1 = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        i2 = models.Interaction.create(
+            source=self.protein_b, target=self.protein_a
+        )
+
+        d1 = models.InteractionDatabase.create(name="kegg")
+        d2 = models.InteractionDatabase.create(name="hprd")
+
+        i1.databases = [d1]
+        i2.databases = [d2]
+
+        query = models.Interaction.filter_by_database(["KEGG"])
+        assert query.count() == 1
+        assert i1 in query
+        assert i2 not in query
+
+    def test_filter_by_source_case_insensitive(self):
+        i1 = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        i2 = models.Interaction.create(
+            source=self.protein_b, target=self.protein_a
+        )
+
+        query = models.Interaction.filter_by_source(
+            [str(self.protein_a).upper()]
+        )
+        assert query.count() == 1
+        assert i1 in query
+        assert i2 not in query
+
+    def test_filter_by_target_case_insensitive(self):
+        i1 = models.Interaction.create(
+            source=self.protein_a, target=self.protein_b
+        )
+        i2 = models.Interaction.create(
+            source=self.protein_b, target=self.protein_a
+        )
+
+        query = models.Interaction.filter_by_target(
+            [str(self.protein_b).upper()]
+        )
+        assert query.count() == 1
+        assert i1 in query
+        assert i2 not in query
 
     # def test_filter_by_edge_format_insensitive(self):
     #     i1 = models.Interaction.create(

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 import mock
 import pytest
 from bs4 import BeautifulSoup
@@ -48,8 +49,8 @@ class TestCreateIdentifiers(DatabaseTestMixin):
     def test_gets_existing_identifier_case_insensitive(self):
         identifier = models.KeywordIdentifier.create(identifier="KW-0001")
         query: ModelSelect = utilities.create_identifiers(
-            identifiers=[str(identifier).lower()], 
-            model=models.KeywordIdentifier
+            identifiers=[str(identifier).lower()],
+            model=models.KeywordIdentifier,
         )
         assert query.count() == 1
         assert query.first().id == identifier.id
@@ -168,6 +169,8 @@ class TestCreateProteins(DatabaseTestMixin):
         )
 
     def assert_tables_empty(self):
+        assert models.ProteinData.count() == 0
+        assert models.Protein.count() == 0
         assert models.UniprotIdentifier.count() == 0
         assert models.GeneOntologyIdentifier.count() == 0
         assert models.GeneOntologyTerm.count() == 0
@@ -179,16 +182,19 @@ class TestCreateProteins(DatabaseTestMixin):
         assert models.Keyword.count() == 0
         assert models.GeneSymbol.count() == 0
 
-    def test_creates_protein_row_from_unirprot_entry(self):
+    def test_creates_with_isoform_identifier(self):
         # Check all tables are empty before call.
         self.assert_tables_empty()
 
-        query = utilities.create_proteins([self.entry])
+        query = utilities.create_proteins([("P38398-1", self.entry)])
 
         assert len(query) == 1
         instance: models.Protein = query[0]
         # Check all tables have been populated.
-        assert models.UniprotIdentifier.count() == len(self.entry.accessions)
+        assert models.ProteinData.count() == 1
+        assert models.UniprotIdentifier.count() == (
+            len(self.entry.accessions) + 1
+        )
         assert models.GeneOntologyIdentifier.count() == len(
             self.entry.go_terms
         )
@@ -204,32 +210,40 @@ class TestCreateProteins(DatabaseTestMixin):
         assert models.GeneSymbol.count() == len(self.entry.genes)
 
         # Check fields have been set appropriately.
-        assert str(instance) == "P38398"
-        assert instance.sequence == self.entry.sequence
-        assert instance.organism == 9606
-        assert instance.reviewed == self.entry.reviewed
-        assert instance.aliases.count() == len(self.entry.accessions)
-        assert instance.go_annotations.count() == len(self.entry.go_terms)
-        assert instance.interpro_annotations.count() == len(
+        assert str(instance) == "P38398-1"
+        assert instance.data.sequence == self.entry.sequence
+        assert instance.data.organism == 9606
+        assert instance.data.reviewed == self.entry.reviewed
+        assert instance.data.version == self.entry.version
+        assert instance.data.identifiers.count() == (
+            len(self.entry.accessions) + 1
+        )
+        assert instance.data.go_annotations.count() == len(self.entry.go_terms)
+        assert instance.data.interpro_annotations.count() == len(
             self.entry.interpro_terms
         )
-        assert instance.pfam_annotations.count() == len(self.entry.pfam_terms)
-        assert instance.keywords.count() == len(self.entry.keywords)
-        assert instance.genes.count() == len(self.entry.genes)
+        assert instance.data.pfam_annotations.count() == len(
+            self.entry.pfam_terms
+        )
+        assert instance.data.keywords.count() == len(self.entry.keywords)
+        assert instance.data.genes.count() == len(self.entry.genes)
 
-    def test_updates_existing_protein(self):
-        _ = models.Protein.create(
+    def test_updates_existing_protein_data_case_insensitive_accession(self):
+        instance = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P38398"),
-            sequence="LMN",
-            organism=1000,
-            reviewed=False,
+            data=models.ProteinData.create(
+                sequence="LMN", organism=1000, reviewed=False, version="1"
+            ),
         )
+        instance.data.identifiers = [instance.identifier]
 
-        query = utilities.create_proteins([self.entry])
+        # case insensitive
+        query = utilities.create_proteins([("P38398".lower(), self.entry)])
         assert len(query) == 1
 
         # Check all tables have been populated.
         instance: models.Protein = query[0]
+        assert models.ProteinData.count() == 1
         assert models.UniprotIdentifier.count() == len(self.entry.accessions)
         assert models.GeneOntologyIdentifier.count() == len(
             self.entry.go_terms
@@ -247,17 +261,20 @@ class TestCreateProteins(DatabaseTestMixin):
 
         # Check fields have been set appropriately.
         assert str(instance) == "P38398"
-        assert instance.sequence == self.entry.sequence
-        assert instance.organism == 9606
-        assert instance.reviewed == self.entry.reviewed
-        assert instance.aliases.count() == len(self.entry.accessions)
-        assert instance.go_annotations.count() == len(self.entry.go_terms)
-        assert instance.interpro_annotations.count() == len(
+        assert instance.data.sequence == self.entry.sequence
+        assert instance.data.organism == 9606
+        assert instance.data.reviewed == self.entry.reviewed
+        assert instance.data.version == self.entry.version
+        assert instance.data.identifiers.count() == len(self.entry.accessions)
+        assert instance.data.go_annotations.count() == len(self.entry.go_terms)
+        assert instance.data.interpro_annotations.count() == len(
             self.entry.interpro_terms
         )
-        assert instance.pfam_annotations.count() == len(self.entry.pfam_terms)
-        assert instance.keywords.count() == len(self.entry.keywords)
-        assert instance.genes.count() == len(self.entry.genes)
+        assert instance.data.pfam_annotations.count() == len(
+            self.entry.pfam_terms
+        )
+        assert instance.data.keywords.count() == len(self.entry.keywords)
+        assert instance.data.genes.count() == len(self.entry.genes)
 
 
 class TestCreateInteractions(DatabaseTestMixin):
@@ -273,7 +290,13 @@ class TestCreateInteractions(DatabaseTestMixin):
                 open(DATA_DIR / "P02760.xml", "rt").read(), "xml"
             )
         )
-        utilities.create_proteins([self.entry_a, self.entry_b])
+        utilities.create_proteins(
+            [
+                (self.entry_a.primary_accession, self.entry_a),
+                (self.entry_b.primary_accession, self.entry_b),
+            ]
+        )
+        assert models.ProteinData.count() == 2
 
     def assert_tables_empty(self):
         assert models.Interaction.count() == 0
@@ -366,10 +389,10 @@ class TestCreateInteractions(DatabaseTestMixin):
         ]
         assert sorted([str(d) for d in query[1].databases]) == ["hprd"]
 
-    def test_updates_existing_interaction(self):
+    def test_updates_existing_interaction_case_insensitive(self):
+        proteins = models.Protein.all()
         interaction = models.Interaction.create(
-            source=models.UniprotIdentifier.get(identifier="P38398"),
-            target=models.UniprotIdentifier.get(identifier="P02760"),
+            source=proteins[0], target=proteins[1]
         )
         interaction.labels = [models.InteractionLabel.create(text="a")]
         interaction.databases = [
@@ -384,8 +407,8 @@ class TestCreateInteractions(DatabaseTestMixin):
 
         interactions = [
             types.InteractionData(
-                source="P38398",
-                target="P02760",
+                source="P38398".lower(),
+                target="P02760".lower(),
                 labels=["Activation", "methylation"],
                 databases=["Kegg", "HPRD"],
                 evidence=[
@@ -425,15 +448,15 @@ class TestCreateInteractions(DatabaseTestMixin):
         with pytest.raises(ValueError):
             utilities.create_interactions([interaction])
 
-    def test_skips_interaction_if_source_not_found_on_uniprot(self):
-        interaction = types.InteractionData(source="P38398", target="P12345")
-        query = utilities.create_interactions([interaction])
-        assert len(query) == 0
+    # def test_skips_interaction_if_source_not_found_on_uniprot(self):
+    #     interaction = types.InteractionData(source="P38398", target="P12345")
+    #     query = utilities.create_interactions([interaction])
+    #     assert len(query) == 0
 
-    def test_skips_interaction_if_target_not_found_on_uniprot(self):
-        interaction = types.InteractionData(source="P12345", target="P02760")
-        query = utilities.create_interactions([interaction])
-        assert len(query) == 0
+    # def test_skips_interaction_if_target_not_found_on_uniprot(self):
+    #     interaction = types.InteractionData(source="P12345", target="P02760")
+    #     query = utilities.create_interactions([interaction])
+    #     assert len(query) == 0
 
 
 class TestUpdateAccessions:
