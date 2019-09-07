@@ -1,6 +1,6 @@
 import logging
 from itertools import product
-from typing import Dict, Generator, Iterable, List, Optional
+from typing import Dict, Generator, Iterable, List, Optional, Set
 
 import pandas as pd
 import tqdm
@@ -10,10 +10,14 @@ from ..settings import LOGGER_NAME
 from ..validators import is_uniprot
 from .types import InteractionData
 
+from . import warn_if_isoform
+
 logger = logging.getLogger(LOGGER_NAME)
 
 
 def parse_interactions(
+    pathways: Iterable[kegg.KeggPathway],
+    kegg_gene_to_uniprot: Dict[str, Iterable[str]],
     exclude_labels: Iterable[str] = (
         "indirect effect",
         "compound",
@@ -21,30 +25,10 @@ def parse_interactions(
         "state change",
         "missing interaction",
     ),
-    organism: str = "hsa",
-    show_progress: bool = True,
-    client: Optional[kegg.Kegg] = None,
-) -> List[InteractionData]
-
-    # Set up client, download kegg -> uniprot mapping and all pathways.
-    if not client:
-        client = kegg.Kegg()
-
-    logger.info("Downloading Kegg to UniProt mapping.")
-    to_uniprot: Dict[str, List[str]] = client.convert("hsa", "uniprot")
-
-    logger.info("Downloading HSA pathways.")
-    pathway_accessions: List[str] = list(
-        client.pathways(organism)["accession"]
-    )
-    pathways: Generator[kegg.KeggPathway, None, None] = (
-        client.pathway_detail(pathway) for pathway in pathway_accessions
-    )
-    if show_progress:
-        pathways = tqdm.tqdm(pathways, total=len(pathway_accessions))
-
+) -> List[InteractionData]:
     # For each pathway, yield the interaction data for each interaction.
     # Stack all dataframes into a single dataframe.
+    exclude: Set[str] = set(l.lower() for l in exclude_labels)
     interactions: pd.DataFrame = pd.concat(
         [p.interactions for p in pathways], axis=0, ignore_index=True
     )
@@ -61,11 +45,13 @@ def parse_interactions(
     logger.info("Generating interactions.")
     result: List[InteractionData] = []
     for row in interactions.to_dict("record"):
-        sources = to_uniprot.get(row["source"], None)
-        targets = to_uniprot.get(row["target"], None)
+        sources = kegg_gene_to_uniprot.get(row["source"], None)
+        targets = kegg_gene_to_uniprot.get(row["target"], None)
         labels = list(
             sorted(
-                set(l.lower() for l in row["label"] if l not in exclude_labels)
+                set(
+                    l.lower() for l in row["label"] if l.lower() not in exclude
+                )
             )
         )
 
@@ -83,12 +69,16 @@ def parse_interactions(
                 source = source.strip().upper()
                 target = target.strip().upper()
 
+                warn_if_isoform(source, target)
+
                 if (not is_uniprot(source)) or (not is_uniprot(target)):
                     raise ValueError(
-                        f"Edge '{(source, target)}' contains invalid UniProt "
+                        f"Edge {(source, target)} contains invalid UniProt "
                         f"identifiers."
                     )
 
+                assert source is not None
+                assert target is not None
                 result.append(
                     InteractionData(
                         source=source,
@@ -97,3 +87,4 @@ def parse_interactions(
                         databases=["kegg"],
                     )
                 )
+    return result
