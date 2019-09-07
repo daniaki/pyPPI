@@ -88,7 +88,7 @@ class InteractionEvidence(BaseModel):
     @classmethod
     def filter_by_pubmed_and_psimi(
         cls,
-        identifiers: List[Tuple[str, Optional[str]]],
+        identifiers: Iterable[Tuple[str, Optional[str]]],
         query: Optional[peewee.ModelSelect] = None,
     ) -> peewee.ModelSelect:
         """
@@ -97,7 +97,7 @@ class InteractionEvidence(BaseModel):
         
         Parameters
         ----------
-        identifiers : List[Tuple[str, str]]
+        identifiers : Iterable[Tuple[str, str]]
             String tuples using a (pubmed, psimi) format.
         query : Optional[ModelSelect], optional
             Query to filter. Defaults to all rows.
@@ -340,12 +340,12 @@ class Interaction(BaseModel):
         -------
         peewee.ModelSelect
         """
-        identifiers = set(i.upper() for i in identifiers)
+        identifiers = set(i.lower() for i in identifiers)
         fn = peewee.fn.Lower(UniprotIdentifier.identifier)
         query = query or cls.all()
         return (
             query.select(cls, Protein, UniprotIdentifier)
-            .join(Protein, on=(cls.source_id == Protein.id))
+            .join(Protein, on=(cls.source == Protein.id))
             .join(
                 UniprotIdentifier,
                 on=(Protein.identifier == UniprotIdentifier.id),
@@ -400,15 +400,15 @@ class Interaction(BaseModel):
     #     """
     #     Filter by source and target node identifiers. Search is case
     #     insensitive.
-        
+
     #     Parameters
     #     ----------
     #     edges : List[Tuple[str, str]]
     #         Uniprot identifiers using a (`source`, `target`) format.
-        
+
     #     query : Optional[ModelSelect], optional
     #         Query to filter. Defaults to all rows.
-        
+
     #     Returns
     #     -------
     #     peewee.ModelSelect
@@ -449,8 +449,14 @@ class Interaction(BaseModel):
             for (column, attr) in features:
                 joined = ",".join(
                     sorted(
-                        [str(a) for a in getattr(interaction.source, attr)]
-                        + [str(a) for a in getattr(interaction.target, attr)]
+                        [
+                            str(a)
+                            for a in getattr(interaction.source.data, attr)
+                        ]
+                        + [
+                            str(a)
+                            for a in getattr(interaction.target.data, attr)
+                        ]
                     )
                 )
                 data[column] = joined or None
