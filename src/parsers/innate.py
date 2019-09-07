@@ -1,12 +1,16 @@
 import csv
 import itertools
+import logging
 from pathlib import Path
-from typing import Generator, List, Union, Optional
+from typing import Generator, List, Optional, Union
 
-from ..validators import psimi_re, uniprot_re, is_uniprot, is_pubmed
-from . import open_file
+from ..settings import LOGGER_NAME
+from ..utilities import is_null
+from ..validators import is_pubmed, is_uniprot, psimi_re, uniprot_re
+from . import open_file, warn_if_isoform
 from .types import InteractionData, InteractionEvidenceData
 
+logger = logging.getLogger(LOGGER_NAME)
 
 def parse_interactions(path: Union[str, Path]) -> List[InteractionData]:
     """
@@ -53,8 +57,14 @@ def parse_interactions(path: Union[str, Path]) -> List[InteractionData]:
             if target_match:
                 target = target_match.group().strip().upper()
 
-            if not source or not target:
+            if is_null(source) or is_null(target):
+                # logger.warning(
+                #     f"Edge {(source, target)} contains null UniProt "
+                #     f"identifiers. Skipping line."
+                # )
                 continue
+
+            warn_if_isoform(source, target)
 
             # These lines should be equal in length, unless one PSI-MI term
             # has been provided for multiple PMIDs.
@@ -88,6 +98,8 @@ def parse_interactions(path: Union[str, Path]) -> List[InteractionData]:
                     )
                 )
 
+            assert source is not None
+            assert target is not None
             interactions.append(
                 InteractionData(
                     source=source,

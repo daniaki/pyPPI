@@ -19,7 +19,7 @@ from typing import (
 from ..constants import PSIMI_NAME_TO_IDENTIFIER, UNIPROT_ORD_KEY, Columns
 from ..utilities import is_null
 from ..validators import is_pubmed, is_uniprot
-from . import open_file
+from . import open_file, warn_if_isoform
 from .types import InteractionData, InteractionEvidenceData
 
 
@@ -280,12 +280,16 @@ def parse_interactions(
                 source = source.strip().upper()
                 target = target.strip().upper()
 
+                warn_if_isoform(source, target)
+
                 if (not is_uniprot(source)) or (not is_uniprot(target)):
                     raise ValueError(
-                        f"Edge '{(source, target)}' contains invalid UniProt "
+                        f"Edge {(source, target)} contains invalid UniProt "
                         f"identifiers."
                     )
 
+                assert source is not None
+                assert target is not None
                 interactions.append(
                     InteractionData(
                         source=source,
