@@ -7,7 +7,6 @@ from ..settings import LOGGER_NAME
 
 __all__ = [
     "bioplex",
-    "edgelist",
     "hprd",
     "innate",
     "interpro",

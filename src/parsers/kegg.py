@@ -42,7 +42,7 @@ def parse_interactions(
         .dropna(axis=0, how="any", inplace=False)
     )
 
-    logger.info("Generating interactions.")
+    logger.info("Parsing pathway XML files for interactions.")
     result: List[InteractionData] = []
     for row in interactions.to_dict("record"):
         sources = kegg_gene_to_uniprot.get(row["source"], None)
