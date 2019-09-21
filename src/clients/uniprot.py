@@ -1,5 +1,6 @@
 import gzip
 import io
+import atexit
 import json
 import logging
 from collections import OrderedDict, defaultdict
@@ -194,8 +195,8 @@ class UniprotEntry:
         return str(self.db).lower() == "swiss-prot"
 
     @property
-    def version(self) -> str:
-        return self.root["version"]
+    def version(self) -> int:
+        return int(self.root["version"])
 
     @property
     def genes(self) -> List[types.GeneData]:
@@ -234,12 +235,18 @@ class UniprotClient:
         max_retries: int = 5,
         verbose: bool = False,
     ):
+        atexit.register(self.save_cache)
+
         self.base = base
         self.use_cache = use_cache
-        self.cache: Dict[str, Any] = {}
         self.verbose = verbose
+
+        self.cache: Dict[str, Any] = {}
+        # Map to keep track of secondary accessions mapping to primary.
+        # Used for improved caching and reduced data duplication.
+        self.primary_accessions: Dict[str, str] = {}
         if self.use_cache:
-            self._load_cache()
+            self.load_cache()
 
         # Create re-try handler and mount it to the session using the base
         # url as the prefix
@@ -247,19 +254,22 @@ class UniprotClient:
         retries = Retry(total=max_retries, respect_retry_after_header=True)
         self.session.mount(self.base, HTTPAdapter(max_retries=retries))
 
-    def _delete_cache(self):
+    def clear_cache(self):
         self.cache = {}
-        self._save_cache()
+        self.primary_accessions = {}
 
-    def _load_cache(self):
+    def load_cache(self):
         if Paths.uniprot_cache.exists():
             self.cache = json.load(gzip.open(Paths.uniprot_cache, "rt"))
+            self.primary_accessions = self.cache["primary"]
 
-    def _save_cache(self, overwrite: bool = False):
+    def save_cache(self, overwrite: bool = False):
         if not self.use_cache:
             # Bypass saving if use has requested not to use cache.
             return
 
+        logger.info("Cleaning up. Saving cache changes.")
+        self.cache["primary"] = self.primary_accessions
         if not overwrite:
             json.dump(self.cache, gzip.open(Paths.uniprot_cache, "wt"))
         else:
@@ -273,16 +283,20 @@ class UniprotClient:
             json.dump(existing, gzip.open(Paths.uniprot_cache, "wt"))
 
     def _get_entry_from_cache(self, identifier):
-        return self.cache.get(identifier, {}).get("entry", None)
+        non_isoform = identifier.split("-")[0]
+        primary = self.primary_accessions.get(non_isoform, non_isoform)
+        return self.cache.get(primary, {}).get("entry", None)
+
+    def _set_entry_in_cache(self, identifier, value):
+        non_isoform = identifier.split("-")[0]
+        primary = self.primary_accessions.get(non_isoform, non_isoform)
+        if primary in self.cache:
+            self.cache[primary].update({"entry": value})
+        else:
+            self.cache.update({primary: {"entry": value}})
 
     def _get_mapping_from_cache(self, identifier, key):
         return self.cache.get(identifier, {}).get(key, None)
-
-    def _set_entry_in_cache(self, identifier, value):
-        if identifier in self.cache:
-            self.cache[identifier].update({"entry": value})
-        else:
-            self.cache.update({identifier: {"entry": value}})
 
     def _set_mapping_in_cache(self, identifier, key, value):
         if identifier in self.cache:
@@ -317,9 +331,9 @@ class UniprotClient:
             if not response.ok:
                 if response.status_code == 404:
                     logger.warning(
-                        f"Could not find any record for '{normalized}'. "
-                        f"Maybe it is obsolete or has been deleted from "
-                        f"UniProt?"
+                        f"Could not find any record for '{normalized}'. If it "
+                        f"is a valid UniProt identifier it may be obsolete or "
+                        f"the entry no longer exists."
                     )
                     return None
                 else:
@@ -327,10 +341,18 @@ class UniprotClient:
                     response.raise_for_status()
 
             data = response.text
-            self._set_entry_in_cache(normalized, data)
-            self._save_cache()
+            entry = UniprotEntry(BeautifulSoup(data, "xml"))
 
-        return UniprotEntry(BeautifulSoup(data, "xml"))
+            # Update accession mapping before setting data in cache so data can
+            # be set under the correct primary accession key.
+            for ac in entry.accessions:
+                self.primary_accessions[ac] = entry.primary_accession
+            self._set_entry_in_cache(entry.primary_accession, data)
+            # self.save_cache()
+        else:
+            entry = UniprotEntry(BeautifulSoup(data, "xml"))
+        
+        return entry
 
     def get_entries(
         self, identifiers: Iterable[str], batch_size: int = 250
@@ -361,20 +383,25 @@ class UniprotClient:
 
         not_in_cache = []
         for identifier in unique:
-            hit = self._get_entry_from_cache(identifier)
-            if hit is None:
+            if self._get_entry_from_cache(identifier) is None:
                 not_in_cache.append(identifier)
 
         batches = list(chunks(not_in_cache, batch_size))
         if self.verbose and batches:
-            logger.info(
-                f"Requesting {len(batches)} batches of size {batch_size}."
-            )
+            logger.info(f"Requesting {len(batches)} batches.")
             batches = tqdm.tqdm(batches, total=len(batches))
 
         for batch in batches:
+            # Remove isoforms since Uniprot will just return the non-isoform
+            # record anyway. This will reduce size of data being requested.
+            # Also check each batch for secondary identifiers which may have 
+            # been downloaded in a previous batch - no need to request again.
+            normalized = set(
+                i.split("-")[0] for i in batch
+                if self._get_entry_from_cache(i) is None
+            )
             data = {
-                "query": " ".join(batch),
+                "query": " ".join(normalized),
                 "format": "xml",
                 "from": "ACC+ID",
                 "to": "ACC",
@@ -383,25 +410,21 @@ class UniprotClient:
             if not response.ok:
                 logger.error(f"{response.content.decode()}")
                 # Save cache before raising.
-                self._save_cache()
+                # self.save_cache()
                 response.raise_for_status()
 
-            # Parse the result into separate entries for more modular caching.
             for entry in BeautifulSoup(response.text, "xml").find_all("entry"):
-                uniprot_entry = UniprotEntry(entry)
-                for identifier in batch:
-                    isoform = identifier.split("-")[0]
-                    if isoform in uniprot_entry.accessions:
-                        self._set_entry_in_cache(
-                            identifier, str(uniprot_entry.root)
-                        )
-                        self._set_entry_in_cache(
-                            isoform, str(uniprot_entry.root)
-                        )
+                entry = UniprotEntry(entry)
+                xml_data = str(entry.root)
+                # Update accession mapping before setting data in cache so data 
+                # can be set under the correct primary accession key.
+                for ac in entry.accessions:
+                    self.primary_accessions[ac] = entry.primary_accession
+                self._set_entry_in_cache(entry.primary_accession, xml_data)
 
-        # Save updated cache all batches if new items were downloaded.
-        if len(not_in_cache):
-            self._save_cache()
+        # # Save updated cache all batches if new items were downloaded.
+        # if len(not_in_cache):
+        #     self.save_cache()
 
         if self.verbose:
             logger.info("Parsing XML into UniprotEntry instances.")
@@ -410,8 +433,9 @@ class UniprotClient:
             xml_data = self._get_entry_from_cache(identifier)
             if xml_data is None:
                 logger.warning(
-                    f"Could not find any record for '{identifier}'. Maybe "
-                    f"it is obsolete or has been deleted from UniProt?"
+                    f"Could not find any record for '{identifier}'. If it "
+                    f"is a valid UniProt identifier it may be obsolete or "
+                    f"the entry no longer exists."
                 )
                 yield identifier, None
             else:
@@ -454,9 +478,7 @@ class UniprotClient:
 
         batches = list(chunks(not_in_cache, batch_size))
         if self.verbose and batches:
-            logger.info(
-                f"Requesting {len(batches)} batches of size {batch_size}."
-            )
+            logger.info(f"Requesting {len(batches)} batches.")
             batches = tqdm.tqdm(batches, total=len(batches))
 
         for batch in batches:
@@ -485,9 +507,9 @@ class UniprotClient:
             for identifier, values in mapping.items():
                 self._set_mapping_in_cache(identifier, mapping_key, values)
 
-        # Save updated cache
-        if len(not_in_cache):
-            self._save_cache()
+        # # Save updated cache
+        # if len(not_in_cache):
+        #     self.save_cache()
 
         result: Dict[str, List[str]] = {}
         for identifier in unique:
