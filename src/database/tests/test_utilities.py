@@ -169,7 +169,9 @@ class TestCreateProteins(DatabaseTestMixin):
         )
 
     def assert_tables_empty(self):
-        assert models.ProteinData.count() == 0
+        assert models.UniprotRecord.count() == 0
+        assert models.UniprotRecordGene.count() == 0
+        assert models.UniprotRecordIdentifier.count() == 0
         assert models.Protein.count() == 0
         assert models.UniprotIdentifier.count() == 0
         assert models.GeneOntologyIdentifier.count() == 0
@@ -191,7 +193,7 @@ class TestCreateProteins(DatabaseTestMixin):
         assert len(query) == 1
         instance: models.Protein = query[0]
         # Check all tables have been populated.
-        assert models.ProteinData.count() == 1
+        assert models.UniprotRecord.count() == 1
         assert models.UniprotIdentifier.count() == (
             len(self.entry.accessions) + 1
         )
@@ -211,31 +213,81 @@ class TestCreateProteins(DatabaseTestMixin):
 
         # Check fields have been set appropriately.
         assert str(instance) == "P38398-1"
-        assert instance.data.sequence == self.entry.sequence
-        assert instance.data.organism == 9606
-        assert instance.data.reviewed == self.entry.reviewed
-        assert instance.data.version == self.entry.version
-        assert instance.data.identifiers.count() == (
+        assert instance.record.sequence == self.entry.sequence
+        assert instance.record.organism == 9606
+        assert instance.record.reviewed == self.entry.reviewed
+        assert instance.record.version == self.entry.version
+        assert instance.record.identifiers.count() == (
             len(self.entry.accessions) + 1
         )
-        assert instance.data.go_annotations.count() == len(self.entry.go_terms)
-        assert instance.data.interpro_annotations.count() == len(
+
+        # Check primary is correctly associated with first accession
+        for record_identifier in instance.record.identifiers:
+            if str(record_identifier.identifier) == "P38398":
+                assert record_identifier.primary
+            else:
+                assert not record_identifier.primary
+
+        assert instance.record.go_annotations.count() == len(
+            self.entry.go_terms
+        )
+        assert instance.record.interpro_annotations.count() == len(
             self.entry.interpro_terms
         )
-        assert instance.data.pfam_annotations.count() == len(
+        assert instance.record.pfam_annotations.count() == len(
             self.entry.pfam_terms
         )
-        assert instance.data.keywords.count() == len(self.entry.keywords)
-        assert instance.data.genes.count() == len(self.entry.genes)
+        assert instance.record.keywords.count() == len(self.entry.keywords)
+        assert instance.record.genes.count() == len(self.entry.genes)
+
+        for record_gene in instance.record.genes:
+            if str(record_gene.gene) == "BRCA1":
+                assert record_gene.relation == "primary"
+                assert record_gene.primary == True
+            else:
+                assert record_gene.relation == "synonym"
+                assert record_gene.primary == False
+
+    def test_handles_duplicates(self):
+        # Check all tables are empty before call.
+        self.assert_tables_empty()
+        query = utilities.create_proteins(
+            [("P38398-1", self.entry), ("P38398", self.entry)]
+        )
+        assert models.UniprotRecord.count() == 1
+        assert len(query) == 2
 
     def test_updates_existing_protein_data_case_insensitive_accession(self):
         instance = models.Protein.create(
             identifier=models.UniprotIdentifier.create(identifier="P38398"),
-            data=models.ProteinData.create(
-                sequence="LMN", organism=1000, reviewed=False, version="1"
+            record=models.UniprotRecord.create(
+                sequence="LMN", organism=1000, reviewed=False, version=1
             ),
         )
-        instance.data.identifiers = [instance.identifier]
+
+        # These should be updated
+        models.UniprotRecordIdentifier.create(
+            identifier=instance.identifier,
+            record=instance.record,
+            primary=False,
+        )
+        models.UniprotRecordGene.create(
+            record=instance.record,
+            gene=models.GeneSymbol.create(text="BRCA1"),
+            relation="orf",
+        )
+
+        # These should be deleted by update
+        models.UniprotRecordIdentifier.create(
+            identifier=models.UniprotIdentifier.create(identifier="P12345"),
+            record=instance.record,
+            primary=True,
+        )
+        models.UniprotRecordGene.create(
+            record=instance.record,
+            gene=models.GeneSymbol.create(text="BRCA2"),
+            relation="primary",
+        )
 
         # case insensitive
         query = utilities.create_proteins([("P38398".lower(), self.entry)])
@@ -243,8 +295,10 @@ class TestCreateProteins(DatabaseTestMixin):
 
         # Check all tables have been populated.
         instance: models.Protein = query[0]
-        assert models.ProteinData.count() == 1
-        assert models.UniprotIdentifier.count() == len(self.entry.accessions)
+        assert models.UniprotRecord.count() == 1
+        assert models.UniprotIdentifier.count() == (
+            len(self.entry.accessions) + 1
+        )
         assert models.GeneOntologyIdentifier.count() == len(
             self.entry.go_terms
         )
@@ -257,24 +311,49 @@ class TestCreateProteins(DatabaseTestMixin):
         assert models.InterproTerm.count() == len(self.entry.interpro_terms)
         assert models.PfamTerm.count() == len(self.entry.pfam_terms)
         assert models.Keyword.count() == len(self.entry.keywords)
-        assert models.GeneSymbol.count() == len(self.entry.genes)
+        assert models.GeneSymbol.count() == len(self.entry.genes) + 1
 
         # Check fields have been set appropriately.
         assert str(instance) == "P38398"
-        assert instance.data.sequence == self.entry.sequence
-        assert instance.data.organism == 9606
-        assert instance.data.reviewed == self.entry.reviewed
-        assert instance.data.version == self.entry.version
-        assert instance.data.identifiers.count() == len(self.entry.accessions)
-        assert instance.data.go_annotations.count() == len(self.entry.go_terms)
-        assert instance.data.interpro_annotations.count() == len(
+        assert instance.record.sequence == self.entry.sequence
+        assert instance.record.organism == 9606
+        assert instance.record.reviewed == self.entry.reviewed
+        assert instance.record.version == self.entry.version
+        assert instance.record.identifiers.count() == len(
+            self.entry.accessions
+        )
+
+        assert "P12345" not in set(
+            str(i.identifier for i in instance.record.identifiers)
+        )
+
+        # Check primary is correctly associated with first accession
+        for record_identifier in instance.record.identifiers:
+            if str(record_identifier.identifier) == "P38398":
+                assert record_identifier.primary
+            else:
+                assert not record_identifier.primary
+
+        assert instance.record.go_annotations.count() == len(
+            self.entry.go_terms
+        )
+        assert instance.record.interpro_annotations.count() == len(
             self.entry.interpro_terms
         )
-        assert instance.data.pfam_annotations.count() == len(
+        assert instance.record.pfam_annotations.count() == len(
             self.entry.pfam_terms
         )
-        assert instance.data.keywords.count() == len(self.entry.keywords)
-        assert instance.data.genes.count() == len(self.entry.genes)
+        assert instance.record.keywords.count() == len(self.entry.keywords)
+        assert instance.record.genes.count() == len(self.entry.genes)
+        assert "BRCA2" not in set(str(g.gene) for g in instance.record.genes)
+
+        for record_gene in instance.record.genes:
+            if str(record_gene.gene) == "BRCA1":
+                assert record_gene.relation == "primary"
+                assert record_gene.primary == True
+            else:
+                assert record_gene.relation == "synonym"
+                assert record_gene.primary == False
 
 
 class TestCreateInteractions(DatabaseTestMixin):
@@ -296,7 +375,7 @@ class TestCreateInteractions(DatabaseTestMixin):
                 (self.entry_b.primary_accession, self.entry_b),
             ]
         )
-        assert models.ProteinData.count() == 2
+        assert models.UniprotRecord.count() == 2
 
     def assert_tables_empty(self):
         assert models.Interaction.count() == 0

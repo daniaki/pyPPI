@@ -121,14 +121,14 @@ class TestInteractionModel(DatabaseTestMixin):
 
         self.protein_a = models.Protein.create(
             identifier=self.identifier_a,
-            data=models.ProteinData.create(
-                organism=9606, sequence="MLPGA", reviewed=True, version="1"
+            record=models.UniprotRecord.create(
+                organism=9606, sequence="MLPGA", reviewed=True, version=1
             ),
         )
         self.protein_b = models.Protein.create(
             identifier=self.identifier_b,
-            data=models.ProteinData.create(
-                organism=9606, sequence="EDALM", reviewed=True, version="1"
+            record=models.UniprotRecord.create(
+                organism=9606, sequence="EDALM", reviewed=True, version=1
             ),
         )
 
@@ -180,9 +180,9 @@ class TestInteractionModel(DatabaseTestMixin):
         ipr = models.InterproTerm.create(
             identifier=models.InterproIdentifier.create(identifier="IPR000001")
         )
-        self.protein_a.data.go_annotations = [go2, go1]
-        self.protein_a.data.pfam_annotations = [pfam]
-        self.protein_a.data.interpro_annotations = [ipr]
+        self.protein_a.record.go_annotations = [go2, go1]
+        self.protein_a.record.pfam_annotations = [pfam]
+        self.protein_a.record.interpro_annotations = [ipr]
 
         models.Interaction.create(source=self.protein_a, target=self.protein_b)
 

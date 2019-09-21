@@ -3,7 +3,7 @@ from typing import Iterable
 
 from ...constants import GeneOntologyCategory
 from ...utilities import is_null
-from .base import BaseModel
+from .base import BaseModel, ForeignKeyConstraint
 from .identifiers import (
     GeneOntologyIdentifier,
     InterproIdentifier,
@@ -73,6 +73,7 @@ class GeneOntologyTerm(Annotation):
         default=None,
         unique=True,
         backref="terms",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Unique identifier for this term.",
     )
     category = peewee.CharField(
@@ -107,6 +108,7 @@ class InterproTerm(Annotation):
         default=None,
         unique=True,
         backref="terms",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Identifier relating to this term.",
     )
     entry_type = peewee.CharField(
@@ -132,6 +134,7 @@ class PfamTerm(Annotation):
         default=None,
         unique=True,
         backref="terms",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Identifier relating to this term.",
     )
 
@@ -143,6 +146,7 @@ class Keyword(Annotation):
         default=None,
         unique=True,
         backref="terms",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Identifier relating to this term. Has form 'KW-d+'",
     )
 

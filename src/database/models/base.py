@@ -8,6 +8,14 @@ from ...settings import DATABASE
 __all__ = ["BaseModel"]
 
 
+class ForeignKeyConstraint:
+    RESTRICT = "RESTRICT"
+    CASCADE = "CASCADE"
+    SET_NULL = "SET NULL"
+    NO_ACTION = "NO ACTION"
+    SET_DEFAULT = "SET DEFAULT"
+
+
 class BaseModel(peewee.Model):
     FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 

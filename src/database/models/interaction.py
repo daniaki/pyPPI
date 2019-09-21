@@ -6,7 +6,7 @@ import peewee
 import playhouse.fields
 
 from ...settings import DATABASE
-from .base import BaseModel
+from .base import BaseModel, ForeignKeyConstraint
 from .identifiers import PsimiIdentifier, PubmedIdentifier, UniprotIdentifier
 from .protein import Protein
 
@@ -61,6 +61,7 @@ class InteractionEvidence(BaseModel):
         null=False,
         default=None,
         backref="evidence_set",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Pubmed identifier supporting an interaction.",
     )
     psimi = peewee.ForeignKeyField(
@@ -68,6 +69,7 @@ class InteractionEvidence(BaseModel):
         null=True,
         default=None,
         backref="evidence_set",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text=(
             "PSIMI identifier relating to study performed or interaction type."
         ),
@@ -178,6 +180,7 @@ class Interaction(BaseModel):
         null=False,
         default=None,
         backref="interactions_as_source",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Source protein.",
     )
     target = peewee.ForeignKeyField(
@@ -185,6 +188,7 @@ class Interaction(BaseModel):
         null=False,
         default=None,
         backref="interactions_as_target",
+        on_delete=ForeignKeyConstraint.RESTRICT,
         help_text="Target protein.",
     )
 
@@ -192,8 +196,6 @@ class Interaction(BaseModel):
     labels = peewee.ManyToManyField(
         model=InteractionLabel, backref="interactions"
     )
-
-    # Fields relating to evidence/experiment detection method.
     evidence = peewee.ManyToManyField(
         model=InteractionEvidence, backref="interactions"
     )
@@ -451,11 +453,11 @@ class Interaction(BaseModel):
                     sorted(
                         [
                             str(a)
-                            for a in getattr(interaction.source.data, attr)
+                            for a in getattr(interaction.source.record, attr)
                         ]
                         + [
                             str(a)
-                            for a in getattr(interaction.target.data, attr)
+                            for a in getattr(interaction.target.record, attr)
                         ]
                     )
                 )
@@ -513,6 +515,7 @@ class InteractionPrediction(BaseModel):
         null=False,
         default=None,
         backref="predictions",
+        on_delete=ForeignKeyConstraint.CASCADE,
         help_text="Interaction prediction is for.",
     )
     label = peewee.ForeignKeyField(
@@ -520,6 +523,7 @@ class InteractionPrediction(BaseModel):
         null=True,
         default=None,
         backref="predictions",
+        on_delete=ForeignKeyConstraint.CASCADE,
         help_text="Predicted label.",
     )
     probability = peewee.FloatField(
@@ -532,5 +536,6 @@ class InteractionPrediction(BaseModel):
         null=False,
         default=None,
         backref="interactions",
+        on_delete=ForeignKeyConstraint.CASCADE,
         help_text="The model used to make this prediction.",
     )

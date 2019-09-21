@@ -205,6 +205,7 @@ def create_evidence(
 def update_accessions(
     interactions: Iterable[types.InteractionData],
     mapping: Dict[str, Sequence[str]],
+    keep_isoforms: bool = True,
 ) -> Iterable[types.InteractionData]:
     """
     Takes an iterable of `InteractionData` instances and maps their source and
@@ -222,6 +223,10 @@ def update_accessions(
         accessions. The first element in this list will be considered the 
         canonical accession.
 
+    keep_isoforms: bool, default True.
+        Do not map interactions with an isoform UniProt identifier to it's
+        primary stable identifier (the same but without the digit extension)
+
     Returns
     -------
     Iterable[types.InteractionData]
@@ -233,11 +238,30 @@ def update_accessions(
         new_targets = mapping.get(interaction.target, [])
 
         if len(new_sources) and len(new_targets):
+            primary_source = new_sources[0]
+            primary_target = new_targets[0]
+
+            if keep_isoforms:
+                source_is_isoform = len(interaction.source.split("-")) == 2
+                target_is_isoform = len(interaction.target.split("-")) == 2
+                # Only retain isoform it the isoform identifier matches the
+                # mapped primary identifier.
+                source_isoform_matches_primary = (
+                    interaction.source.split("-")[0] == primary_source
+                )
+                target_isoform_matches_primary = (
+                    interaction.target.split("-")[0] == primary_target
+                )
+                if source_is_isoform and source_isoform_matches_primary:
+                    primary_source = interaction.source
+                if target_is_isoform and target_isoform_matches_primary:
+                    primary_source = interaction.target
+
             updated_interactions.append(
                 types.InteractionData(
                     # First item will be the most recent accession.
-                    source=new_sources[0],
-                    target=new_targets[0],
+                    source=primary_source,
+                    target=primary_target,
                     labels=interaction.labels,
                     evidence=interaction.evidence,
                     databases=interaction.databases,
@@ -303,20 +327,28 @@ def create_proteins(
         terms["keyword"] |= set(entry.keywords)
         gene_symbols |= set(entry.genes)
 
-        slim_entries[entry.primary_accession] = {
-            "go_terms": set(entry.go_terms),
-            "interpro_terms": set(entry.interpro_terms),
-            "pfam_terms": set(entry.pfam_terms),
-            "keywords": set(entry.keywords),
-            "genes": set(entry.genes),
-            "accessions": set(entry.accessions + [normalized]),
-            "taxonomy": entry.taxonomy,
-            "reviewed": entry.reviewed,
-            "version": entry.version,
-            "sequence": entry.sequence,
-        }
-        # Associate protein to create with data instance for later
-        proteins_to_create[normalized] = entry.primary_accession
+        primary_ac = models.UniprotIdentifier.format(entry.primary_accession)
+        if primary_ac in slim_entries:
+            slim_entries[primary_ac]["accessions"] |= set(
+                entry.accessions + [normalized]
+            )
+        else:
+            slim_entries[primary_ac] = {
+                "go_terms": set(entry.go_terms),
+                "interpro_terms": set(entry.interpro_terms),
+                "pfam_terms": set(entry.pfam_terms),
+                "keywords": set(entry.keywords),
+                "genes": set(entry.genes),
+                "accessions": set(entry.accessions + [normalized]),
+                "taxonomy": entry.taxonomy,
+                "reviewed": entry.reviewed,
+                "version": entry.version,
+                "sequence": entry.sequence,
+            }
+        # Associate protein to create with data instance for later. Store
+        # the primary accessions for each secondary accession used to access
+        # the data record instance.
+        proteins_to_create[normalized] = primary_ac
 
     # Bulk create and create lookup dictionaries indexed by identifier
     # for identifiers and terms, and gene symbol for the genes.
@@ -327,14 +359,18 @@ def create_proteins(
     create_terms(terms["keyword"], model=models.Keyword)
 
     logger.info("Populating gene symbol table.")
-    create_gene_symbols(set(g.symbol for g in gene_symbols))
+    symbols = create_gene_symbols(set(g.symbol for g in gene_symbols))
 
     logger.info("Populating uniprot identifier table.")
     create_identifiers(accessions, model=models.UniprotIdentifier)
 
     # Loop through and intialize protein models from the slimmed down entries
-    logger.info("Updating Protein table.")
+    logger.info("Updating Protein data table.")
     protein_models: List[models.Protein] = []
+
+    existing_symbols: Dict[str, models.GeneSymbol] = {
+        str(symbol): symbol for symbol in symbols
+    }
     existing_proteins: Dict[str, models.Protein] = {
         str(protein): protein
         for protein in models.Protein.get_by_identifier(slim_entries.keys())
@@ -346,13 +382,14 @@ def create_proteins(
 
     slim_entry: Dict[str, Any]
     for primary_ac, slim_entry in list(slim_entries.items()):
-        data = models.ProteinData.get_by_identifier(slim_entry["accessions"])
+        data = models.UniprotRecord.get_by_identifier(slim_entry["accessions"])
+
         # There should only be once instance for a set of primary and secondary
         # uniprot accessions.
         assert data.count() in (0, 1)
 
         if data.count() == 0:
-            instance = models.ProteinData.create(
+            instance = models.UniprotRecord.create(
                 organism=slim_entry["taxonomy"],
                 sequence=slim_entry["sequence"],
                 reviewed=slim_entry["reviewed"],
@@ -371,9 +408,6 @@ def create_proteins(
         slim_entries[primary_ac] = instance
 
         # Update the M2M relations.
-        instance.identifiers = [
-            identifiers[ac] for ac in slim_entry["accessions"]
-        ]
         instance.go_annotations = models.GeneOntologyTerm.get_by_identifier(
             set(
                 models.GeneOntologyIdentifier.format(x.identifier)
@@ -398,17 +432,64 @@ def create_proteins(
                 for x in slim_entry["keywords"]
             )
         )
-        instance.genes = models.GeneSymbol.select().where(
-            fn.Upper(models.GeneSymbol.text)
-            << set(g.symbol.upper() for g in slim_entry["genes"])
-        )
 
+        # Delete genes no longer associated with uniprot record.
+        current_uniprot_genes = {str(g.gene): g for g in instance.genes}
+        new_genes = set(g.symbol.upper() for g in slim_entry["genes"])
+        uniprot_gene: models.UniprotRecordGene
+        for uniprot_gene in instance.genes:
+            if str(uniprot_gene.gene) not in new_genes:
+                uniprot_gene.delete_instance()
+
+        # Go through and update/create new genes associations
+        gene: types.GeneData
+        for gene in slim_entry["genes"]:
+            symbol = gene.symbol.upper()
+            if symbol in current_uniprot_genes:
+                uniprot_gene = current_uniprot_genes[symbol]
+                uniprot_gene.relation = gene.relation
+                uniprot_gene.format_for_save()
+                uniprot_gene.save()
+            else:
+                models.UniprotRecordGene.create(
+                    record=instance,
+                    relation=gene.relation,
+                    gene=existing_symbols[gene.symbol.upper()],
+                )
+
+        # Delete identifiers no longer associated with uniprot record.
+        current_record_identifiers = {
+            str(i.identifier): i for i in instance.identifiers
+        }
+        record_identifier: models.UniprotRecordIdentifier
+        for record_identifier in instance.identifiers:
+            if (
+                str(record_identifier.identifier)
+                not in slim_entry["accessions"]
+            ):
+                record_identifier.delete_instance()
+
+        # Go through and update/create new genes associations
+        for accession in slim_entry["accessions"]:
+            if accession in current_record_identifiers:
+                record_identifier = current_record_identifiers[accession]
+                record_identifier.primary = accession == primary_ac
+                record_identifier.format_for_save()
+                record_identifier.save()
+            else:
+                models.UniprotRecordIdentifier.create(
+                    record=instance,
+                    identifier=identifiers[accession],
+                    primary=accession == primary_ac,
+                )
+
+    logger.info("Updating Protein table.")
     for accession, primary in proteins_to_create.items():
         if accession not in existing_proteins:
             protein_models.append(
                 models.Protein.create(
                     identifier=identifiers[accession],
-                    data=slim_entries[primary],
+                    record=slim_entries[primary],
                 )
             )
         else:
